@@ -3,24 +3,29 @@
 Spring Boot backend scaffold and interface-first contract for Scenario A (층간소음).
 
 ## What is included
-- OpenAPI contract: `docs/contracts/openapi-scenario-a.yaml`
+- OpenAPI contract: `docs/contracts/openapi-civil-complaint.yaml`
 - Interface spec: `docs/contracts/scenario-a-interface-spec.md`
 - Figma handoff doc: `docs/figma/figma-api-handoff.md`
-- Spring API scaffold with in-memory workflow/state machine
+- Spring API scaffold with JPA + Flyway persistence (Case/Evidence/Timeline)
 - Frontend mock request/response payloads: `frontend/mocks/**`
 
 ## Quick start
-1. Run tests
+1. Start Postgres
+```bash
+docker compose up -d postgres
+```
+
+2. Run tests
 ```bash
 gradle test
 ```
 
-2. Run server
+3. Run server
 ```bash
 gradle bootRun
 ```
 
-3. API base URL
+4. API base URL
 ```text
 http://localhost:8080/api/v1
 ```
@@ -39,6 +44,10 @@ http://localhost:8080/api/v1
 - `GET /cases/{caseId}/timeline`
 
 ## Notes
-- Current backend persistence is in-memory for rapid prototype iteration.
+- Runtime DB defaults:
+  - `DB_URL=jdbc:postgresql://localhost:5433/complaint`
+  - `DB_USERNAME=complaint`
+  - `DB_PASSWORD=complaint`
+- Tests run on in-memory H2 (PostgreSQL mode) via `src/test/resources/application.yml`.
 - Security is open (`permitAll`) for development; replace with real JWT validation later.
 - State transition conflicts are returned as `409 CASE_STATE_CONFLICT`.

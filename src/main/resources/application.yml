@@ -1,5 +1,18 @@
 spring:
   application:
     name: ai-civil-complaint-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/complaint}
+    username: ${DB_USERNAME:complaint}
+    password: ${DB_PASSWORD:complaint}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
 server:
   port: 8080

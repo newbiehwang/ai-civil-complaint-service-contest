@@ -7,7 +7,7 @@ Figma 프로토타입의 모든 화면 액션을 API `operationId`와 1:1 매핑
 - Base URL: `http://localhost:8080/api/v1`
 - Header: `Authorization: Bearer <token>`
 - Optional Header: `X-Trace-Id`, `Idempotency-Key`
-- 원본 계약: `docs/contracts/openapi-scenario-a.yaml`
+- 원본 계약: `docs/contracts/openapi-civil-complaint.yaml`
 
 ## 화면 매핑
 1. 시작 화면 (민원 생성)

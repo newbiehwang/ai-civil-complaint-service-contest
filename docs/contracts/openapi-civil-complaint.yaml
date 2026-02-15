@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Civil Complaint Service - Scenario A API
+  title: Civil Complaint Service API
   version: 0.1.0
   description: |
     Interface contract for Scenario A (inter-floor noise complaint).

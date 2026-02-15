@@ -22,7 +22,7 @@ Out of scope for this slice:
 - Full admin console
 
 ## 3) Contract Artifacts
-- OpenAPI: `docs/contracts/openapi-scenario-a.yaml`
+- OpenAPI: `docs/contracts/openapi-civil-complaint.yaml`
 - Error model: section 6 below
 - State machine: section 5 below
 
