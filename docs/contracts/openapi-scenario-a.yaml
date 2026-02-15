@@ -1,0 +1,695 @@
+openapi: 3.0.3
+info:
+  title: Civil Complaint Service - Scenario A API
+  version: 0.1.0
+  description: |
+    Interface contract for Scenario A (inter-floor noise complaint).
+    This contract is intended for Spring Boot backend implementation and
+    frontend integration from Figma screens.
+servers:
+  - url: https://api.example.com
+    description: Production
+  - url: http://localhost:8080
+    description: Local
+security:
+  - bearerAuth: []
+tags:
+  - name: Case
+  - name: Intake
+  - name: Routing
+  - name: Evidence
+  - name: Submission
+  - name: Timeline
+paths:
+  /api/v1/cases:
+    post:
+      tags: [Case]
+      summary: Create a new complaint case
+      operationId: createCase
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCaseRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/cases/{caseId}:
+    get:
+      tags: [Case]
+      summary: Get case detail
+      operationId: getCase
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/cases/{caseId}/intake/messages:
+    post:
+      tags: [Intake]
+      summary: Append chat/intake message and run slot extraction
+      operationId: appendIntakeMessage
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppendIntakeMessageRequest'
+      responses:
+        '200':
+          description: Updated intake status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntakeUpdateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/cases/{caseId}/decomposition:
+    post:
+      tags: [Routing]
+      summary: Decompose complaint into routable nodes
+      operationId: decomposeCase
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      responses:
+        '200':
+          description: Decomposition result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecompositionResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/cases/{caseId}/routing/recommendation:
+    post:
+      tags: [Routing]
+      summary: Generate routing recommendation with reasons
+      operationId: recommendRoute
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      responses:
+        '200':
+          description: Recommendation generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutingRecommendation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/cases/{caseId}/routing/decision:
+    post:
+      tags: [Routing]
+      summary: User confirms selected routing option
+      operationId: confirmRouteDecision
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteDecisionRequest'
+      responses:
+        '200':
+          description: Decision saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/cases/{caseId}/evidence:
+    post:
+      tags: [Evidence]
+      summary: Register evidence metadata after file upload
+      operationId: registerEvidence
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterEvidenceRequest'
+      responses:
+        '201':
+          description: Evidence item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/cases/{caseId}/evidence/checklist:
+    get:
+      tags: [Evidence]
+      summary: Get evidence sufficiency checklist
+      operationId: getEvidenceChecklist
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      responses:
+        '200':
+          description: Checklist status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceChecklist'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/cases/{caseId}/submission:
+    post:
+      tags: [Submission]
+      summary: Submit complaint to selected institution channel
+      operationId: submitCase
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitCaseRequest'
+      responses:
+        '202':
+          description: Submission started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/cases/{caseId}/supplement-response:
+    post:
+      tags: [Submission]
+      summary: Respond to institution supplement request
+      operationId: respondSupplement
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplementResponseRequest'
+      responses:
+        '202':
+          description: Supplement response accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/cases/{caseId}/timeline:
+    get:
+      tags: [Timeline]
+      summary: Get full case timeline
+      operationId: getTimeline
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      responses:
+        '200':
+          description: Timeline events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    TraceId:
+      name: X-Trace-Id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Correlation ID for tracing.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Client-generated key to prevent duplicate processing.
+    CaseId:
+      name: caseId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Conflict:
+      description: Invalid state transition or duplicate action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    CaseStatus:
+      type: string
+      enum:
+        - RECEIVED
+        - CLASSIFIED
+        - ROUTE_CONFIRMED
+        - EVIDENCE_COLLECTING
+        - MEDIATION_IN_PROGRESS
+        - MEDIATION_SUCCESS
+        - MEDIATION_FAILED
+        - FORMAL_SUBMISSION_READY
+        - INSTITUTION_PROCESSING
+        - SUPPLEMENT_REQUIRED
+        - COMPLETED
+        - CLOSED
+
+    RiskLevel:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+
+    CreateCaseRequest:
+      type: object
+      required: [scenarioType, housingType, consentAccepted]
+      properties:
+        scenarioType:
+          type: string
+          example: INTER_FLOOR_NOISE
+        housingType:
+          type: string
+          enum: [APARTMENT, MULTI_FAMILY, OFFICETEL, OTHER]
+        consentAccepted:
+          type: boolean
+        initialSummary:
+          type: string
+          maxLength: 2000
+
+    CaseSummary:
+      type: object
+      required: [caseId, status, createdAt, updatedAt]
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/CaseStatus'
+        riskLevel:
+          $ref: '#/components/schemas/RiskLevel'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CaseDetail:
+      allOf:
+        - $ref: '#/components/schemas/CaseSummary'
+        - type: object
+          properties:
+            intake:
+              $ref: '#/components/schemas/IntakeSnapshot'
+            decomposition:
+              $ref: '#/components/schemas/DecompositionResult'
+            routing:
+              $ref: '#/components/schemas/RoutingRecommendation'
+            evidenceChecklist:
+              $ref: '#/components/schemas/EvidenceChecklist'
+            currentActionRequired:
+              type: string
+
+    IntakeSnapshot:
+      type: object
+      properties:
+        requiredSlots:
+          type: array
+          items:
+            type: string
+        filledSlots:
+          type: object
+          additionalProperties: true
+        riskSignalDetected:
+          type: boolean
+
+    AppendIntakeMessageRequest:
+      type: object
+      required: [role, message]
+      properties:
+        role:
+          type: string
+          enum: [USER, AGENT]
+        message:
+          type: string
+          maxLength: 5000
+
+    IntakeUpdateResponse:
+      type: object
+      required: [caseId, status, intake]
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/CaseStatus'
+        intake:
+          $ref: '#/components/schemas/IntakeSnapshot'
+        recommendedFollowUpQuestion:
+          type: string
+
+    DecompositionNode:
+      type: object
+      required: [nodeType, title, priority]
+      properties:
+        nodeType:
+          type: string
+          enum: [LIVING_NOISE, IMMEDIATE_RISK, LONG_TERM_DISPUTE]
+        title:
+          type: string
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 5
+        rationale:
+          type: string
+
+    DecompositionResult:
+      type: object
+      required: [caseId, nodes]
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecompositionNode'
+
+    RoutingOption:
+      type: object
+      required: [optionId, channelType, label, priority]
+      properties:
+        optionId:
+          type: string
+        channelType:
+          type: string
+          enum: [EMERGENCY_112, MANAGEMENT_OFFICE, NEIGHBOR_CENTER, E_PEOPLE, DISPUTE_MEDIATION]
+        label:
+          type: string
+        priority:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+        requiredEvidence:
+          type: array
+          items:
+            type: string
+
+    RoutingRecommendation:
+      type: object
+      required: [caseId, options]
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoutingOption'
+        selectedOptionId:
+          type: string
+
+    RouteDecisionRequest:
+      type: object
+      required: [optionId, userConfirmed]
+      properties:
+        optionId:
+          type: string
+        userConfirmed:
+          type: boolean
+        note:
+          type: string
+          maxLength: 1000
+
+    RegisterEvidenceRequest:
+      type: object
+      required: [evidenceType, storageKey, capturedAt]
+      properties:
+        evidenceType:
+          type: string
+          enum: [AUDIO, LOG, IMAGE, DOCUMENT]
+        storageKey:
+          type: string
+        originalFileName:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+          minimum: 1
+        capturedAt:
+          type: string
+          format: date-time
+        notes:
+          type: string
+
+    EvidenceItem:
+      type: object
+      required: [evidenceId, evidenceType, storageKey, uploadedAt]
+      properties:
+        evidenceId:
+          type: string
+          format: uuid
+        evidenceType:
+          type: string
+        storageKey:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        adequacyScore:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    EvidenceChecklist:
+      type: object
+      required: [isSufficient, missingItems]
+      properties:
+        isSufficient:
+          type: boolean
+        missingItems:
+          type: array
+          items:
+            type: string
+        guidance:
+          type: string
+
+    SubmitCaseRequest:
+      type: object
+      required: [submissionChannel, userConsent, identityVerified]
+      properties:
+        submissionChannel:
+          type: string
+          enum: [MCP_API, DIRECT_API, MANUAL_PDF]
+        userConsent:
+          type: boolean
+        identityVerified:
+          type: boolean
+
+    SubmissionResponse:
+      type: object
+      required: [caseId, submissionId, submissionStatus]
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        submissionId:
+          type: string
+        submissionStatus:
+          type: string
+          enum: [QUEUED, SUBMITTED, FAILED]
+        submittedAt:
+          type: string
+          format: date-time
+
+    SupplementResponseRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          maxLength: 3000
+        evidenceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    TimelineEvent:
+      type: object
+      required: [eventId, eventType, occurredAt, title]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          enum:
+            - CASE_CREATED
+            - RISK_DETECTED
+            - CLASSIFICATION_DONE
+            - ROUTE_RECOMMENDED
+            - ROUTE_CONFIRMED
+            - EVIDENCE_ADDED
+            - SUBMISSION_STARTED
+            - SUBMISSION_COMPLETED
+            - SUPPLEMENT_REQUESTED
+            - SUPPLEMENT_RESPONDED
+            - CASE_COMPLETED
+        occurredAt:
+          type: string
+          format: date-time
+        title:
+          type: string
+        description:
+          type: string
+        actor:
+          type: string
+          enum: [SYSTEM, USER, INSTITUTION]
+
+    TimelineResponse:
+      type: object
+      required: [caseId, events]
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineEvent'
+
+    ApiError:
+      type: object
+      required: [timestamp, traceId, code, message]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        traceId:
+          type: string
+        code:
+          type: string
+          example: CASE_STATE_CONFLICT
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: string

@@ -1,0 +1,259 @@
+package com.contest.complaint.api.model;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+public final class ApiModels {
+
+    private ApiModels() {
+    }
+
+    public enum CaseStatus {
+        RECEIVED,
+        CLASSIFIED,
+        ROUTE_CONFIRMED,
+        EVIDENCE_COLLECTING,
+        MEDIATION_IN_PROGRESS,
+        MEDIATION_SUCCESS,
+        MEDIATION_FAILED,
+        FORMAL_SUBMISSION_READY,
+        INSTITUTION_PROCESSING,
+        SUPPLEMENT_REQUIRED,
+        COMPLETED,
+        CLOSED
+    }
+
+    public enum RiskLevel {
+        LOW,
+        MEDIUM,
+        HIGH,
+        CRITICAL
+    }
+
+    public enum MessageRole {
+        USER,
+        AGENT
+    }
+
+    public enum DecompositionNodeType {
+        LIVING_NOISE,
+        IMMEDIATE_RISK,
+        LONG_TERM_DISPUTE
+    }
+
+    public enum RoutingChannelType {
+        EMERGENCY_112,
+        MANAGEMENT_OFFICE,
+        NEIGHBOR_CENTER,
+        E_PEOPLE,
+        DISPUTE_MEDIATION
+    }
+
+    public enum EvidenceType {
+        AUDIO,
+        LOG,
+        IMAGE,
+        DOCUMENT
+    }
+
+    public enum SubmissionChannel {
+        MCP_API,
+        DIRECT_API,
+        MANUAL_PDF
+    }
+
+    public enum SubmissionStatus {
+        QUEUED,
+        SUBMITTED,
+        FAILED
+    }
+
+    public enum TimelineEventType {
+        CASE_CREATED,
+        RISK_DETECTED,
+        CLASSIFICATION_DONE,
+        ROUTE_RECOMMENDED,
+        ROUTE_CONFIRMED,
+        EVIDENCE_ADDED,
+        SUBMISSION_STARTED,
+        SUBMISSION_COMPLETED,
+        SUPPLEMENT_REQUESTED,
+        SUPPLEMENT_RESPONDED,
+        CASE_COMPLETED
+    }
+
+    public enum TimelineActor {
+        SYSTEM,
+        USER,
+        INSTITUTION
+    }
+
+    public record CreateCaseRequest(
+            @NotBlank String scenarioType,
+            @NotBlank String housingType,
+            @NotNull Boolean consentAccepted,
+            @Size(max = 2000) String initialSummary
+    ) {
+    }
+
+    public record CaseSummary(
+            UUID caseId,
+            CaseStatus status,
+            RiskLevel riskLevel,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+    }
+
+    public record CaseDetail(
+            UUID caseId,
+            CaseStatus status,
+            RiskLevel riskLevel,
+            Instant createdAt,
+            Instant updatedAt,
+            IntakeSnapshot intake,
+            DecompositionResult decomposition,
+            RoutingRecommendation routing,
+            EvidenceChecklist evidenceChecklist,
+            String currentActionRequired
+    ) {
+    }
+
+    public record IntakeSnapshot(
+            List<String> requiredSlots,
+            Map<String, Object> filledSlots,
+            boolean riskSignalDetected
+    ) {
+    }
+
+    public record AppendIntakeMessageRequest(
+            @NotNull MessageRole role,
+            @NotBlank @Size(max = 5000) String message
+    ) {
+    }
+
+    public record IntakeUpdateResponse(
+            UUID caseId,
+            CaseStatus status,
+            IntakeSnapshot intake,
+            String recommendedFollowUpQuestion
+    ) {
+    }
+
+    public record DecompositionNode(
+            DecompositionNodeType nodeType,
+            String title,
+            int priority,
+            String rationale
+    ) {
+    }
+
+    public record DecompositionResult(
+            UUID caseId,
+            List<DecompositionNode> nodes
+    ) {
+    }
+
+    public record RoutingOption(
+            String optionId,
+            RoutingChannelType channelType,
+            String label,
+            int priority,
+            String reason,
+            List<String> requiredEvidence
+    ) {
+    }
+
+    public record RoutingRecommendation(
+            UUID caseId,
+            List<RoutingOption> options,
+            String selectedOptionId
+    ) {
+    }
+
+    public record RouteDecisionRequest(
+            @NotBlank String optionId,
+            @NotNull Boolean userConfirmed,
+            @Size(max = 1000) String note
+    ) {
+    }
+
+    public record RegisterEvidenceRequest(
+            @NotNull EvidenceType evidenceType,
+            @NotBlank String storageKey,
+            String originalFileName,
+            String mimeType,
+            Long sizeBytes,
+            @NotNull Instant capturedAt,
+            String notes
+    ) {
+    }
+
+    public record EvidenceItem(
+            UUID evidenceId,
+            EvidenceType evidenceType,
+            String storageKey,
+            Instant uploadedAt,
+            double adequacyScore
+    ) {
+    }
+
+    public record EvidenceChecklist(
+            boolean isSufficient,
+            List<String> missingItems,
+            String guidance
+    ) {
+    }
+
+    public record SubmitCaseRequest(
+            @NotNull SubmissionChannel submissionChannel,
+            @NotNull Boolean userConsent,
+            @NotNull Boolean identityVerified
+    ) {
+    }
+
+    public record SubmissionResponse(
+            UUID caseId,
+            String submissionId,
+            SubmissionStatus submissionStatus,
+            Instant submittedAt
+    ) {
+    }
+
+    public record SupplementResponseRequest(
+            @NotBlank @Size(max = 3000) String message,
+            List<UUID> evidenceIds
+    ) {
+    }
+
+    public record TimelineEvent(
+            UUID eventId,
+            TimelineEventType eventType,
+            Instant occurredAt,
+            String title,
+            String description,
+            TimelineActor actor
+    ) {
+    }
+
+    public record TimelineResponse(
+            UUID caseId,
+            List<TimelineEvent> events
+    ) {
+    }
+
+    public record ApiError(
+            Instant timestamp,
+            String traceId,
+            String code,
+            String message,
+            List<String> details
+    ) {
+    }
+}
