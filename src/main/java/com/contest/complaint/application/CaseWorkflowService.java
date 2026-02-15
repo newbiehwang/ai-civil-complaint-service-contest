@@ -57,17 +57,20 @@ public class CaseWorkflowService {
     private final CaseEntityRepository caseRepository;
     private final EvidenceEntityRepository evidenceRepository;
     private final TimelineEventEntityRepository timelineRepository;
+    private final MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker;
     private final ObjectMapper objectMapper;
 
     public CaseWorkflowService(
             CaseEntityRepository caseRepository,
             EvidenceEntityRepository evidenceRepository,
             TimelineEventEntityRepository timelineRepository,
+            MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker,
             ObjectMapper objectMapper
     ) {
         this.caseRepository = caseRepository;
         this.evidenceRepository = evidenceRepository;
         this.timelineRepository = timelineRepository;
+        this.mockInstitutionSubmissionWorker = mockInstitutionSubmissionWorker;
         this.objectMapper = objectMapper;
     }
 
@@ -413,7 +416,7 @@ public class CaseWorkflowService {
 
         transition(aggregate.caseEntity, ApiModels.CaseStatus.INSTITUTION_PROCESSING);
         aggregate.caseEntity.setSubmissionId("SUB-" + UUID.randomUUID().toString().substring(0, 8));
-        aggregate.caseEntity.setSubmissionStatus(ApiModels.SubmissionStatus.SUBMITTED);
+        aggregate.caseEntity.setSubmissionStatus(ApiModels.SubmissionStatus.QUEUED);
         aggregate.caseEntity.setCurrentActionRequired("WAIT_INSTITUTION_RESULT");
 
         appendTimeline(
@@ -425,6 +428,10 @@ public class CaseWorkflowService {
         );
 
         persistCase(aggregate);
+        mockInstitutionSubmissionWorker.processSubmission(
+                aggregate.caseEntity.getId(),
+                aggregate.caseEntity.getSubmissionId()
+        );
 
         return new ApiModels.SubmissionResponse(
                 aggregate.caseEntity.getId(),
@@ -458,6 +465,10 @@ public class CaseWorkflowService {
         );
 
         persistCase(aggregate);
+        mockInstitutionSubmissionWorker.processSubmission(
+                aggregate.caseEntity.getId(),
+                aggregate.caseEntity.getSubmissionId()
+        );
 
         return toCaseDetail(aggregate);
     }

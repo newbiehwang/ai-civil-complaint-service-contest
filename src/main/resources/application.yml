@@ -16,3 +16,7 @@ spring:
     enabled: true
 server:
   port: 8080
+
+complaint:
+  mock-submission:
+    processing-delay-ms: ${MOCK_SUBMISSION_DELAY_MS:1500}
