@@ -2,7 +2,16 @@ package com.contest.complaint.application;
 
 import com.contest.complaint.api.ApiException;
 import com.contest.complaint.api.model.ApiModels;
+import com.contest.complaint.infrastructure.persistence.entity.CaseEntity;
+import com.contest.complaint.infrastructure.persistence.entity.EvidenceEntity;
+import com.contest.complaint.infrastructure.persistence.entity.TimelineEventEntity;
+import com.contest.complaint.infrastructure.persistence.repository.CaseEntityRepository;
+import com.contest.complaint.infrastructure.persistence.repository.EvidenceEntityRepository;
+import com.contest.complaint.infrastructure.persistence.repository.TimelineEventEntityRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class CaseWorkflowService {
@@ -37,93 +45,123 @@ public class CaseWorkflowService {
         ALLOWED_TRANSITIONS.put(ApiModels.CaseStatus.COMPLETED, Set.of(ApiModels.CaseStatus.CLOSED));
     }
 
-    private final Map<UUID, CaseState> store = new ConcurrentHashMap<>();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
 
+    private static final TypeReference<List<ApiModels.DecompositionNode>> DECOMPOSITION_LIST_TYPE = new TypeReference<>() {
+    };
+
+    private static final TypeReference<List<ApiModels.RoutingOption>> ROUTING_LIST_TYPE = new TypeReference<>() {
+    };
+
+    private final CaseEntityRepository caseRepository;
+    private final EvidenceEntityRepository evidenceRepository;
+    private final TimelineEventEntityRepository timelineRepository;
+    private final ObjectMapper objectMapper;
+
+    public CaseWorkflowService(
+            CaseEntityRepository caseRepository,
+            EvidenceEntityRepository evidenceRepository,
+            TimelineEventEntityRepository timelineRepository,
+            ObjectMapper objectMapper
+    ) {
+        this.caseRepository = caseRepository;
+        this.evidenceRepository = evidenceRepository;
+        this.timelineRepository = timelineRepository;
+        this.objectMapper = objectMapper;
+    }
+
+    @Transactional
     public ApiModels.CaseDetail createCase(ApiModels.CreateCaseRequest request) {
         if (!Boolean.TRUE.equals(request.consentAccepted())) {
             throw ApiException.badRequest("VALIDATION_ERROR", "consentAccepted must be true.", List.of("consentAccepted=true required"));
         }
 
-        Instant now = Instant.now();
-        UUID caseId = UUID.randomUUID();
+        CaseEntity entity = new CaseEntity();
+        entity.setId(UUID.randomUUID());
+        entity.setScenarioType(request.scenarioType());
+        entity.setHousingType(request.housingType());
+        entity.setInitialSummary(request.initialSummary());
+        entity.setStatus(ApiModels.CaseStatus.RECEIVED);
+        entity.setRiskLevel(ApiModels.RiskLevel.LOW);
+        entity.setRiskSignalDetected(false);
+        entity.setFilledSlotsJson("{}");
+        entity.setDecompositionNodesJson("[]");
+        entity.setRoutingOptionsJson("[]");
+        entity.setCurrentActionRequired("INTAKE_REQUIRED");
 
-        CaseState state = new CaseState(
-                caseId,
-                ApiModels.CaseStatus.RECEIVED,
-                ApiModels.RiskLevel.LOW,
-                now,
-                now,
-                request.scenarioType(),
-                request.housingType(),
-                request.initialSummary(),
-                false,
+        caseRepository.save(entity);
+
+        CaseAggregate aggregate = new CaseAggregate(
+                entity,
                 new HashMap<>(),
                 new ArrayList<>(),
                 new ArrayList<>(),
-                null,
                 new ArrayList<>(),
-                "INTAKE_REQUIRED",
-                null,
-                null,
                 new ArrayList<>()
         );
 
         appendTimeline(
-                state,
+                aggregate,
                 ApiModels.TimelineEventType.CASE_CREATED,
                 "민원이 생성되었습니다.",
                 "사용자가 시나리오 A 민원을 시작했습니다.",
                 ApiModels.TimelineActor.USER
         );
 
-        store.put(caseId, state);
-        return toCaseDetail(state);
+        return toCaseDetail(aggregate);
     }
 
+    @Transactional(readOnly = true)
     public ApiModels.CaseDetail getCase(UUID caseId) {
-        return toCaseDetail(getCaseState(caseId));
+        return toCaseDetail(loadAggregate(caseId));
     }
 
+    @Transactional
     public ApiModels.IntakeUpdateResponse appendIntakeMessage(UUID caseId, ApiModels.AppendIntakeMessageRequest request) {
-        CaseState state = getCaseState(caseId);
+        CaseAggregate aggregate = loadAggregate(caseId);
 
         String message = request.message().trim();
         if (request.role() == ApiModels.MessageRole.USER) {
-            extractSlots(state, message);
-            evaluateRiskSignal(state, message);
+            extractSlots(aggregate.filledSlots, message);
+            evaluateRiskSignal(aggregate, message);
         }
 
-        if (state.status == ApiModels.CaseStatus.RECEIVED && REQUIRED_SLOTS.stream().allMatch(state.filledSlots::containsKey)) {
-            transition(state, ApiModels.CaseStatus.CLASSIFIED);
+        if (aggregate.caseEntity.getStatus() == ApiModels.CaseStatus.RECEIVED
+                && REQUIRED_SLOTS.stream().allMatch(aggregate.filledSlots::containsKey)) {
+            transition(aggregate.caseEntity, ApiModels.CaseStatus.CLASSIFIED);
             appendTimeline(
-                    state,
+                    aggregate,
                     ApiModels.TimelineEventType.CLASSIFICATION_DONE,
                     "민원 분류가 완료되었습니다.",
                     "필수 슬롯이 모두 채워져 분류가 완료되었습니다.",
                     ApiModels.TimelineActor.SYSTEM
             );
-            state.currentActionRequired = "REQUEST_DECOMPOSITION";
+            aggregate.caseEntity.setCurrentActionRequired("REQUEST_DECOMPOSITION");
         }
 
-        List<String> missing = missingSlots(state);
+        persistCase(aggregate);
+
+        List<String> missing = missingSlots(aggregate.filledSlots);
         String followUp = missing.isEmpty() ? null : followUpQuestionFor(missing.getFirst());
 
         return new ApiModels.IntakeUpdateResponse(
-                state.caseId,
-                state.status,
-                new ApiModels.IntakeSnapshot(REQUIRED_SLOTS, Map.copyOf(state.filledSlots), state.riskSignalDetected),
+                aggregate.caseEntity.getId(),
+                aggregate.caseEntity.getStatus(),
+                new ApiModels.IntakeSnapshot(REQUIRED_SLOTS, Map.copyOf(aggregate.filledSlots), aggregate.caseEntity.isRiskSignalDetected()),
                 followUp
         );
     }
 
+    @Transactional
     public ApiModels.DecompositionResult decomposeCase(UUID caseId) {
-        CaseState state = getCaseState(caseId);
+        CaseAggregate aggregate = loadAggregate(caseId);
 
-        if (state.status == ApiModels.CaseStatus.RECEIVED) {
+        if (aggregate.caseEntity.getStatus() == ApiModels.CaseStatus.RECEIVED) {
             throw ApiException.conflict(
                     "CASE_STATE_CONFLICT",
                     "Cannot decompose before classification.",
-                    List.of("currentState=" + state.status, "requiredState=CLASSIFIED")
+                    List.of("currentState=" + aggregate.caseEntity.getStatus(), "requiredState=CLASSIFIED")
             );
         }
 
@@ -135,7 +173,7 @@ public class CaseWorkflowService {
                 "층간소음 핵심 이슈를 우선 처리합니다."
         ));
 
-        if (state.riskSignalDetected) {
+        if (aggregate.caseEntity.isRiskSignalDetected()) {
             nodes.add(new ApiModels.DecompositionNode(
                     ApiModels.DecompositionNodeType.IMMEDIATE_RISK,
                     "즉시위험 민원",
@@ -144,7 +182,7 @@ public class CaseWorkflowService {
             ));
         }
 
-        if (Boolean.TRUE.equals(state.filledSlots.get("priorMediation"))) {
+        if (Boolean.TRUE.equals(aggregate.filledSlots.get("priorMediation"))) {
             nodes.add(new ApiModels.DecompositionNode(
                     ApiModels.DecompositionNodeType.LONG_TERM_DISPUTE,
                     "장기 미해결 분쟁",
@@ -154,17 +192,19 @@ public class CaseWorkflowService {
         }
 
         nodes.sort(Comparator.comparingInt(ApiModels.DecompositionNode::priority));
-        state.decompositionNodes = nodes;
-        state.updatedAt = Instant.now();
-        state.currentActionRequired = "REQUEST_ROUTING_RECOMMENDATION";
+        aggregate.decompositionNodes = nodes;
+        aggregate.caseEntity.setCurrentActionRequired("REQUEST_ROUTING_RECOMMENDATION");
 
-        return new ApiModels.DecompositionResult(state.caseId, List.copyOf(nodes));
+        persistCase(aggregate);
+
+        return new ApiModels.DecompositionResult(aggregate.caseEntity.getId(), List.copyOf(nodes));
     }
 
+    @Transactional
     public ApiModels.RoutingRecommendation recommendRoute(UUID caseId) {
-        CaseState state = getCaseState(caseId);
+        CaseAggregate aggregate = loadAggregate(caseId);
 
-        if (state.decompositionNodes.isEmpty()) {
+        if (aggregate.decompositionNodes.isEmpty()) {
             throw ApiException.conflict(
                     "CASE_STATE_CONFLICT",
                     "Cannot recommend route before decomposition.",
@@ -174,7 +214,7 @@ public class CaseWorkflowService {
 
         List<ApiModels.RoutingOption> options = new ArrayList<>();
 
-        if (state.riskSignalDetected) {
+        if (aggregate.caseEntity.isRiskSignalDetected()) {
             options.add(new ApiModels.RoutingOption(
                     "opt-emergency-112",
                     ApiModels.RoutingChannelType.EMERGENCY_112,
@@ -185,7 +225,7 @@ public class CaseWorkflowService {
             ));
         }
 
-        if ("APARTMENT".equalsIgnoreCase(state.housingType)) {
+        if ("APARTMENT".equalsIgnoreCase(aggregate.caseEntity.getHousingType())) {
             options.add(new ApiModels.RoutingOption(
                     "opt-management-office",
                     ApiModels.RoutingChannelType.MANAGEMENT_OFFICE,
@@ -213,7 +253,7 @@ public class CaseWorkflowService {
                 List.of("사건 요약", "증빙 자료")
         ));
 
-        if (Boolean.TRUE.equals(state.filledSlots.get("priorMediation"))) {
+        if (Boolean.TRUE.equals(aggregate.filledSlots.get("priorMediation"))) {
             options.add(new ApiModels.RoutingOption(
                     "opt-dispute-mediation",
                     ApiModels.RoutingChannelType.DISPUTE_MEDIATION,
@@ -225,23 +265,29 @@ public class CaseWorkflowService {
         }
 
         options.sort(Comparator.comparingInt(ApiModels.RoutingOption::priority));
-        state.routingOptions = options;
-        state.updatedAt = Instant.now();
-        state.currentActionRequired = "CONFIRM_ROUTE";
+        aggregate.routingOptions = options;
+        aggregate.caseEntity.setCurrentActionRequired("CONFIRM_ROUTE");
 
         appendTimeline(
-                state,
+                aggregate,
                 ApiModels.TimelineEventType.ROUTE_RECOMMENDED,
                 "경로 추천이 생성되었습니다.",
                 "추천 경로를 확인하고 선택해 주세요.",
                 ApiModels.TimelineActor.SYSTEM
         );
 
-        return new ApiModels.RoutingRecommendation(state.caseId, List.copyOf(options), state.selectedOptionId);
+        persistCase(aggregate);
+
+        return new ApiModels.RoutingRecommendation(
+                aggregate.caseEntity.getId(),
+                List.copyOf(options),
+                aggregate.caseEntity.getSelectedOptionId()
+        );
     }
 
+    @Transactional
     public ApiModels.CaseDetail confirmRouteDecision(UUID caseId, ApiModels.RouteDecisionRequest request) {
-        CaseState state = getCaseState(caseId);
+        CaseAggregate aggregate = loadAggregate(caseId);
 
         if (!Boolean.TRUE.equals(request.userConfirmed())) {
             throw ApiException.conflict(
@@ -251,96 +297,109 @@ public class CaseWorkflowService {
             );
         }
 
-        boolean exists = state.routingOptions.stream().anyMatch(opt -> opt.optionId().equals(request.optionId()));
+        boolean exists = aggregate.routingOptions.stream().anyMatch(opt -> opt.optionId().equals(request.optionId()));
         if (!exists) {
             throw ApiException.notFound("ROUTE_OPTION_NOT_FOUND", "Selected route option not found.");
         }
 
-        if (state.status == ApiModels.CaseStatus.RECEIVED) {
+        if (aggregate.caseEntity.getStatus() == ApiModels.CaseStatus.RECEIVED) {
             throw ApiException.conflict(
                     "CASE_STATE_CONFLICT",
                     "Cannot confirm route before classification.",
-                    List.of("currentState=" + state.status, "requiredState=CLASSIFIED")
+                    List.of("currentState=" + aggregate.caseEntity.getStatus(), "requiredState=CLASSIFIED")
             );
         }
 
-        if (state.status == ApiModels.CaseStatus.CLASSIFIED) {
-            transition(state, ApiModels.CaseStatus.ROUTE_CONFIRMED);
+        if (aggregate.caseEntity.getStatus() == ApiModels.CaseStatus.CLASSIFIED) {
+            transition(aggregate.caseEntity, ApiModels.CaseStatus.ROUTE_CONFIRMED);
         }
 
-        state.selectedOptionId = request.optionId();
-        state.updatedAt = Instant.now();
-        state.currentActionRequired = "UPLOAD_EVIDENCE";
+        aggregate.caseEntity.setSelectedOptionId(request.optionId());
+        aggregate.caseEntity.setCurrentActionRequired("UPLOAD_EVIDENCE");
 
         appendTimeline(
-                state,
+                aggregate,
                 ApiModels.TimelineEventType.ROUTE_CONFIRMED,
                 "사용자가 경로를 확정했습니다.",
                 "선택된 경로: " + request.optionId(),
                 ApiModels.TimelineActor.USER
         );
 
-        return toCaseDetail(state);
+        persistCase(aggregate);
+
+        return toCaseDetail(aggregate);
     }
 
+    @Transactional
     public ApiModels.EvidenceItem registerEvidence(UUID caseId, ApiModels.RegisterEvidenceRequest request) {
-        CaseState state = getCaseState(caseId);
+        CaseAggregate aggregate = loadAggregate(caseId);
 
-        if (state.status == ApiModels.CaseStatus.RECEIVED || state.status == ApiModels.CaseStatus.CLASSIFIED) {
+        if (aggregate.caseEntity.getStatus() == ApiModels.CaseStatus.RECEIVED
+                || aggregate.caseEntity.getStatus() == ApiModels.CaseStatus.CLASSIFIED) {
             throw ApiException.conflict(
                     "CASE_STATE_CONFLICT",
                     "Cannot add evidence before route confirmation.",
-                    List.of("currentState=" + state.status, "requiredState=ROUTE_CONFIRMED")
+                    List.of("currentState=" + aggregate.caseEntity.getStatus(), "requiredState=ROUTE_CONFIRMED")
             );
         }
 
-        if (state.status == ApiModels.CaseStatus.ROUTE_CONFIRMED) {
-            transition(state, ApiModels.CaseStatus.EVIDENCE_COLLECTING);
+        if (aggregate.caseEntity.getStatus() == ApiModels.CaseStatus.ROUTE_CONFIRMED) {
+            transition(aggregate.caseEntity, ApiModels.CaseStatus.EVIDENCE_COLLECTING);
         }
 
-        double score = adequacyScore(request.evidenceType());
-        ApiModels.EvidenceItem item = new ApiModels.EvidenceItem(
-                UUID.randomUUID(),
-                request.evidenceType(),
-                request.storageKey(),
-                Instant.now(),
-                score
-        );
+        EvidenceEntity evidenceEntity = new EvidenceEntity();
+        evidenceEntity.setId(UUID.randomUUID());
+        evidenceEntity.setCaseId(caseId);
+        evidenceEntity.setEvidenceType(request.evidenceType());
+        evidenceEntity.setStorageKey(request.storageKey());
+        evidenceEntity.setOriginalFileName(request.originalFileName());
+        evidenceEntity.setMimeType(request.mimeType());
+        evidenceEntity.setSizeBytes(request.sizeBytes());
+        evidenceEntity.setCapturedAt(request.capturedAt());
+        evidenceEntity.setNotes(request.notes());
+        evidenceEntity.setAdequacyScore(adequacyScore(request.evidenceType()));
+        evidenceEntity.setUploadedAt(Instant.now());
 
-        state.evidenceItems.add(item);
-        state.updatedAt = Instant.now();
+        EvidenceEntity saved = evidenceRepository.save(evidenceEntity);
+        ApiModels.EvidenceItem item = toEvidenceItem(saved);
+        aggregate.evidenceItems.add(item);
 
-        ApiModels.EvidenceChecklist checklist = computeChecklist(state);
-        if (checklist.isSufficient() && state.status == ApiModels.CaseStatus.EVIDENCE_COLLECTING) {
-            transition(state, ApiModels.CaseStatus.FORMAL_SUBMISSION_READY);
-            state.currentActionRequired = "SUBMIT_CASE";
+        ApiModels.EvidenceChecklist checklist = computeChecklist(aggregate.evidenceItems);
+        if (checklist.isSufficient() && aggregate.caseEntity.getStatus() == ApiModels.CaseStatus.EVIDENCE_COLLECTING) {
+            transition(aggregate.caseEntity, ApiModels.CaseStatus.FORMAL_SUBMISSION_READY);
+            aggregate.caseEntity.setCurrentActionRequired("SUBMIT_CASE");
         } else {
-            state.currentActionRequired = "ADD_MORE_EVIDENCE";
+            aggregate.caseEntity.setCurrentActionRequired("ADD_MORE_EVIDENCE");
         }
 
         appendTimeline(
-                state,
+                aggregate,
                 ApiModels.TimelineEventType.EVIDENCE_ADDED,
                 "증거가 등록되었습니다.",
                 "evidenceId=" + item.evidenceId(),
                 ApiModels.TimelineActor.USER
         );
 
+        persistCase(aggregate);
+
         return item;
     }
 
+    @Transactional(readOnly = true)
     public ApiModels.EvidenceChecklist getEvidenceChecklist(UUID caseId) {
-        return computeChecklist(getCaseState(caseId));
+        CaseAggregate aggregate = loadAggregate(caseId);
+        return computeChecklist(aggregate.evidenceItems);
     }
 
+    @Transactional
     public ApiModels.SubmissionResponse submitCase(UUID caseId, ApiModels.SubmitCaseRequest request) {
-        CaseState state = getCaseState(caseId);
+        CaseAggregate aggregate = loadAggregate(caseId);
 
-        if (state.status != ApiModels.CaseStatus.FORMAL_SUBMISSION_READY) {
+        if (aggregate.caseEntity.getStatus() != ApiModels.CaseStatus.FORMAL_SUBMISSION_READY) {
             throw ApiException.conflict(
                     "CASE_STATE_CONFLICT",
                     "Cannot submit before evidence becomes sufficient.",
-                    List.of("currentState=" + state.status, "requiredState=FORMAL_SUBMISSION_READY")
+                    List.of("currentState=" + aggregate.caseEntity.getStatus(), "requiredState=FORMAL_SUBMISSION_READY")
             );
         }
 
@@ -352,82 +411,112 @@ public class CaseWorkflowService {
             );
         }
 
-        transition(state, ApiModels.CaseStatus.INSTITUTION_PROCESSING);
-        state.submissionId = "SUB-" + UUID.randomUUID().toString().substring(0, 8);
-        state.submissionStatus = ApiModels.SubmissionStatus.SUBMITTED;
-        state.updatedAt = Instant.now();
-        state.currentActionRequired = "WAIT_INSTITUTION_RESULT";
+        transition(aggregate.caseEntity, ApiModels.CaseStatus.INSTITUTION_PROCESSING);
+        aggregate.caseEntity.setSubmissionId("SUB-" + UUID.randomUUID().toString().substring(0, 8));
+        aggregate.caseEntity.setSubmissionStatus(ApiModels.SubmissionStatus.SUBMITTED);
+        aggregate.caseEntity.setCurrentActionRequired("WAIT_INSTITUTION_RESULT");
 
         appendTimeline(
-                state,
+                aggregate,
                 ApiModels.TimelineEventType.SUBMISSION_STARTED,
                 "기관 제출이 시작되었습니다.",
                 "submissionChannel=" + request.submissionChannel(),
                 ApiModels.TimelineActor.SYSTEM
         );
 
+        persistCase(aggregate);
+
         return new ApiModels.SubmissionResponse(
-                state.caseId,
-                state.submissionId,
-                state.submissionStatus,
+                aggregate.caseEntity.getId(),
+                aggregate.caseEntity.getSubmissionId(),
+                aggregate.caseEntity.getSubmissionStatus(),
                 Instant.now()
         );
     }
 
+    @Transactional
     public ApiModels.CaseDetail respondSupplement(UUID caseId, ApiModels.SupplementResponseRequest request) {
-        CaseState state = getCaseState(caseId);
+        CaseAggregate aggregate = loadAggregate(caseId);
 
-        if (state.status != ApiModels.CaseStatus.SUPPLEMENT_REQUIRED) {
+        if (aggregate.caseEntity.getStatus() != ApiModels.CaseStatus.SUPPLEMENT_REQUIRED) {
             throw ApiException.conflict(
                     "CASE_STATE_CONFLICT",
                     "No supplement request exists for this case.",
-                    List.of("currentState=" + state.status, "requiredState=SUPPLEMENT_REQUIRED")
+                    List.of("currentState=" + aggregate.caseEntity.getStatus(), "requiredState=SUPPLEMENT_REQUIRED")
             );
         }
 
-        transition(state, ApiModels.CaseStatus.INSTITUTION_PROCESSING);
-        state.currentActionRequired = "WAIT_INSTITUTION_RESULT";
+        transition(aggregate.caseEntity, ApiModels.CaseStatus.INSTITUTION_PROCESSING);
+        aggregate.caseEntity.setCurrentActionRequired("WAIT_INSTITUTION_RESULT");
 
         appendTimeline(
-                state,
+                aggregate,
                 ApiModels.TimelineEventType.SUPPLEMENT_RESPONDED,
                 "보완 요청에 응답했습니다.",
                 request.message(),
                 ApiModels.TimelineActor.USER
         );
 
-        return toCaseDetail(state);
+        persistCase(aggregate);
+
+        return toCaseDetail(aggregate);
     }
 
+    @Transactional(readOnly = true)
     public ApiModels.TimelineResponse getTimeline(UUID caseId) {
-        CaseState state = getCaseState(caseId);
-        List<ApiModels.TimelineEvent> events = state.timeline.stream()
+        CaseAggregate aggregate = loadAggregate(caseId);
+        List<ApiModels.TimelineEvent> events = aggregate.timeline.stream()
                 .sorted(Comparator.comparing(ApiModels.TimelineEvent::occurredAt))
                 .toList();
-        return new ApiModels.TimelineResponse(state.caseId, events);
+        return new ApiModels.TimelineResponse(caseId, events);
     }
 
-    private void extractSlots(CaseState state, String message) {
+    private CaseAggregate loadAggregate(UUID caseId) {
+        CaseEntity caseEntity = caseRepository.findById(caseId)
+                .orElseThrow(() -> ApiException.notFound("CASE_NOT_FOUND", "Case not found: " + caseId));
+
+        return new CaseAggregate(
+                caseEntity,
+                readMap(caseEntity.getFilledSlotsJson()),
+                readList(caseEntity.getDecompositionNodesJson(), DECOMPOSITION_LIST_TYPE),
+                readList(caseEntity.getRoutingOptionsJson(), ROUTING_LIST_TYPE),
+                evidenceRepository.findAllByCaseIdOrderByUploadedAtAsc(caseId).stream()
+                        .map(this::toEvidenceItem)
+                        .collect(ArrayList::new, ArrayList::add, ArrayList::addAll),
+                timelineRepository.findAllByCaseIdOrderByOccurredAtAsc(caseId).stream()
+                        .map(this::toTimelineEvent)
+                        .collect(ArrayList::new, ArrayList::add, ArrayList::addAll)
+        );
+    }
+
+    private void persistCase(CaseAggregate aggregate) {
+        aggregate.caseEntity.setFilledSlotsJson(writeJson(aggregate.filledSlots));
+        aggregate.caseEntity.setDecompositionNodesJson(writeJson(aggregate.decompositionNodes));
+        aggregate.caseEntity.setRoutingOptionsJson(writeJson(aggregate.routingOptions));
+        caseRepository.save(aggregate.caseEntity);
+    }
+
+    private void extractSlots(Map<String, Object> filledSlots, String message) {
         if (containsAny(message, "밤", "새벽", "저녁")) {
-            state.filledSlots.put("incidentTime", "야간");
+            filledSlots.put("incidentTime", "야간");
         }
         if (containsAny(message, "매일", "자주", "반복", "매주")) {
-            state.filledSlots.put("frequency", "반복 발생");
+            filledSlots.put("frequency", "반복 발생");
         }
         if (containsAny(message, "쿵", "발망치", "소음", "끌", "뛰")) {
-            state.filledSlots.put("noiseType", "충격/생활 소음");
+            filledSlots.put("noiseType", "충격/생활 소음");
         }
         if (containsAny(message, "관리사무소", "조정", "중재")) {
-            state.filledSlots.put("priorMediation", true);
+            filledSlots.put("priorMediation", true);
         }
     }
 
-    private void evaluateRiskSignal(CaseState state, String message) {
-        if (!state.riskSignalDetected && containsAny(message, "폭행", "위협", "스토킹", "죽", "칼")) {
-            state.riskSignalDetected = true;
-            state.riskLevel = ApiModels.RiskLevel.CRITICAL;
+    private void evaluateRiskSignal(CaseAggregate aggregate, String message) {
+        if (!aggregate.caseEntity.isRiskSignalDetected() && containsAny(message, "폭행", "위협", "스토킹", "죽", "칼")) {
+            aggregate.caseEntity.setRiskSignalDetected(true);
+            aggregate.caseEntity.setRiskLevel(ApiModels.RiskLevel.CRITICAL);
             appendTimeline(
-                    state,
+                    aggregate,
                     ApiModels.TimelineEventType.RISK_DETECTED,
                     "즉시위험 신호가 감지되었습니다.",
                     "고위험 키워드 기반 룰이 감지되었습니다.",
@@ -445,9 +534,9 @@ public class CaseWorkflowService {
         return false;
     }
 
-    private List<String> missingSlots(CaseState state) {
+    private List<String> missingSlots(Map<String, Object> filledSlots) {
         return REQUIRED_SLOTS.stream()
-                .filter(slot -> !state.filledSlots.containsKey(slot))
+                .filter(slot -> !filledSlots.containsKey(slot))
                 .toList();
     }
 
@@ -469,9 +558,9 @@ public class CaseWorkflowService {
         };
     }
 
-    private ApiModels.EvidenceChecklist computeChecklist(CaseState state) {
-        boolean hasAudio = state.evidenceItems.stream().anyMatch(item -> item.evidenceType() == ApiModels.EvidenceType.AUDIO);
-        boolean hasLog = state.evidenceItems.stream().anyMatch(item -> item.evidenceType() == ApiModels.EvidenceType.LOG);
+    private ApiModels.EvidenceChecklist computeChecklist(List<ApiModels.EvidenceItem> evidenceItems) {
+        boolean hasAudio = evidenceItems.stream().anyMatch(item -> item.evidenceType() == ApiModels.EvidenceType.AUDIO);
+        boolean hasLog = evidenceItems.stream().anyMatch(item -> item.evidenceType() == ApiModels.EvidenceType.LOG);
 
         List<String> missing = new ArrayList<>();
         if (!hasAudio) {
@@ -489,137 +578,150 @@ public class CaseWorkflowService {
         return new ApiModels.EvidenceChecklist(sufficient, missing, guidance);
     }
 
-    private CaseState getCaseState(UUID caseId) {
-        CaseState state = store.get(caseId);
-        if (state == null) {
-            throw ApiException.notFound("CASE_NOT_FOUND", "Case not found: " + caseId);
-        }
-        return state;
-    }
-
-    private ApiModels.CaseDetail toCaseDetail(CaseState state) {
+    private ApiModels.CaseDetail toCaseDetail(CaseAggregate aggregate) {
         ApiModels.IntakeSnapshot intake = new ApiModels.IntakeSnapshot(
                 REQUIRED_SLOTS,
-                Map.copyOf(state.filledSlots),
-                state.riskSignalDetected
+                Map.copyOf(aggregate.filledSlots),
+                aggregate.caseEntity.isRiskSignalDetected()
         );
 
-        ApiModels.DecompositionResult decomposition = state.decompositionNodes.isEmpty()
+        ApiModels.DecompositionResult decomposition = aggregate.decompositionNodes.isEmpty()
                 ? null
-                : new ApiModels.DecompositionResult(state.caseId, List.copyOf(state.decompositionNodes));
+                : new ApiModels.DecompositionResult(aggregate.caseEntity.getId(), List.copyOf(aggregate.decompositionNodes));
 
-        ApiModels.RoutingRecommendation routing = state.routingOptions.isEmpty()
+        ApiModels.RoutingRecommendation routing = aggregate.routingOptions.isEmpty()
                 ? null
-                : new ApiModels.RoutingRecommendation(state.caseId, List.copyOf(state.routingOptions), state.selectedOptionId);
+                : new ApiModels.RoutingRecommendation(
+                aggregate.caseEntity.getId(),
+                List.copyOf(aggregate.routingOptions),
+                aggregate.caseEntity.getSelectedOptionId()
+        );
 
-        ApiModels.EvidenceChecklist checklist = computeChecklist(state);
+        ApiModels.EvidenceChecklist checklist = computeChecklist(aggregate.evidenceItems);
 
         return new ApiModels.CaseDetail(
-                state.caseId,
-                state.status,
-                state.riskLevel,
-                state.createdAt,
-                state.updatedAt,
+                aggregate.caseEntity.getId(),
+                aggregate.caseEntity.getStatus(),
+                aggregate.caseEntity.getRiskLevel(),
+                aggregate.caseEntity.getCreatedAt(),
+                aggregate.caseEntity.getUpdatedAt(),
                 intake,
                 decomposition,
                 routing,
                 checklist,
-                state.currentActionRequired
+                aggregate.caseEntity.getCurrentActionRequired()
         );
     }
 
-    private void transition(CaseState state, ApiModels.CaseStatus next) {
-        if (state.status == next) {
+    private void transition(CaseEntity entity, ApiModels.CaseStatus next) {
+        if (entity.getStatus() == next) {
             return;
         }
 
-        Set<ApiModels.CaseStatus> allowed = ALLOWED_TRANSITIONS.getOrDefault(state.status, Set.of());
+        Set<ApiModels.CaseStatus> allowed = ALLOWED_TRANSITIONS.getOrDefault(entity.getStatus(), Set.of());
         if (!allowed.contains(next)) {
             throw ApiException.conflict(
                     "CASE_STATE_CONFLICT",
                     "Invalid case status transition.",
-                    List.of("currentState=" + state.status, "nextState=" + next)
+                    List.of("currentState=" + entity.getStatus(), "nextState=" + next)
             );
         }
 
-        state.status = next;
-        state.updatedAt = Instant.now();
+        entity.setStatus(next);
     }
 
     private void appendTimeline(
-            CaseState state,
+            CaseAggregate aggregate,
             ApiModels.TimelineEventType type,
             String title,
             String description,
             ApiModels.TimelineActor actor
     ) {
-        state.timeline.add(new ApiModels.TimelineEvent(
-                UUID.randomUUID(),
-                type,
-                Instant.now(),
-                title,
-                description,
-                actor
-        ));
+        TimelineEventEntity eventEntity = new TimelineEventEntity();
+        eventEntity.setId(UUID.randomUUID());
+        eventEntity.setCaseId(aggregate.caseEntity.getId());
+        eventEntity.setEventType(type);
+        eventEntity.setOccurredAt(Instant.now());
+        eventEntity.setTitle(title);
+        eventEntity.setDescription(description);
+        eventEntity.setActor(actor);
+
+        TimelineEventEntity saved = timelineRepository.save(eventEntity);
+        aggregate.timeline.add(toTimelineEvent(saved));
     }
 
-    private static final class CaseState {
-        private final UUID caseId;
-        private ApiModels.CaseStatus status;
-        private ApiModels.RiskLevel riskLevel;
-        private final Instant createdAt;
-        private Instant updatedAt;
-        private final String scenarioType;
-        private final String housingType;
-        private final String initialSummary;
-        private boolean riskSignalDetected;
-        private final Map<String, Object> filledSlots;
+    private ApiModels.EvidenceItem toEvidenceItem(EvidenceEntity entity) {
+        return new ApiModels.EvidenceItem(
+                entity.getId(),
+                entity.getEvidenceType(),
+                entity.getStorageKey(),
+                entity.getUploadedAt(),
+                entity.getAdequacyScore()
+        );
+    }
+
+    private ApiModels.TimelineEvent toTimelineEvent(TimelineEventEntity entity) {
+        return new ApiModels.TimelineEvent(
+                entity.getId(),
+                entity.getEventType(),
+                entity.getOccurredAt(),
+                entity.getTitle(),
+                entity.getDescription(),
+                entity.getActor()
+        );
+    }
+
+    private Map<String, Object> readMap(String json) {
+        if (json == null || json.isBlank()) {
+            return new HashMap<>();
+        }
+        try {
+            return objectMapper.readValue(json, MAP_TYPE);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to parse filledSlotsJson", ex);
+        }
+    }
+
+    private <T> List<T> readList(String json, TypeReference<List<T>> typeReference) {
+        if (json == null || json.isBlank()) {
+            return new ArrayList<>();
+        }
+        try {
+            return objectMapper.readValue(json, typeReference);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to parse json list", ex);
+        }
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to serialize json", ex);
+        }
+    }
+
+    private static final class CaseAggregate {
+        private final CaseEntity caseEntity;
+        private Map<String, Object> filledSlots;
         private List<ApiModels.DecompositionNode> decompositionNodes;
         private List<ApiModels.RoutingOption> routingOptions;
-        private String selectedOptionId;
-        private final List<ApiModels.EvidenceItem> evidenceItems;
-        private String currentActionRequired;
-        private String submissionId;
-        private ApiModels.SubmissionStatus submissionStatus;
-        private final List<ApiModels.TimelineEvent> timeline;
+        private List<ApiModels.EvidenceItem> evidenceItems;
+        private List<ApiModels.TimelineEvent> timeline;
 
-        private CaseState(
-                UUID caseId,
-                ApiModels.CaseStatus status,
-                ApiModels.RiskLevel riskLevel,
-                Instant createdAt,
-                Instant updatedAt,
-                String scenarioType,
-                String housingType,
-                String initialSummary,
-                boolean riskSignalDetected,
+        private CaseAggregate(
+                CaseEntity caseEntity,
                 Map<String, Object> filledSlots,
                 List<ApiModels.DecompositionNode> decompositionNodes,
                 List<ApiModels.RoutingOption> routingOptions,
-                String selectedOptionId,
                 List<ApiModels.EvidenceItem> evidenceItems,
-                String currentActionRequired,
-                String submissionId,
-                ApiModels.SubmissionStatus submissionStatus,
                 List<ApiModels.TimelineEvent> timeline
         ) {
-            this.caseId = caseId;
-            this.status = status;
-            this.riskLevel = riskLevel;
-            this.createdAt = createdAt;
-            this.updatedAt = updatedAt;
-            this.scenarioType = scenarioType;
-            this.housingType = housingType;
-            this.initialSummary = initialSummary;
-            this.riskSignalDetected = riskSignalDetected;
+            this.caseEntity = caseEntity;
             this.filledSlots = filledSlots;
             this.decompositionNodes = decompositionNodes;
             this.routingOptions = routingOptions;
-            this.selectedOptionId = selectedOptionId;
             this.evidenceItems = evidenceItems;
-            this.currentActionRequired = currentActionRequired;
-            this.submissionId = submissionId;
-            this.submissionStatus = submissionStatus;
             this.timeline = timeline;
         }
     }
