@@ -247,6 +247,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/cases/{caseId}/institution/mock-event:
     post:
@@ -377,6 +379,12 @@ components:
             $ref: '#/components/schemas/ApiError'
     Conflict:
       description: Invalid state transition or duplicate action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    ServiceUnavailable:
+      description: Upstream institution gateway unavailable
       content:
         application/json:
           schema:

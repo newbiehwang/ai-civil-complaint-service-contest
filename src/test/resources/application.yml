@@ -18,5 +18,7 @@ complaint:
   mock-submission:
     auto-process-enabled: true
     processing-delay-ms: 50
+  institution-gateway:
+    fail-direct-api: false
   security:
     jwt-secret: test-jwt-secret-key-must-be-32chars

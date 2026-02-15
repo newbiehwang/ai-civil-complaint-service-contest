@@ -49,9 +49,11 @@ http://localhost:8080/api/v1
   - `DB_USERNAME=complaint`
   - `DB_PASSWORD=complaint`
   - `JWT_SECRET` (HS256, 32+ chars)
+  - `INSTITUTION_GATEWAY_FAIL_DIRECT_API=false` (set `true` to simulate `INSTITUTION_GATEWAY_ERROR` on `DIRECT_API` submit)
 - Mock institution submission worker delay:
   - `MOCK_SUBMISSION_DELAY_MS=1500` (default)
 - Tests run on in-memory H2 (PostgreSQL mode) via `src/test/resources/application.yml`.
 - Security enforces Bearer JWT on `/api/v1/**`.
 - State transition conflicts are returned as `409 CASE_STATE_CONFLICT`.
+- Submission with insufficient evidence returns `409 EVIDENCE_INSUFFICIENT`.
 - `Idempotency-Key` is supported for `POST /cases` and `POST /cases/{caseId}/submission`.
