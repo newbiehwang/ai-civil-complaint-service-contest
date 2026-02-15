@@ -17,3 +17,5 @@ spring:
 complaint:
   mock-submission:
     processing-delay-ms: 50
+  security:
+    jwt-secret: test-jwt-secret-key-must-be-32chars

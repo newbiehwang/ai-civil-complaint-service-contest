@@ -48,9 +48,10 @@ http://localhost:8080/api/v1
   - `DB_URL=jdbc:postgresql://localhost:5433/complaint`
   - `DB_USERNAME=complaint`
   - `DB_PASSWORD=complaint`
+  - `JWT_SECRET` (HS256, 32+ chars)
 - Mock institution submission worker delay:
   - `MOCK_SUBMISSION_DELAY_MS=1500` (default)
 - Tests run on in-memory H2 (PostgreSQL mode) via `src/test/resources/application.yml`.
-- Security is open (`permitAll`) for development; replace with real JWT validation later.
+- Security enforces Bearer JWT on `/api/v1/**`.
 - State transition conflicts are returned as `409 CASE_STATE_CONFLICT`.
 - `Idempotency-Key` is supported for `POST /cases` and `POST /cases/{caseId}/submission`.
