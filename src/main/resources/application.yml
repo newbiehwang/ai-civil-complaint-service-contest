@@ -21,5 +21,7 @@ complaint:
   mock-submission:
     auto-process-enabled: ${MOCK_SUBMISSION_AUTO_PROCESS_ENABLED:true}
     processing-delay-ms: ${MOCK_SUBMISSION_DELAY_MS:1500}
+  institution-gateway:
+    fail-direct-api: ${INSTITUTION_GATEWAY_FAIL_DIRECT_API:false}
   security:
     jwt-secret: ${JWT_SECRET:replace-with-at-least-32-char-jwt-secret}

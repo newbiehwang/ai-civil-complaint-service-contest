@@ -61,6 +61,7 @@ public class CaseWorkflowService {
     private final MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker;
     private final ObjectMapper objectMapper;
     private final boolean mockSubmissionAutoProcessEnabled;
+    private final boolean institutionGatewayFailDirectApi;
 
     public CaseWorkflowService(
             CaseEntityRepository caseRepository,
@@ -68,7 +69,8 @@ public class CaseWorkflowService {
             TimelineEventEntityRepository timelineRepository,
             MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker,
             ObjectMapper objectMapper,
-            @Value("${complaint.mock-submission.auto-process-enabled:true}") boolean mockSubmissionAutoProcessEnabled
+            @Value("${complaint.mock-submission.auto-process-enabled:true}") boolean mockSubmissionAutoProcessEnabled,
+            @Value("${complaint.institution-gateway.fail-direct-api:false}") boolean institutionGatewayFailDirectApi
     ) {
         this.caseRepository = caseRepository;
         this.evidenceRepository = evidenceRepository;
@@ -76,6 +78,7 @@ public class CaseWorkflowService {
         this.mockInstitutionSubmissionWorker = mockInstitutionSubmissionWorker;
         this.objectMapper = objectMapper;
         this.mockSubmissionAutoProcessEnabled = mockSubmissionAutoProcessEnabled;
+        this.institutionGatewayFailDirectApi = institutionGatewayFailDirectApi;
     }
 
     @Transactional
@@ -403,6 +406,16 @@ public class CaseWorkflowService {
         CaseAggregate aggregate = loadAggregate(caseId);
 
         if (aggregate.caseEntity.getStatus() != ApiModels.CaseStatus.FORMAL_SUBMISSION_READY) {
+            ApiModels.CaseStatus currentState = aggregate.caseEntity.getStatus();
+            ApiModels.EvidenceChecklist checklist = computeChecklist(aggregate.evidenceItems);
+            if (isEvidenceCollectionState(currentState) && !checklist.isSufficient()) {
+                throw ApiException.conflict(
+                        "EVIDENCE_INSUFFICIENT",
+                        "Cannot submit until required evidence is collected.",
+                        evidenceInsufficientDetails(currentState, checklist)
+                );
+            }
+
             throw ApiException.conflict(
                     "CASE_STATE_CONFLICT",
                     "Cannot submit before evidence becomes sufficient.",
@@ -415,6 +428,14 @@ public class CaseWorkflowService {
                     "VALIDATION_ERROR",
                     "Submission requires userConsent=true and identityVerified=true.",
                     List.of("userConsent=true required", "identityVerified=true required")
+            );
+        }
+
+        if (shouldFailInstitutionGateway(request.submissionChannel())) {
+            throw ApiException.serviceUnavailable(
+                    "INSTITUTION_GATEWAY_ERROR",
+                    "Institution gateway is temporarily unavailable.",
+                    List.of("submissionChannel=" + request.submissionChannel(), "retryable=true")
             );
         }
 
@@ -646,6 +667,23 @@ public class CaseWorkflowService {
 
     private String defaultMessage(String message, String fallback) {
         return message == null || message.isBlank() ? fallback : message;
+    }
+
+    private boolean isEvidenceCollectionState(ApiModels.CaseStatus status) {
+        return status == ApiModels.CaseStatus.ROUTE_CONFIRMED
+                || status == ApiModels.CaseStatus.EVIDENCE_COLLECTING;
+    }
+
+    private List<String> evidenceInsufficientDetails(ApiModels.CaseStatus currentState, ApiModels.EvidenceChecklist checklist) {
+        List<String> details = new ArrayList<>();
+        details.add("currentState=" + currentState);
+        details.add("requiredState=FORMAL_SUBMISSION_READY");
+        checklist.missingItems().forEach(item -> details.add("missingItem=" + item));
+        return details;
+    }
+
+    private boolean shouldFailInstitutionGateway(ApiModels.SubmissionChannel channel) {
+        return institutionGatewayFailDirectApi && channel == ApiModels.SubmissionChannel.DIRECT_API;
     }
 
     private void triggerMockSubmissionProcessing(UUID caseId, String submissionId) {

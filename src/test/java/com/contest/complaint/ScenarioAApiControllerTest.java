@@ -153,6 +153,31 @@ class ScenarioAApiControllerTest {
     }
 
     @Test
+    void submitCaseWhenEvidenceIsInsufficientReturnsConflictContractCode() throws Exception {
+        String caseId = prepareCaseWithInsufficientEvidence();
+
+        String response = mockMvc.perform(post("/api/v1/cases/{caseId}/submission", caseId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "submissionChannel":"MCP_API",
+                                  "userConsent":true,
+                                  "identityVerified":true
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVIDENCE_INSUFFICIENT"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode root = objectMapper.readTree(response);
+        List<String> details = new ArrayList<>();
+        root.path("details").forEach(node -> details.add(node.asText()));
+        assertThat(details).anyMatch(item -> item.contains("missingItem="));
+    }
+
+    @Test
     void submitCaseCompletesAsynchronouslyByMockWorker() throws Exception {
         String caseId = prepareCaseReadyForSubmission();
 
@@ -333,6 +358,79 @@ class ScenarioAApiControllerTest {
                                 }
                                 """))
                 .andExpect(status().isCreated());
+
+        return caseId;
+    }
+
+    private String prepareCaseWithInsufficientEvidence() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v1/cases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scenarioType":"INTER_FLOOR_NOISE",
+                                  "housingType":"APARTMENT",
+                                  "consentAccepted":true
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String caseId = objectMapper.readTree(createResponse).get("caseId").asText();
+
+        mockMvc.perform(post("/api/v1/cases/{caseId}/intake/messages", caseId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "role":"USER",
+                                  "message":"밤마다 매일 쿵쿵 소음이 반복됩니다."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLASSIFIED"));
+
+        mockMvc.perform(post("/api/v1/cases/{caseId}/decomposition", caseId))
+                .andExpect(status().isOk());
+
+        String recommendationResponse = mockMvc.perform(post("/api/v1/cases/{caseId}/routing/recommendation", caseId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String optionId = objectMapper.readTree(recommendationResponse)
+                .path("options")
+                .get(0)
+                .path("optionId")
+                .asText();
+        assertThat(optionId).isNotBlank();
+
+        mockMvc.perform(post("/api/v1/cases/{caseId}/routing/decision", caseId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "optionId":"%s",
+                                  "userConfirmed":true
+                                }
+                                """.formatted(optionId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ROUTE_CONFIRMED"));
+
+        mockMvc.perform(post("/api/v1/cases/{caseId}/evidence", caseId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "evidenceType":"AUDIO",
+                                  "storageKey":"evidence/test/audio-1.m4a",
+                                  "capturedAt":"2026-02-15T10:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/cases/{caseId}", caseId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("EVIDENCE_COLLECTING"));
 
         return caseId;
     }

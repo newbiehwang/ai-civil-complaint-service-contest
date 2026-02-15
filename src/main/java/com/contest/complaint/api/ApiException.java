@@ -40,4 +40,8 @@ public class ApiException extends RuntimeException {
     public static ApiException badRequest(String code, String message, List<String> details) {
         return new ApiException(HttpStatus.BAD_REQUEST, code, message, details);
     }
+
+    public static ApiException serviceUnavailable(String code, String message, List<String> details) {
+        return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, code, message, details);
+    }
 }
