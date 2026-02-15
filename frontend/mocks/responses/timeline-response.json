@@ -1,0 +1,29 @@
+{
+  "caseId": "11111111-1111-1111-1111-111111111111",
+  "events": [
+    {
+      "eventId": "20000000-0000-0000-0000-000000000001",
+      "eventType": "CASE_CREATED",
+      "occurredAt": "2026-02-15T13:00:00Z",
+      "title": "민원이 생성되었습니다.",
+      "description": "사용자가 시나리오 A 민원을 시작했습니다.",
+      "actor": "USER"
+    },
+    {
+      "eventId": "20000000-0000-0000-0000-000000000002",
+      "eventType": "CLASSIFICATION_DONE",
+      "occurredAt": "2026-02-15T13:05:00Z",
+      "title": "민원 분류가 완료되었습니다.",
+      "description": "필수 슬롯이 모두 채워져 분류가 완료되었습니다.",
+      "actor": "SYSTEM"
+    },
+    {
+      "eventId": "20000000-0000-0000-0000-000000000003",
+      "eventType": "ROUTE_CONFIRMED",
+      "occurredAt": "2026-02-15T13:08:00Z",
+      "title": "사용자가 경로를 확정했습니다.",
+      "description": "선택된 경로: opt-management-office",
+      "actor": "USER"
+    }
+  ]
+}
