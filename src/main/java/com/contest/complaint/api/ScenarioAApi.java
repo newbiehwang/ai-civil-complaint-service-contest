@@ -75,6 +75,13 @@ public interface ScenarioAApi {
             @Valid @RequestBody ApiModels.SubmitCaseRequest request
     );
 
+    @PostMapping("/cases/{caseId}/institution/mock-event")
+    ResponseEntity<ApiModels.CaseDetail> applyInstitutionMockEvent(
+            @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+            @PathVariable UUID caseId,
+            @Valid @RequestBody ApiModels.InstitutionMockEventRequest request
+    );
+
     @PostMapping("/cases/{caseId}/supplement-response")
     ResponseEntity<ApiModels.CaseDetail> respondSupplement(
             @RequestHeader(value = "X-Trace-Id", required = false) String traceId,

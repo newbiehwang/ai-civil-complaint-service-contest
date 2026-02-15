@@ -248,6 +248,36 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/v1/cases/{caseId}/institution/mock-event:
+    post:
+      tags: [Submission]
+      summary: Apply mock institution event to current submission
+      operationId: applyInstitutionMockEvent
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/CaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstitutionMockEventRequest'
+      responses:
+        '200':
+          description: Institution event applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /api/v1/cases/{caseId}/supplement-response:
     post:
       tags: [Submission]
@@ -631,6 +661,20 @@ components:
           items:
             type: string
             format: uuid
+
+    InstitutionMockEventType:
+      type: string
+      enum: [SUPPLEMENT_REQUIRED, COMPLETED]
+
+    InstitutionMockEventRequest:
+      type: object
+      required: [eventType]
+      properties:
+        eventType:
+          $ref: '#/components/schemas/InstitutionMockEventType'
+        message:
+          type: string
+          maxLength: 3000
 
     TimelineEvent:
       type: object

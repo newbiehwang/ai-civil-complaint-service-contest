@@ -88,6 +88,15 @@ public class ScenarioAApiController implements ScenarioAApi {
     }
 
     @Override
+    public ResponseEntity<ApiModels.CaseDetail> applyInstitutionMockEvent(
+            String traceId,
+            UUID caseId,
+            ApiModels.InstitutionMockEventRequest request
+    ) {
+        return ResponseEntity.ok(caseWorkflowService.applyInstitutionMockEvent(caseId, request));
+    }
+
+    @Override
     public ResponseEntity<ApiModels.CaseDetail> respondSupplement(String traceId, UUID caseId, ApiModels.SupplementResponseRequest request) {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(caseWorkflowService.respondSupplement(caseId, request));
     }

@@ -74,6 +74,11 @@ public final class ApiModels {
         FAILED
     }
 
+    public enum InstitutionMockEventType {
+        SUPPLEMENT_REQUIRED,
+        COMPLETED
+    }
+
     public enum TimelineEventType {
         CASE_CREATED,
         RISK_DETECTED,
@@ -229,6 +234,12 @@ public final class ApiModels {
     public record SupplementResponseRequest(
             @NotBlank @Size(max = 3000) String message,
             List<UUID> evidenceIds
+    ) {
+    }
+
+    public record InstitutionMockEventRequest(
+            @NotNull InstitutionMockEventType eventType,
+            @Size(max = 3000) String message
     ) {
     }
 

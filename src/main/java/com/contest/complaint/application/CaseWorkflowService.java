@@ -10,6 +10,7 @@ import com.contest.complaint.infrastructure.persistence.repository.EvidenceEntit
 import com.contest.complaint.infrastructure.persistence.repository.TimelineEventEntityRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,19 +60,22 @@ public class CaseWorkflowService {
     private final TimelineEventEntityRepository timelineRepository;
     private final MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker;
     private final ObjectMapper objectMapper;
+    private final boolean mockSubmissionAutoProcessEnabled;
 
     public CaseWorkflowService(
             CaseEntityRepository caseRepository,
             EvidenceEntityRepository evidenceRepository,
             TimelineEventEntityRepository timelineRepository,
             MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            @Value("${complaint.mock-submission.auto-process-enabled:true}") boolean mockSubmissionAutoProcessEnabled
     ) {
         this.caseRepository = caseRepository;
         this.evidenceRepository = evidenceRepository;
         this.timelineRepository = timelineRepository;
         this.mockInstitutionSubmissionWorker = mockInstitutionSubmissionWorker;
         this.objectMapper = objectMapper;
+        this.mockSubmissionAutoProcessEnabled = mockSubmissionAutoProcessEnabled;
     }
 
     @Transactional
@@ -428,10 +432,7 @@ public class CaseWorkflowService {
         );
 
         persistCase(aggregate);
-        mockInstitutionSubmissionWorker.processSubmission(
-                aggregate.caseEntity.getId(),
-                aggregate.caseEntity.getSubmissionId()
-        );
+        triggerMockSubmissionProcessing(aggregate.caseEntity.getId(), aggregate.caseEntity.getSubmissionId());
 
         return new ApiModels.SubmissionResponse(
                 aggregate.caseEntity.getId(),
@@ -439,6 +440,63 @@ public class CaseWorkflowService {
                 aggregate.caseEntity.getSubmissionStatus(),
                 Instant.now()
         );
+    }
+
+    @Transactional
+    public ApiModels.CaseDetail applyInstitutionMockEvent(UUID caseId, ApiModels.InstitutionMockEventRequest request) {
+        CaseAggregate aggregate = loadAggregate(caseId);
+
+        if (aggregate.caseEntity.getStatus() != ApiModels.CaseStatus.INSTITUTION_PROCESSING) {
+            throw ApiException.conflict(
+                    "CASE_STATE_CONFLICT",
+                    "Institution mock event can be applied only while institution is processing.",
+                    List.of("currentState=" + aggregate.caseEntity.getStatus(), "requiredState=INSTITUTION_PROCESSING")
+            );
+        }
+
+        switch (request.eventType()) {
+            case SUPPLEMENT_REQUIRED -> {
+                transition(aggregate.caseEntity, ApiModels.CaseStatus.SUPPLEMENT_REQUIRED);
+                aggregate.caseEntity.setSubmissionStatus(ApiModels.SubmissionStatus.SUBMITTED);
+                aggregate.caseEntity.setCurrentActionRequired("RESPOND_SUPPLEMENT");
+
+                appendTimeline(
+                        aggregate,
+                        ApiModels.TimelineEventType.SUPPLEMENT_REQUESTED,
+                        "기관에서 보완자료를 요청했습니다.",
+                        defaultMessage(request.message(), "추가 보완자료 제출이 필요합니다."),
+                        ApiModels.TimelineActor.INSTITUTION
+                );
+            }
+            case COMPLETED -> {
+                transition(aggregate.caseEntity, ApiModels.CaseStatus.COMPLETED);
+                aggregate.caseEntity.setSubmissionStatus(ApiModels.SubmissionStatus.SUBMITTED);
+                aggregate.caseEntity.setCurrentActionRequired("CLOSE_CASE");
+
+                String submissionDescription = aggregate.caseEntity.getSubmissionId() == null
+                        ? "submissionId=N/A"
+                        : "submissionId=" + aggregate.caseEntity.getSubmissionId();
+
+                appendTimeline(
+                        aggregate,
+                        ApiModels.TimelineEventType.SUBMISSION_COMPLETED,
+                        "기관 제출이 완료되었습니다.",
+                        submissionDescription,
+                        ApiModels.TimelineActor.INSTITUTION
+                );
+
+                appendTimeline(
+                        aggregate,
+                        ApiModels.TimelineEventType.CASE_COMPLETED,
+                        "민원 처리가 완료되었습니다.",
+                        defaultMessage(request.message(), "기관 처리 완료로 케이스가 종료 단계로 전환되었습니다."),
+                        ApiModels.TimelineActor.SYSTEM
+                );
+            }
+        }
+
+        persistCase(aggregate);
+        return toCaseDetail(aggregate);
     }
 
     @Transactional
@@ -465,10 +523,7 @@ public class CaseWorkflowService {
         );
 
         persistCase(aggregate);
-        mockInstitutionSubmissionWorker.processSubmission(
-                aggregate.caseEntity.getId(),
-                aggregate.caseEntity.getSubmissionId()
-        );
+        triggerMockSubmissionProcessing(aggregate.caseEntity.getId(), aggregate.caseEntity.getSubmissionId());
 
         return toCaseDetail(aggregate);
     }
@@ -587,6 +642,17 @@ public class CaseWorkflowService {
                 : "필수 증거를 추가하면 제출 준비 상태로 전환됩니다.";
 
         return new ApiModels.EvidenceChecklist(sufficient, missing, guidance);
+    }
+
+    private String defaultMessage(String message, String fallback) {
+        return message == null || message.isBlank() ? fallback : message;
+    }
+
+    private void triggerMockSubmissionProcessing(UUID caseId, String submissionId) {
+        if (!mockSubmissionAutoProcessEnabled) {
+            return;
+        }
+        mockInstitutionSubmissionWorker.processSubmission(caseId, submissionId);
     }
 
     private ApiModels.CaseDetail toCaseDetail(CaseAggregate aggregate) {
