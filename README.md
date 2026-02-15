@@ -53,3 +53,4 @@ http://localhost:8080/api/v1
 - Tests run on in-memory H2 (PostgreSQL mode) via `src/test/resources/application.yml`.
 - Security is open (`permitAll`) for development; replace with real JWT validation later.
 - State transition conflicts are returned as `409 CASE_STATE_CONFLICT`.
+- `Idempotency-Key` is supported for `POST /cases` and `POST /cases/{caseId}/submission`.

@@ -2,6 +2,7 @@ package com.contest.complaint.api;
 
 import com.contest.complaint.api.model.ApiModels;
 import com.contest.complaint.application.CaseWorkflowService;
+import com.contest.complaint.application.IdempotencyService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -12,14 +13,26 @@ import java.util.UUID;
 public class ScenarioAApiController implements ScenarioAApi {
 
     private final CaseWorkflowService caseWorkflowService;
+    private final IdempotencyService idempotencyService;
 
-    public ScenarioAApiController(CaseWorkflowService caseWorkflowService) {
+    public ScenarioAApiController(
+            CaseWorkflowService caseWorkflowService,
+            IdempotencyService idempotencyService
+    ) {
         this.caseWorkflowService = caseWorkflowService;
+        this.idempotencyService = idempotencyService;
     }
 
     @Override
     public ResponseEntity<ApiModels.CaseDetail> createCase(String traceId, String idempotencyKey, ApiModels.CreateCaseRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(caseWorkflowService.createCase(request));
+        ApiModels.CaseDetail response = idempotencyService.execute(
+                "CREATE_CASE",
+                idempotencyKey,
+                request,
+                ApiModels.CaseDetail.class,
+                () -> caseWorkflowService.createCase(request)
+        );
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @Override
@@ -58,8 +71,20 @@ public class ScenarioAApiController implements ScenarioAApi {
     }
 
     @Override
-    public ResponseEntity<ApiModels.SubmissionResponse> submitCase(String traceId, UUID caseId, ApiModels.SubmitCaseRequest request) {
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(caseWorkflowService.submitCase(caseId, request));
+    public ResponseEntity<ApiModels.SubmissionResponse> submitCase(
+            String traceId,
+            String idempotencyKey,
+            UUID caseId,
+            ApiModels.SubmitCaseRequest request
+    ) {
+        ApiModels.SubmissionResponse response = idempotencyService.execute(
+                "SUBMIT_CASE:" + caseId,
+                idempotencyKey,
+                request,
+                ApiModels.SubmissionResponse.class,
+                () -> caseWorkflowService.submitCase(caseId, request)
+        );
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 
     @Override

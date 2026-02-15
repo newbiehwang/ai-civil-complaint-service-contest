@@ -53,6 +53,75 @@ class ScenarioAApiControllerTest {
     }
 
     @Test
+    void createCaseWithIdempotencyKeyReturnsSameResponse() throws Exception {
+        String idempotencyKey = "create-case-key-1";
+
+        String requestBody = """
+                {
+                  "scenarioType":"INTER_FLOOR_NOISE",
+                  "housingType":"APARTMENT",
+                  "consentAccepted":true,
+                  "initialSummary":"같은 요청 재시도 테스트"
+                }
+                """;
+
+        String firstResponse = mockMvc.perform(post("/api/v1/cases")
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String secondResponse = mockMvc.perform(post("/api/v1/cases")
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode firstNode = objectMapper.readTree(firstResponse);
+        JsonNode secondNode = objectMapper.readTree(secondResponse);
+        assertThat(secondNode.get("caseId").asText()).isEqualTo(firstNode.get("caseId").asText());
+        assertThat(secondNode.get("status").asText()).isEqualTo(firstNode.get("status").asText());
+    }
+
+    @Test
+    void createCaseWithDifferentPayloadAndSameIdempotencyKeyReturnsConflict() throws Exception {
+        String idempotencyKey = "create-case-key-2";
+
+        mockMvc.perform(post("/api/v1/cases")
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scenarioType":"INTER_FLOOR_NOISE",
+                                  "housingType":"APARTMENT",
+                                  "consentAccepted":true,
+                                  "initialSummary":"첫 요청"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/cases")
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scenarioType":"INTER_FLOOR_NOISE",
+                                  "housingType":"OTHER",
+                                  "consentAccepted":true,
+                                  "initialSummary":"다른 요청"
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+    }
+
+    @Test
     void registerEvidenceBeforeRouteConfirmationReturnsConflict() throws Exception {
         String createResponse = mockMvc.perform(post("/api/v1/cases")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -85,6 +154,110 @@ class ScenarioAApiControllerTest {
 
     @Test
     void submitCaseCompletesAsynchronouslyByMockWorker() throws Exception {
+        String caseId = prepareCaseReadyForSubmission();
+
+        mockMvc.perform(post("/api/v1/cases/{caseId}/submission", caseId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "submissionChannel":"MCP_API",
+                                  "userConsent":true,
+                                  "identityVerified":true
+                                }
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.submissionStatus").value("QUEUED"));
+
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> mockMvc.perform(get("/api/v1/cases/{caseId}", caseId))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.status").value("COMPLETED"))
+                        .andExpect(jsonPath("$.currentActionRequired").value("CLOSE_CASE")));
+
+        String timelineResponse = mockMvc.perform(get("/api/v1/cases/{caseId}/timeline", caseId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode eventsNode = objectMapper.readTree(timelineResponse).path("events");
+        List<String> eventTypes = new ArrayList<>();
+        for (JsonNode eventNode : eventsNode) {
+            eventTypes.add(eventNode.path("eventType").asText());
+        }
+
+        assertThat(eventTypes).contains("SUBMISSION_COMPLETED", "CASE_COMPLETED");
+    }
+
+    @Test
+    void submitCaseWithIdempotencyKeyReturnsSameSubmissionResponse() throws Exception {
+        String caseId = prepareCaseReadyForSubmission();
+        String idempotencyKey = "submit-case-key-1";
+        String requestBody = """
+                {
+                  "submissionChannel":"MCP_API",
+                  "userConsent":true,
+                  "identityVerified":true
+                }
+                """;
+
+        String firstResponse = mockMvc.perform(post("/api/v1/cases/{caseId}/submission", caseId)
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isAccepted())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String secondResponse = mockMvc.perform(post("/api/v1/cases/{caseId}/submission", caseId)
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isAccepted())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode firstNode = objectMapper.readTree(firstResponse);
+        JsonNode secondNode = objectMapper.readTree(secondResponse);
+        assertThat(secondNode.get("submissionId").asText()).isEqualTo(firstNode.get("submissionId").asText());
+        assertThat(secondNode.get("submissionStatus").asText()).isEqualTo(firstNode.get("submissionStatus").asText());
+    }
+
+    @Test
+    void submitCaseWithDifferentPayloadAndSameIdempotencyKeyReturnsConflict() throws Exception {
+        String caseId = prepareCaseReadyForSubmission();
+        String idempotencyKey = "submit-case-key-2";
+
+        mockMvc.perform(post("/api/v1/cases/{caseId}/submission", caseId)
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "submissionChannel":"MCP_API",
+                                  "userConsent":true,
+                                  "identityVerified":true
+                                }
+                                """))
+                .andExpect(status().isAccepted());
+
+        mockMvc.perform(post("/api/v1/cases/{caseId}/submission", caseId)
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "submissionChannel":"DIRECT_API",
+                                  "userConsent":true,
+                                  "identityVerified":true
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+    }
+
+    private String prepareCaseReadyForSubmission() throws Exception {
         String createResponse = mockMvc.perform(post("/api/v1/cases")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -161,37 +334,6 @@ class ScenarioAApiControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(post("/api/v1/cases/{caseId}/submission", caseId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "submissionChannel":"MCP_API",
-                                  "userConsent":true,
-                                  "identityVerified":true
-                                }
-                                """))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.submissionStatus").value("QUEUED"));
-
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(5))
-                .untilAsserted(() -> mockMvc.perform(get("/api/v1/cases/{caseId}", caseId))
-                        .andExpect(status().isOk())
-                        .andExpect(jsonPath("$.status").value("COMPLETED"))
-                        .andExpect(jsonPath("$.currentActionRequired").value("CLOSE_CASE")));
-
-        String timelineResponse = mockMvc.perform(get("/api/v1/cases/{caseId}/timeline", caseId))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
-        JsonNode eventsNode = objectMapper.readTree(timelineResponse).path("events");
-        List<String> eventTypes = new ArrayList<>();
-        for (JsonNode eventNode : eventsNode) {
-            eventTypes.add(eventNode.path("eventType").asText());
-        }
-
-        assertThat(eventTypes).contains("SUBMISSION_COMPLETED", "CASE_COMPLETED");
+        return caseId;
     }
 }

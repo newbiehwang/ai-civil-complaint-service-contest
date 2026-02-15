@@ -70,6 +70,7 @@ public interface ScenarioAApi {
     @PostMapping("/cases/{caseId}/submission")
     ResponseEntity<ApiModels.SubmissionResponse> submitCase(
             @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @PathVariable UUID caseId,
             @Valid @RequestBody ApiModels.SubmitCaseRequest request
     );
