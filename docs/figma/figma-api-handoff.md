@@ -49,6 +49,7 @@ Figma 프로토타입의 모든 화면 액션을 API `operationId`와 1:1 매핑
 6. 제출 확인 화면
 - Operation: `submitCase`
 - Endpoint: `POST /cases/{caseId}/submission`
+- Optional Header: `Idempotency-Key` (재시도 시 동일 키 사용)
 - Request example: `frontend/mocks/requests/submit-case.json`
 - Response example: `frontend/mocks/responses/submission-response.json`
 - 참고: 제출 직후 `submissionStatus=QUEUED`가 반환되며, 완료 상태는 `getCase`/`getTimeline` 폴링으로 반영

@@ -224,6 +224,7 @@ paths:
       operationId: submitCase
       parameters:
         - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/CaseId'
       requestBody:
         required: true
