@@ -51,6 +51,7 @@ Figma 프로토타입의 모든 화면 액션을 API `operationId`와 1:1 매핑
 - Endpoint: `POST /cases/{caseId}/submission`
 - Request example: `frontend/mocks/requests/submit-case.json`
 - Response example: `frontend/mocks/responses/submission-response.json`
+- 참고: 제출 직후 `submissionStatus=QUEUED`가 반환되며, 완료 상태는 `getCase`/`getTimeline` 폴링으로 반영
 
 7. 진행상태 타임라인 화면
 - Operation: `getTimeline`
