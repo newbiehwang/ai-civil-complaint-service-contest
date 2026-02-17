@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -13,6 +13,7 @@ import {
   TextInput,
   useWindowDimensions,
   View,
+  ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TypewriterText } from "../components/TypewriterText";
@@ -22,19 +23,15 @@ import { useCaseContext } from "../store/caseContext";
 import type {
   CaseStatus,
   CreateCaseRequest,
-  EvidenceChecklist,
-  EvidenceType,
   FollowUpInterface,
   IntakeUpdateResponse,
-  RegisterEvidenceRequest,
   RoutingRecommendation,
   SubmitCaseRequest,
   TimelineEvent,
 } from "../types/api";
 
-const BASE_WIDTH = 393;
-const BASE_HEIGHT = 852;
-const INPUT_ANCHOR_BOTTOM = 816;
+const BASE_WIDTH = 390;
+const BASE_HEIGHT = 884;
 const KEYBOARD_GAP = 12;
 
 type ResponseInputMode = "text" | "mini";
@@ -55,6 +52,7 @@ type MiniOption = {
   label: string;
   kind?: MiniOptionKind;
   description?: string;
+  badge?: string;
 };
 
 type MiniInterfaceConfig = {
@@ -72,9 +70,26 @@ type AiTurn = {
   miniInterface?: MiniInterfaceConfig | null;
 };
 
+type FlowStepKey =
+  | "intake"
+  | "classification"
+  | "routing"
+  | "evidence"
+  | "mediation"
+  | "submission"
+  | "tracking"
+  | "completion";
+
+type FlowStepDefinition = {
+  key: FlowStepKey;
+  number: number;
+  label: string;
+  doneToast: string;
+};
+
 const INITIAL_AI_TURN: AiTurn = {
   id: "chatbot-turn-1",
-  text: "안녕하세요.\n무엇을 도와드릴까요?\n불편하신 상황을 편하게 말씀해 주세요.",
+  text: "안녕하세요. 어떤 소음이 가장\n불편하신가요?",
   inputMode: "text",
   miniInterface: null,
 };
@@ -88,6 +103,30 @@ type ChatbotConversationScreenProps = {
 type ThinkingWaveTextProps = {
   text: string;
   style?: StyleProp<TextStyle>;
+};
+
+type MiniAnimatedPressableProps = {
+  children: ReactNode;
+  onPress: () => void;
+  style?: StyleProp<ViewStyle>;
+  disabled?: boolean;
+  pressScale?: number;
+};
+
+type LocalEvidenceKind = "AUDIO" | "LOG";
+
+type LocalEvidenceAttachment = {
+  id: string;
+  kind: LocalEvidenceKind;
+  name: string;
+  uri: string;
+  pickedAt: number;
+};
+
+type EvidenceSummary = {
+  audioCount: number;
+  logCount: number;
+  totalCount: number;
 };
 
 const THINKING_TEXT = "답변을 준비하고 있어요.";
@@ -110,23 +149,54 @@ const TIMELINE_OPTION_RESTART = "timeline-restart";
 
 const COMPLETION_OPTION_RESTART = "completion-restart";
 
+const FLOW_STEPS: FlowStepDefinition[] = [
+  { key: "intake", number: 1, label: "접수", doneToast: "1단계 접수 완료" },
+  { key: "classification", number: 2, label: "분류", doneToast: "2단계 분류 완료" },
+  { key: "routing", number: 3, label: "경로 확정", doneToast: "3단계 경로 확정 완료" },
+  { key: "evidence", number: 4, label: "증거 수집", doneToast: "4단계 증거 수집 완료" },
+  { key: "mediation", number: 5, label: "조정 지원", doneToast: "5단계 조정 지원 완료" },
+  { key: "submission", number: 6, label: "정식 제출", doneToast: "6단계 제출 완료" },
+  { key: "tracking", number: 7, label: "진행 추적", doneToast: "7단계 진행 추적 완료" },
+  { key: "completion", number: 8, label: "종결", doneToast: "8단계 종결 완료" },
+];
+
 const STATUS_FALLBACK_TEXT: Partial<Record<CaseStatus, string>> = {
-  RECEIVED: "내용을 잘 받았어요. 핵심 정보를 더 알려주시면 분류를 진행할게요.",
-  CLASSIFIED: "상황 분류를 마쳤어요. 다음 단계를 안내해 드릴게요.",
-  ROUTE_CONFIRMED: "접수 경로를 확정했어요. 필요한 자료를 준비해볼게요.",
-  EVIDENCE_COLLECTING: "증빙 자료를 등록하면 제출 준비를 이어서 진행할 수 있어요.",
-  FORMAL_SUBMISSION_READY: "제출 준비가 완료됐어요. 정부24 제출 단계를 진행해 주세요.",
+  RECEIVED: "접수했어요. 핵심 정보만 조금 더 알려주세요.",
+  CLASSIFIED: "분류가 끝났어요. 추천 경로를 확인해요.",
+  ROUTE_CONFIRMED: "경로를 확정했어요. 증거를 준비해요.",
+  EVIDENCE_COLLECTING: "증거를 모으면 제출 단계로 넘어가요.",
+  FORMAL_SUBMISSION_READY: "제출 준비가 끝났어요. 제출을 진행해요.",
 };
+
+function compactAiText(rawText: string): string {
+  const normalized = rawText.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "입력 내용을 확인했어요.";
+  }
+
+  const sentenceTokens = normalized.match(/[^.!?\n]+[.!?]?/g) ?? [normalized];
+  const selected = sentenceTokens
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" ");
+
+  if (selected.length <= 72) {
+    return selected;
+  }
+
+  return `${selected.slice(0, 69).trim()}...`;
+}
 
 function resolveAiTurnText(response: IntakeUpdateResponse): string {
   const followUp = response.recommendedFollowUpQuestion?.trim();
   if (followUp) {
-    return followUp;
+    return compactAiText(followUp);
   }
 
-  return (
+  return compactAiText(
     STATUS_FALLBACK_TEXT[response.status] ??
-    "입력해 주신 내용을 확인했어요. 이어서 필요한 정보를 안내할게요."
+      "입력을 확인했어요. 다음 안내를 이어갈게요.",
   );
 }
 
@@ -149,6 +219,8 @@ function mapApiFollowUpInterface(
       id,
       label,
       kind: label === "기타" ? "other" : "choice",
+      description: "선택 후 보내기로 전달",
+      badge: `선택 ${index + 1}`,
     });
     return acc;
   }, []);
@@ -177,11 +249,16 @@ function createMiniInterface(
     selectionMode,
     context,
     selectionHint: selectionMode === "multiple" ? "복수 선택 가능" : "단일 선택",
-    options: optionLabels.map((label, index) => ({
-      id: `mini-option-${index + 1}-${label}`,
-      label,
-      kind: label === "기타" ? "other" : "choice",
-    })),
+    options: optionLabels.map((label, index) => {
+      const isOther = label === "기타";
+      return {
+        id: `mini-option-${index + 1}-${label}`,
+        label,
+        kind: isOther ? "other" : "choice",
+        description: isOther ? "직접 입력으로 전환" : "선택 후 보내기로 전달",
+        badge: isOther ? "직접입력" : `선택 ${index + 1}`,
+      };
+    }),
   };
 }
 
@@ -190,19 +267,23 @@ function mapRoutingRecommendationToMiniInterface(
 ): MiniInterfaceConfig | null {
   const options = (recommendation.options ?? [])
     .slice(0, 4)
-    .map((option) => ({
-      id: option.optionId,
-      label: option.label,
-      kind: "choice" as const,
-      description: option.reason?.trim() || undefined,
-    }));
+    .map((option, index) => {
+      const rawReason = option.reason?.trim();
+      return {
+        id: option.optionId,
+        label: option.label,
+        kind: "choice" as const,
+        description: rawReason ? compactAiText(rawReason) : "추천 이유가 반영된 경로",
+        badge: `경로 ${index + 1}`,
+      };
+    });
 
   if (options.length === 0) {
     return null;
   }
 
   return {
-    prompt: "추천 경로를 준비했어요. 아래에서 가장 적합한 경로를 선택해 주세요.",
+    prompt: "추천 경로를 준비했어요. 가장 맞는 경로 하나를 선택해 주세요.",
     selectionMode: "single",
     context: "routing",
     selectionHint: "단일 선택",
@@ -210,38 +291,75 @@ function mapRoutingRecommendationToMiniInterface(
   };
 }
 
-function createEvidenceMiniInterface(checklist: EvidenceChecklist | null): MiniInterfaceConfig {
-  const missing = checklist?.missingItems ?? [];
-  const hasAudio = !missing.some((item) => item.includes("AUDIO"));
-  const hasLog = !missing.some((item) => item.includes("LOG"));
+function summarizeEvidenceAttachments(items: LocalEvidenceAttachment[]): EvidenceSummary {
+  const audioCount = items.filter((item) => item.kind === "AUDIO").length;
+  const logCount = items.filter((item) => item.kind === "LOG").length;
+  return {
+    audioCount,
+    logCount,
+    totalCount: items.length,
+  };
+}
 
-  const prompt = checklist?.isSufficient
-    ? "좋아요. 증거 준비가 끝났어요.\n4번을 눌러 다음 단계로 이동해 주세요."
-    : `증거를 쉽게 준비해볼게요.\n현재 상태: 녹음 파일 ${hasAudio ? "완료" : "필요"}, 소음 일지 ${hasLog ? "완료" : "필요"}`;
+function createEvidenceMiniInterface(summary: EvidenceSummary): MiniInterfaceConfig {
+  const hasAnyEvidence = summary.totalCount > 0;
+  const prompt = hasAnyEvidence
+    ? `첨부 ${summary.totalCount}건을 확인했어요. 필요하면 더 추가해 주세요.`
+    : "증거 자료는 선택사항이에요. 필요하면 첨부해 주세요.";
 
   return {
     prompt,
     selectionMode: "single",
     context: "evidence",
-    selectionHint: "단일 선택",
+    selectionHint: "선택사항",
     options: [
-      { id: EVIDENCE_OPTION_ADD_AUDIO, label: "녹음 파일 추가하기" },
-      { id: EVIDENCE_OPTION_ADD_LOG, label: "소음 일지 추가하기" },
-      { id: EVIDENCE_OPTION_REFRESH, label: "지금 상태 다시 확인" },
-      { id: EVIDENCE_OPTION_NEXT, label: "다음 단계로 이동" },
+      {
+        id: EVIDENCE_OPTION_ADD_AUDIO,
+        label: "녹음 파일 첨부",
+        description: "라이브러리에서 선택",
+        badge: summary.audioCount > 0 ? `첨부 ${summary.audioCount}` : "선택",
+      },
+      {
+        id: EVIDENCE_OPTION_ADD_LOG,
+        label: "소음 일지 첨부",
+        description: "라이브러리에서 선택",
+        badge: summary.logCount > 0 ? `첨부 ${summary.logCount}` : "선택",
+      },
+      {
+        id: EVIDENCE_OPTION_REFRESH,
+        label: "첨부 현황 확인",
+        description: "지금 선택한 항목 보기",
+        badge: hasAnyEvidence ? `${summary.totalCount}건` : "없음",
+      },
+      {
+        id: EVIDENCE_OPTION_NEXT,
+        label: "다음 단계로 이동",
+        description: "증거 없이도 계속 진행 가능",
+        badge: "계속",
+      },
     ],
   };
 }
 
 function createMediationMiniInterface(): MiniInterfaceConfig {
   return {
-    prompt: "진행 방법을 선택해 주세요.\n어렵게 느껴지면 정식 제출 진행을 눌러도 됩니다.",
+    prompt: "다음 진행 방식을 선택해 주세요.",
     selectionMode: "single",
     context: "mediation",
     selectionHint: "단일 선택",
     options: [
-      { id: MEDIATION_OPTION_TRY_FIRST, label: "조정 먼저 시도" },
-      { id: MEDIATION_OPTION_PROCEED_SUBMISSION, label: "정식 제출 진행" },
+      {
+        id: MEDIATION_OPTION_TRY_FIRST,
+        label: "조정 먼저",
+        description: "관리사무소 조정 요청 문구로 시작",
+        badge: "권장",
+      },
+      {
+        id: MEDIATION_OPTION_PROCEED_SUBMISSION,
+        label: "바로 제출",
+        description: "정부24 제출 단계로 바로 이동",
+        badge: "빠른 진행",
+      },
     ],
   };
 }
@@ -249,21 +367,31 @@ function createMediationMiniInterface(): MiniInterfaceConfig {
 function createSubmissionMiniInterface(hasFallbackHint = false): MiniInterfaceConfig {
   return {
     prompt: hasFallbackHint
-      ? "기관 연동이 잠시 지연되고 있어요.\n2번 수동 제출로 진행해 주세요."
-      : "제출 방식을 선택해 주세요.\n(데모에서는 동의/본인확인을 자동으로 처리합니다.)",
+      ? "연동이 지연 중이에요. 수동 제출로 진행해 주세요."
+      : "제출 방식을 선택해 주세요.",
     selectionMode: "single",
     context: "submission",
     selectionHint: "단일 선택",
     options: [
-      { id: SUBMISSION_OPTION_MCP, label: "정부24 연계 제출" },
-      { id: SUBMISSION_OPTION_MANUAL, label: "수동 제출 서식(PDF)" },
+      {
+        id: SUBMISSION_OPTION_MCP,
+        label: "정부24 연계",
+        description: "자동 제출 채널로 접수",
+        badge: "기본",
+      },
+      {
+        id: SUBMISSION_OPTION_MANUAL,
+        label: "수동 제출",
+        description: "서식(PDF) 기반으로 제출",
+        badge: "폴백",
+      },
     ],
   };
 }
 
 function createTimelineMiniInterface(lastEvent?: TimelineEvent): MiniInterfaceConfig {
   const prompt = lastEvent
-    ? `현재 상태: ${lastEvent.title}\n아래에서 진행 방식을 선택해 주세요.`
+    ? `현재 상태: ${lastEvent.title}`
     : "진행 상태를 확인해 볼까요?";
 
   return {
@@ -272,46 +400,36 @@ function createTimelineMiniInterface(lastEvent?: TimelineEvent): MiniInterfaceCo
     context: "timeline",
     selectionHint: "단일 선택",
     options: [
-      { id: TIMELINE_OPTION_REFRESH, label: "지금 상태 다시 확인" },
-      { id: TIMELINE_OPTION_RESTART, label: "처음으로 돌아가기" },
+      {
+        id: TIMELINE_OPTION_REFRESH,
+        label: "상태 새로고침",
+        description: "최신 처리 상태 조회",
+        badge: "조회",
+      },
+      {
+        id: TIMELINE_OPTION_RESTART,
+        label: "처음으로",
+        description: "새 상담을 다시 시작",
+        badge: "재시작",
+      },
     ],
   };
 }
 
 function createCompletionMiniInterface(): MiniInterfaceConfig {
   return {
-    prompt: "민원 처리가 완료됐어요.\n처음 화면으로 돌아갈까요?",
+    prompt: "민원 처리가 완료됐어요.",
     selectionMode: "single",
     context: "completion",
     selectionHint: "단일 선택",
-    options: [{ id: COMPLETION_OPTION_RESTART, label: "처음으로 돌아가기" }],
-  };
-}
-
-function createEvidenceRequest(evidenceType: EvidenceType): RegisterEvidenceRequest {
-  const now = new Date();
-  const timestamp = now.getTime();
-
-  if (evidenceType === "AUDIO") {
-    return {
-      evidenceType,
-      storageKey: `demo/audio/${timestamp}.m4a`,
-      originalFileName: `sample-${timestamp}.m4a`,
-      mimeType: "audio/m4a",
-      sizeBytes: 320_000,
-      capturedAt: now.toISOString(),
-      notes: "chat-mini-interface-audio",
-    };
-  }
-
-  return {
-    evidenceType,
-    storageKey: `demo/log/${timestamp}.json`,
-    originalFileName: `noise-log-${timestamp}.json`,
-    mimeType: "application/json",
-    sizeBytes: 8_192,
-    capturedAt: now.toISOString(),
-    notes: "chat-mini-interface-log",
+    options: [
+      {
+        id: COMPLETION_OPTION_RESTART,
+        label: "처음으로 돌아가기",
+        description: "새 상담을 시작",
+        badge: "완료",
+      },
+    ],
   };
 }
 
@@ -410,6 +528,87 @@ function ThinkingWaveText({ text, style }: ThinkingWaveTextProps) {
   );
 }
 
+function MiniAnimatedPressable({
+  children,
+  onPress,
+  style,
+  disabled = false,
+  pressScale = 0.97,
+}: MiniAnimatedPressableProps) {
+  const pressAnim = useRef(new Animated.Value(0)).current;
+
+  const handlePressIn = useCallback(() => {
+    if (disabled) {
+      return;
+    }
+    Animated.timing(pressAnim, {
+      toValue: 1,
+      duration: 90,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [disabled, pressAnim]);
+
+  const handlePressOut = useCallback(() => {
+    Animated.timing(pressAnim, {
+      toValue: 0,
+      duration: 150,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [pressAnim]);
+
+  const animatedStyle = useMemo(
+    () => ({
+      opacity: pressAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, 0.92],
+      }),
+      transform: [
+        {
+          scale: pressAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, pressScale],
+          }),
+        },
+      ],
+    }),
+    [pressAnim, pressScale],
+  );
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={style}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+function getExpoImagePickerModule():
+  | null
+  | {
+      requestMediaLibraryPermissionsAsync: () => Promise<{ granted: boolean }>;
+      launchImageLibraryAsync: (options?: Record<string, unknown>) => Promise<{
+        canceled: boolean;
+        assets?: Array<{ uri: string; fileName?: string | null }>;
+      }>;
+      MediaTypeOptions?: { All?: unknown };
+    } {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require("expo-image-picker");
+  } catch {
+    return null;
+  }
+}
+
 function keyboardEasingToAnimated(easing?: KeyboardEvent["easing"]) {
   switch (easing) {
     case "easeIn":
@@ -438,13 +637,17 @@ export function ChatbotConversationScreen({
   const [apiErrorMessage, setApiErrorMessage] = useState<string | null>(null);
   const [visibleSentenceCount, setVisibleSentenceCount] = useState(1);
   const [currentAiTurn, setCurrentAiTurn] = useState<AiTurn>(INITIAL_AI_TURN);
+  const [currentFlowStep, setCurrentFlowStep] = useState<FlowStepKey>("intake");
+  const [completedFlowSteps, setCompletedFlowSteps] = useState<FlowStepKey[]>([]);
+  const [isStepTodoOpen, setIsStepTodoOpen] = useState(false);
+  const [stepToastMessage, setStepToastMessage] = useState<string | null>(null);
+  const [localEvidenceAttachments, setLocalEvidenceAttachments] = useState<LocalEvidenceAttachment[]>([]);
   const {
     caseId,
     status,
     traceId,
     applyCaseDetail,
     applyIntakeUpdate,
-    setEvidenceChecklist,
     setSubmissionResponse,
     setTimelineEvents,
     setMediationDecision,
@@ -455,8 +658,10 @@ export function ChatbotConversationScreen({
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const turnSequenceRef = useRef(2);
+  const completedFlowStepsRef = useRef<Set<FlowStepKey>>(new Set());
   const createCaseIdempotencyKeyRef = useRef(`mobile-create-case-${Date.now()}`);
   const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backButtonPressAnim = useRef(new Animated.Value(0)).current;
   // Keep AI responses rendered sentence-by-sentence so each sentence appears on its own line.
   const aiSentences = useMemo(() => {
     const tokens = currentAiTurn.text.match(/[^.!?\n]+[.!?]?/g) ?? [];
@@ -467,11 +672,13 @@ export function ChatbotConversationScreen({
   const inputKeyboardLift = useRef(new Animated.Value(0)).current;
   const inputRevealAnim = useRef(new Animated.Value(0)).current;
   const miniInterfaceRevealAnim = useRef(new Animated.Value(0)).current;
+  const stepSubtitleAnim = useRef(new Animated.Value(1)).current;
+  const stepTodoRevealAnim = useRef(new Animated.Value(0)).current;
+  const stepToastAnim = useRef(new Animated.Value(0)).current;
   const currentMiniInterface = currentAiTurn.miniInterface ?? null;
   const currentMiniOptions = currentMiniInterface?.options ?? [];
   const currentMiniSelectionMode = currentMiniInterface?.selectionMode ?? "single";
   const miniContext = currentMiniInterface?.context ?? null;
-  const isRoutingMiniInterface = miniContext === "routing";
   const isMiniInterfaceMode = currentAiTurn.inputMode === "mini";
   const shouldShowMiniInterface =
     isAiMessageCompleted && !isGeneratingReply && isMiniInterfaceMode && currentMiniOptions.length > 0;
@@ -481,18 +688,51 @@ export function ChatbotConversationScreen({
 
   const availableWidth = width;
   const availableHeight = height;
-  const widthScale = availableWidth / BASE_WIDTH;
-  const heightScale = availableHeight / BASE_HEIGHT;
-  const useWidthFit = heightScale >= 0.9;
-  const scale = useWidthFit ? widthScale : Math.min(widthScale, heightScale);
-  const offsetX = (availableWidth - BASE_WIDTH * scale) / 2;
-  const offsetY = useWidthFit ? 0 : (availableHeight - BASE_HEIGHT * scale) / 2;
+  const horizontalPadding = Math.max(20, Math.round((24 / BASE_WIDTH) * availableWidth));
+  const contentWidth = Math.max(0, availableWidth - horizontalPadding * 2);
+  const inputHeight = 56;
+  const inputBaseBottom = insets.bottom + 16;
+  const miniPanelBottom = inputBaseBottom + inputHeight + 24;
   const topInsetOffset = Math.max(insets.top - 20, 0);
+  const evidenceSummary = useMemo(
+    () => summarizeEvidenceAttachments(localEvidenceAttachments),
+    [localEvidenceAttachments],
+  );
+  const audioEvidenceAttachments = useMemo(
+    () => localEvidenceAttachments.filter((item) => item.kind === "AUDIO"),
+    [localEvidenceAttachments],
+  );
+  const logEvidenceAttachments = useMemo(
+    () => localEvidenceAttachments.filter((item) => item.kind === "LOG"),
+    [localEvidenceAttachments],
+  );
 
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
     setIsInputFocused(false);
   }, []);
+
+  const handleBackPressIn = useCallback(() => {
+    Animated.timing(backButtonPressAnim, {
+      toValue: 1,
+      duration: 110,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [backButtonPressAnim]);
+
+  const handleBackPressOut = useCallback(() => {
+    Animated.timing(backButtonPressAnim, {
+      toValue: 0,
+      duration: 170,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [backButtonPressAnim]);
+
+  const handleBackPress = useCallback(() => {
+    onBack?.();
+  }, [onBack]);
 
   const pushAiTurn = useCallback(
     (text: string, inputMode: ResponseInputMode, miniInterface: MiniInterfaceConfig | null = null) => {
@@ -504,6 +744,58 @@ export function ChatbotConversationScreen({
         inputMode,
         miniInterface,
       });
+    },
+    [],
+  );
+
+  const showStepDoneToast = useCallback(
+    (message: string) => {
+      setStepToastMessage(message);
+      stepToastAnim.stopAnimation();
+      stepToastAnim.setValue(0);
+
+      Animated.sequence([
+        Animated.timing(stepToastAnim, {
+          toValue: 1,
+          duration: 220,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.delay(820),
+        Animated.timing(stepToastAnim, {
+          toValue: 0,
+          duration: 220,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setStepToastMessage(null);
+        }
+      });
+    },
+    [stepToastAnim],
+  );
+
+  const markFlowStepCompleted = useCallback(
+    (step: FlowStepKey, showToast = true) => {
+      if (completedFlowStepsRef.current.has(step)) {
+        return false;
+      }
+      completedFlowStepsRef.current.add(step);
+      setCompletedFlowSteps(Array.from(completedFlowStepsRef.current));
+      const stepInfo = showToast ? FLOW_STEPS.find((item) => item.key === step) : null;
+      if (showToast && stepInfo) {
+        showStepDoneToast(stepInfo.doneToast);
+      }
+      return true;
+    },
+    [showStepDoneToast],
+  );
+
+  const moveToFlowStep = useCallback(
+    (step: FlowStepKey) => {
+      setCurrentFlowStep(step);
     },
     [],
   );
@@ -552,6 +844,120 @@ export function ChatbotConversationScreen({
     [currentMiniSelectionMode, isGeneratingReply],
   );
 
+  const handleEvidenceMiniOptionDirect = useCallback(
+    async (option: MiniOption) => {
+      if (isGeneratingReply) {
+        return;
+      }
+
+      setSelectedMiniOptionIds([]);
+
+      if (option.id === EVIDENCE_OPTION_NEXT) {
+        setApiErrorMessage(null);
+        markFlowStepCompleted("evidence");
+        moveToFlowStep("mediation");
+        pushAiTurn(
+          "증거는 선택사항이에요. 다음 진행 방식을 선택해 주세요.",
+          "mini",
+          createMediationMiniInterface(),
+        );
+        return;
+      }
+
+      if (option.id === EVIDENCE_OPTION_REFRESH) {
+        setApiErrorMessage(null);
+        return;
+      }
+
+      if (option.id !== EVIDENCE_OPTION_ADD_AUDIO && option.id !== EVIDENCE_OPTION_ADD_LOG) {
+        return;
+      }
+
+      const evidenceKind: LocalEvidenceKind =
+        option.id === EVIDENCE_OPTION_ADD_AUDIO ? "AUDIO" : "LOG";
+
+      Keyboard.dismiss();
+      setIsInputFocused(false);
+      setApiErrorMessage(null);
+
+      try {
+        const imagePicker = getExpoImagePickerModule();
+        if (!imagePicker) {
+          throw new Error("라이브러리 기능을 불러오지 못했어요. 앱을 다시 실행해 주세요.");
+        }
+
+        const permission = await imagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          setApiErrorMessage("라이브러리 권한이 필요해요. 권한을 허용한 뒤 다시 시도해 주세요.");
+          return;
+        }
+
+        const pickerResult = await imagePicker.launchImageLibraryAsync({
+          mediaTypes: imagePicker.MediaTypeOptions?.All,
+          allowsMultipleSelection: true,
+          quality: 1,
+        });
+
+        if (pickerResult.canceled || !pickerResult.assets?.length) {
+          setApiErrorMessage(null);
+          return;
+        }
+
+        const existingAttachmentKeys = new Set(
+          localEvidenceAttachments.map((item) => `${item.kind}:${item.uri}`),
+        );
+        const now = Date.now();
+        const nextAttachments = pickerResult.assets.reduce<LocalEvidenceAttachment[]>((acc, asset, index) => {
+          if (!asset.uri) {
+            return acc;
+          }
+
+          const attachmentKey = `${evidenceKind}:${asset.uri}`;
+          if (existingAttachmentKeys.has(attachmentKey)) {
+            return acc;
+          }
+
+          const pickedName =
+            asset.fileName?.trim() ||
+            asset.uri.split("/").filter(Boolean).pop() ||
+            "선택한 파일";
+          acc.push({
+            id: `local-evidence-${now}-${index}`,
+            kind: evidenceKind,
+            name: pickedName,
+            uri: asset.uri,
+            pickedAt: now + index,
+          });
+          return acc;
+        }, []);
+
+        if (nextAttachments.length === 0) {
+          setApiErrorMessage("이미 첨부된 파일이에요. 아래 목록에서 해제할 수 있어요.");
+          return;
+        }
+
+        setLocalEvidenceAttachments((previous) => [...previous, ...nextAttachments]);
+        setApiErrorMessage(null);
+      } catch (error: unknown) {
+        setApiErrorMessage(toKoreanErrorMessage(error));
+      }
+    },
+    [
+      isGeneratingReply,
+      localEvidenceAttachments,
+      markFlowStepCompleted,
+      moveToFlowStep,
+      pushAiTurn,
+    ],
+  );
+
+  const handleRemoveLocalEvidenceAttachment = useCallback((attachmentId: string) => {
+    setLocalEvidenceAttachments((previous) =>
+      previous.filter((attachment) => attachment.id !== attachmentId),
+    );
+    setApiErrorMessage(null);
+  }, []);
+
   const ensureCaseId = useCallback(async () => {
     if (caseId) {
       return caseId;
@@ -595,17 +1001,37 @@ export function ChatbotConversationScreen({
     [applyIntakeUpdate, ensureCaseId, traceId],
   );
 
-  const refreshEvidenceProgress = useCallback(
-    async (targetCaseId: string) => {
-      const [checklist, detail] = await Promise.all([
-        apiClient.getEvidenceChecklist(targetCaseId, { traceId }),
-        apiClient.getCase(targetCaseId, { traceId }),
-      ]);
-      setEvidenceChecklist(checklist);
-      applyCaseDetail(detail);
-      return checklist;
+  const syncFlowWithStatus = useCallback(
+    (nextStatus: CaseStatus) => {
+      if (nextStatus === "RECEIVED") {
+        markFlowStepCompleted("intake");
+        moveToFlowStep("classification");
+        return;
+      }
+
+      if (nextStatus === "CLASSIFIED") {
+        markFlowStepCompleted("intake", false);
+        markFlowStepCompleted("classification");
+        moveToFlowStep("routing");
+        return;
+      }
+
+      if (nextStatus === "ROUTE_CONFIRMED") {
+        markFlowStepCompleted("routing");
+        moveToFlowStep("evidence");
+        return;
+      }
+
+      if (nextStatus === "EVIDENCE_COLLECTING") {
+        moveToFlowStep("evidence");
+        return;
+      }
+
+      if (nextStatus === "FORMAL_SUBMISSION_READY") {
+        moveToFlowStep("submission");
+      }
     },
-    [applyCaseDetail, setEvidenceChecklist, traceId],
+    [markFlowStepCompleted, moveToFlowStep],
   );
 
   const fetchTimelineState = useCallback(
@@ -628,7 +1054,14 @@ export function ChatbotConversationScreen({
     setIsAiMessageCompleted(false);
     setIsGeneratingReply(false);
     setVisibleSentenceCount(1);
+    setLocalEvidenceAttachments([]);
     turnSequenceRef.current = 2;
+    completedFlowStepsRef.current = new Set();
+    setCompletedFlowSteps([]);
+    setCurrentFlowStep("intake");
+    setIsStepTodoOpen(false);
+    setStepToastMessage(null);
+    stepToastAnim.setValue(0);
 
     if (onRestartFlow) {
       onRestartFlow();
@@ -637,7 +1070,7 @@ export function ChatbotConversationScreen({
 
     resetCase();
     setCurrentAiTurn(INITIAL_AI_TURN);
-  }, [onRestartFlow, resetCase]);
+  }, [onRestartFlow, resetCase, stepToastAnim]);
 
   const handleRequestRouteRecommendation = useCallback(async () => {
     if (isGeneratingReply) {
@@ -647,6 +1080,7 @@ export function ChatbotConversationScreen({
     Keyboard.dismiss();
     setIsInputFocused(false);
     setApiErrorMessage(null);
+    moveToFlowStep("routing");
     setIsGeneratingReply(true);
     setIsAiMessageCompleted(false);
     setVisibleSentenceCount(0);
@@ -659,7 +1093,7 @@ export function ChatbotConversationScreen({
 
       const miniInterface = mapRoutingRecommendationToMiniInterface(recommendation);
       if (!miniInterface) {
-        pushAiTurn("추천 경로를 아직 정리하지 못했어요. 잠시 후 다시 시도해 주세요.", "text", null);
+        pushAiTurn("추천 경로를 아직 준비하지 못했어요. 잠시 후 다시 시도해 주세요.", "text", null);
         return;
       }
 
@@ -670,7 +1104,7 @@ export function ChatbotConversationScreen({
     } finally {
       setIsGeneratingReply(false);
     }
-  }, [ensureCaseId, isGeneratingReply, pushAiTurn, setRoutingRecommendation, traceId]);
+  }, [ensureCaseId, isGeneratingReply, moveToFlowStep, pushAiTurn, setRoutingRecommendation, traceId]);
 
   const handleSend = useCallback(async () => {
     if (isGeneratingReply) {
@@ -715,17 +1149,18 @@ export function ChatbotConversationScreen({
             { traceId },
           );
           applyCaseDetail(confirmedCase);
+          markFlowStepCompleted("routing");
+          moveToFlowStep("evidence");
 
           const routeConfirmedText =
             confirmedCase.status === "ROUTE_CONFIRMED"
-              ? `${selectedRouteOption.label} 경로로 확정했어요.\n이제 증빙 자료를 등록하면 제출 단계로 넘어갈 수 있어요.`
-              : "경로를 반영했어요. 다음 단계를 이어서 진행해 주세요.";
-
-          const checklist = await refreshEvidenceProgress(ensuredCaseId);
+              ? `${selectedRouteOption.label}로 경로를 확정했어요.`
+              : "경로를 반영했어요.";
+          setLocalEvidenceAttachments([]);
           pushAiTurn(
-            `${routeConfirmedText}\n아래 번호를 눌러 간단하게 증거를 준비해 주세요.`,
+            `${routeConfirmedText}\n필요하면 증거를 첨부해 주세요.`,
             "mini",
-            createEvidenceMiniInterface(checklist),
+            createEvidenceMiniInterface(summarizeEvidenceAttachments([])),
           );
           onRouteConfirmed?.();
         } catch (error: unknown) {
@@ -741,60 +1176,7 @@ export function ChatbotConversationScreen({
         if (!selectedPrimary) {
           return;
         }
-
-        setApiErrorMessage(null);
-        setIsGeneratingReply(true);
-        setIsAiMessageCompleted(false);
-        setVisibleSentenceCount(0);
-
-        try {
-          const ensuredCaseId = await ensureCaseId();
-
-          if (selectedPrimary.id === EVIDENCE_OPTION_ADD_AUDIO) {
-            await apiClient.registerEvidence(
-              ensuredCaseId,
-              createEvidenceRequest("AUDIO"),
-              { traceId },
-            );
-          } else if (selectedPrimary.id === EVIDENCE_OPTION_ADD_LOG) {
-            await apiClient.registerEvidence(
-              ensuredCaseId,
-              createEvidenceRequest("LOG"),
-              { traceId },
-            );
-          }
-
-          const checklist = await refreshEvidenceProgress(ensuredCaseId);
-
-          if (selectedPrimary.id === EVIDENCE_OPTION_NEXT) {
-            if (!checklist.isSufficient) {
-              pushAiTurn(
-                "아직 필요한 항목이 있어요. 1번과 2번으로 준비를 완료해 주세요.",
-                "mini",
-                createEvidenceMiniInterface(checklist),
-              );
-            } else {
-              pushAiTurn(
-                "증거 준비가 완료됐어요.\n이제 다음 진행 방식을 선택해 주세요.",
-                "mini",
-                createMediationMiniInterface(),
-              );
-            }
-          } else {
-            pushAiTurn(
-              checklist.isSufficient
-                ? "좋아요. 증거가 충분합니다.\n4번을 누르면 다음 단계로 이동할 수 있어요."
-                : "확인했어요. 아직 필요한 항목이 있으면 계속 선택해 주세요.",
-              "mini",
-              createEvidenceMiniInterface(checklist),
-            );
-          }
-        } catch (error: unknown) {
-          setApiErrorMessage(toKoreanErrorMessage(error));
-          pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
-        } finally {
-          setIsGeneratingReply(false);
-        }
+        await handleEvidenceMiniOptionDirect(selectedPrimary);
         return;
       }
 
@@ -805,8 +1187,10 @@ export function ChatbotConversationScreen({
 
         if (selectedPrimary.id === MEDIATION_OPTION_TRY_FIRST) {
           setMediationDecision("TRY_MEDIATION_FIRST");
+          markFlowStepCompleted("mediation");
+          moveToFlowStep("submission");
           pushAiTurn(
-            "조정을 먼저 시도하는 방향으로 선택했어요.\n필요하면 바로 정식 제출도 가능합니다.",
+            "조정 먼저 시도를 선택했어요. 필요하면 바로 제출도 가능해요.",
             "mini",
             createSubmissionMiniInterface(),
           );
@@ -814,8 +1198,10 @@ export function ChatbotConversationScreen({
         }
 
         setMediationDecision("PROCEED_FORMAL_SUBMISSION");
+        markFlowStepCompleted("mediation");
+        moveToFlowStep("submission");
         pushAiTurn(
-          "정식 제출 진행을 선택했어요.\n제출 방식을 골라주세요.",
+          "정식 제출을 선택했어요. 제출 방식을 골라주세요.",
           "mini",
           createSubmissionMiniInterface(),
         );
@@ -850,6 +1236,8 @@ export function ChatbotConversationScreen({
             },
           );
           setSubmissionResponse(response);
+          markFlowStepCompleted("submission");
+          moveToFlowStep("tracking");
 
           const detail = await apiClient.getCase(ensuredCaseId, { traceId });
           applyCaseDetail(detail);
@@ -858,8 +1246,11 @@ export function ChatbotConversationScreen({
           const completedEvent = timeline.find((event) => event.eventType === TIMELINE_COMPLETED_EVENT);
 
           if (completedEvent) {
+            markFlowStepCompleted("tracking");
+            markFlowStepCompleted("completion");
+            moveToFlowStep("completion");
             pushAiTurn(
-              "접수가 완료되어 최종 처리까지 끝났어요.",
+              "제출과 처리가 모두 완료됐어요.",
               "mini",
               createCompletionMiniInterface(),
             );
@@ -875,7 +1266,7 @@ export function ChatbotConversationScreen({
           setApiErrorMessage(toKoreanErrorMessage(error));
           if (code === "INSTITUTION_GATEWAY_ERROR" && submissionChannel === "MCP_API") {
             pushAiTurn(
-              "기관 연동이 잠시 지연되고 있어요.\n2번 수동 제출을 선택해 진행해 주세요.",
+              "기관 연동이 지연돼요. 수동 제출을 선택해 주세요.",
               "mini",
               createSubmissionMiniInterface(true),
             );
@@ -905,12 +1296,16 @@ export function ChatbotConversationScreen({
 
         try {
           const ensuredCaseId = await ensureCaseId();
+          moveToFlowStep("tracking");
           const timeline = await fetchTimelineState(ensuredCaseId);
           const completedEvent = timeline.find((event) => event.eventType === TIMELINE_COMPLETED_EVENT);
 
           if (completedEvent) {
+            markFlowStepCompleted("tracking");
+            markFlowStepCompleted("completion");
+            moveToFlowStep("completion");
             pushAiTurn(
-              "민원 처리가 완료됐어요.\n확인 후 처음으로 돌아갈 수 있습니다.",
+              "민원 처리가 완료됐어요.",
               "mini",
               createCompletionMiniInterface(),
             );
@@ -918,7 +1313,7 @@ export function ChatbotConversationScreen({
             const latestEvent = timeline[timeline.length - 1];
             pushAiTurn(
               latestEvent
-                ? `아직 처리 진행 중이에요.\n최근 상태: ${latestEvent.title}`
+                ? `진행 중이에요. 현재 상태: ${compactAiText(latestEvent.title)}`
                 : "아직 등록된 진행 이벤트가 없어요. 잠시 후 다시 확인해 주세요.",
               "mini",
               createTimelineMiniInterface(latestEvent),
@@ -954,6 +1349,7 @@ export function ChatbotConversationScreen({
 
       try {
         const intakeResponse = await sendMessageToApi(userMessage);
+        syncFlowWithStatus(intakeResponse.status);
         const aiText = resolveAiTurnText(intakeResponse);
         const nextMiniInterface = mapApiFollowUpInterface(intakeResponse.followUpInterface, aiText);
         pushAiTurn(aiText, nextMiniInterface ? "mini" : "text", nextMiniInterface);
@@ -989,6 +1385,7 @@ export function ChatbotConversationScreen({
 
     try {
       const intakeResponse = await sendMessageToApi(trimmed);
+      syncFlowWithStatus(intakeResponse.status);
       const aiText = resolveAiTurnText(intakeResponse);
       const nextMiniInterface = mapApiFollowUpInterface(intakeResponse.followUpInterface, aiText);
       pushAiTurn(aiText, nextMiniInterface ? "mini" : "text", nextMiniInterface);
@@ -1004,16 +1401,19 @@ export function ChatbotConversationScreen({
     draft,
     ensureCaseId,
     fetchTimelineState,
+    handleEvidenceMiniOptionDirect,
     isGeneratingReply,
+    markFlowStepCompleted,
     miniContext,
+    moveToFlowStep,
     onRouteConfirmed,
     pushAiTurn,
-    refreshEvidenceProgress,
     restartFromChat,
     selectedMiniOptionIds,
     sendMessageToApi,
     setMediationDecision,
     setSubmissionResponse,
+    syncFlowWithStatus,
     shouldShowMiniInterface,
     startGeneratingThenRespond,
     setApiErrorMessage,
@@ -1078,9 +1478,9 @@ export function ChatbotConversationScreen({
           ? event.endCoordinates.screenY
           : availableHeight - event.endCoordinates.height;
       const desiredInputBottom = keyboardTop - KEYBOARD_GAP;
-      const currentInputBottom = offsetY + INPUT_ANCHOR_BOTTOM * scale;
+      const currentInputBottom = availableHeight - inputBaseBottom;
       const deltaScreen = desiredInputBottom - currentInputBottom;
-      const target = Math.min(0, deltaScreen / Math.max(scale, 0.01));
+      const target = Math.min(0, deltaScreen);
       const duration = Math.max(16, event.duration ?? 180);
       const easing = keyboardEasingToAnimated(event.easing);
 
@@ -1122,7 +1522,7 @@ export function ChatbotConversationScreen({
       showSubscription.remove();
       hideSubscription.remove();
     };
-  }, [availableHeight, inputKeyboardLift, offsetY, scale]);
+  }, [availableHeight, inputBaseBottom, inputKeyboardLift]);
 
   useEffect(() => {
     const animation = Animated.timing(inputRevealAnim, {
@@ -1146,6 +1546,36 @@ export function ChatbotConversationScreen({
     return () => animation.stop();
   }, [miniInterfaceRevealAnim, shouldShowMiniInterface]);
 
+  useEffect(() => {
+    const animation = Animated.sequence([
+      Animated.timing(stepSubtitleAnim, {
+        toValue: 0.25,
+        duration: 100,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(stepSubtitleAnim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [currentFlowStep, stepSubtitleAnim]);
+
+  useEffect(() => {
+    const animation = Animated.timing(stepTodoRevealAnim, {
+      toValue: isStepTodoOpen ? 1 : 0,
+      duration: isStepTodoOpen ? 240 : 160,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [isStepTodoOpen, stepTodoRevealAnim]);
+
   const inputStateTranslateY = inputRevealAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [6, 0],
@@ -1168,12 +1598,12 @@ export function ChatbotConversationScreen({
 
   const inputBorderColor = inputFocusAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["#cbd5e1", "#60a5fa"],
+    outputRange: ["#f3f4f6", "#dbe4eb"],
   });
 
   const inputBackgroundColor = inputFocusAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["#ffffff", "#f8fbff"],
+    outputRange: ["#ffffff", "#ffffff"],
   });
 
   const inputScale = inputFocusAnim.interpolate({
@@ -1193,30 +1623,46 @@ export function ChatbotConversationScreen({
   const miniInterfaceMotionY = Animated.add(inputTranslateY, miniInterfaceTranslateY);
 
   const hasSelectedMiniOptions = selectedMiniOptionIds.length > 0;
-  const isSendDisabled = isGeneratingReply || (shouldShowMiniInterface ? !hasSelectedMiniOptions : !draft.trim());
-  const sendIcon = shouldShowMiniInterface ? "↗" : ">";
+  const isEvidenceMiniInterface = shouldShowMiniInterface && miniContext === "evidence";
+  const isSendDisabled = isGeneratingReply ||
+    (shouldShowMiniInterface ? (isEvidenceMiniInterface ? true : !hasSelectedMiniOptions) : !draft.trim());
+  const sendIcon = shouldShowMiniInterface ? "↗" : "›";
   const miniSelectionHint =
     currentMiniInterface?.selectionHint ??
     (currentMiniSelectionMode === "multiple" ? "복수 선택 가능" : "단일 선택");
+  const miniCardWidth = "100%";
+  const hasAudioAttachment = evidenceSummary.audioCount > 0;
+  const hasLogAttachment = evidenceSummary.logCount > 0;
+  const evidenceActionLabel = evidenceSummary.totalCount > 0 ? "선택 완료" : "건너뛰기";
+  const evidenceStatusText =
+    evidenceSummary.totalCount > 0
+      ? `첨부 ${evidenceSummary.totalCount}건 · 파일 탭으로 해제 가능`
+      : "아직 첨부한 파일이 없어요.";
   const inputPlaceholder = isGeneratingReply
     ? "답변을 준비하는 중입니다..."
     : shouldShowMiniInterface
-      ? miniContext === "routing"
-        ? "위 항목에서 접수 경로를 선택해 주세요."
-        : miniContext === "evidence"
-          ? "위 항목에서 필요한 증거 항목을 선택해 주세요."
-          : miniContext === "mediation"
-            ? "진행 방식을 하나 선택해 주세요."
-            : miniContext === "submission"
-              ? "제출 방식을 하나 선택해 주세요."
-              : miniContext === "timeline"
-                ? "진행 상태 확인 방법을 선택해 주세요."
-                : miniContext === "completion"
-                  ? "처음으로 돌아가기 버튼을 선택해 주세요."
-                  : currentMiniSelectionMode === "multiple"
-                    ? "위 항목에서 해당되는 내용을 모두 선택해 주세요."
-                    : "위 항목에서 가장 가까운 내용을 선택해 주세요."
+      ? (isEvidenceMiniInterface ? "카드를 눌러 첨부하거나 다음 단계로 이동하세요." : "항목을 선택해 주세요.")
       : "답변 입력 또는 음성으로 말하기";
+  const backButtonScale = backButtonPressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.97],
+  });
+  const backButtonIconOpacity = backButtonPressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.92],
+  });
+  const backButtonIconScale = backButtonPressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.94],
+  });
+  const backButtonCircleOpacity = backButtonPressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+  const backButtonCircleScale = backButtonPressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.86, 1],
+  });
 
   return (
     <Pressable style={styles.safeArea} onPress={dismissKeyboard}>
@@ -1224,39 +1670,67 @@ export function ChatbotConversationScreen({
         style={[
           styles.frame,
           {
-            left: offsetX,
-            top: offsetY,
-            transform: [{ scale }],
+            width: availableWidth,
+            height: availableHeight,
           },
         ]}
       >
-        <Pressable
-          onPress={onBack}
-          style={({ pressed }) => [
+        <Animated.View
+          style={[
             styles.backButton,
             {
-              left: 20,
-              top: 24 + topInsetOffset,
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              borderWidth: 1,
-              opacity: pressed ? 0.6 : 1,
+              left: 16,
+              top: 17 + topInsetOffset,
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              transform: [{ scale: backButtonScale }],
             },
           ]}
         >
-          <Text style={[styles.backIcon, { fontSize: 30, lineHeight: 34 }]}>{"‹"}</Text>
-        </Pressable>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.backButtonCircle,
+              {
+                opacity: backButtonCircleOpacity,
+                transform: [{ scale: backButtonCircleScale }],
+              },
+            ]}
+          />
+          <Pressable
+            onPress={handleBackPress}
+            onPressIn={handleBackPressIn}
+            onPressOut={handleBackPressOut}
+            hitSlop={12}
+            style={styles.backButtonHit}
+          >
+            <Animated.Text
+              style={[
+                styles.backIcon,
+                {
+                  fontSize: 44,
+                  lineHeight: 40,
+                  opacity: backButtonIconOpacity,
+                  transform: [{ scale: backButtonIconScale }],
+                },
+              ]}
+            >
+              {"‹"}
+            </Animated.Text>
+          </Pressable>
+        </Animated.View>
 
         <Text
+          pointerEvents="none"
           style={[
             styles.chatTitle,
             {
-              left: 145,
-              top: 35 + topInsetOffset,
-              width: 104,
+              left: 0,
+              top: 23 + topInsetOffset,
+              width: availableWidth,
               fontSize: 18,
-              lineHeight: 22,
+              lineHeight: 28,
             },
           ]}
         >
@@ -1267,10 +1741,10 @@ export function ChatbotConversationScreen({
           style={[
             styles.topMessageContainer,
             {
-              left: 24,
-              top: 101 + topInsetOffset,
-              width: 341,
-              height: 429,
+              left: horizontalPadding,
+              top: 136 + topInsetOffset,
+              width: contentWidth,
+              height: 420,
             },
           ]}
         >
@@ -1281,7 +1755,7 @@ export function ChatbotConversationScreen({
                 styles.thinkingMessage,
                 {
                   fontSize: 28,
-                  lineHeight: 34,
+                  lineHeight: 38.5,
                 },
               ]}
             />
@@ -1299,7 +1773,7 @@ export function ChatbotConversationScreen({
                   styles.topMessage,
                   {
                     fontSize: 28,
-                    lineHeight: 34,
+                    lineHeight: 38.5,
                     marginBottom: index < visibleSentenceCount - 1 ? 8 : 0,
                   },
                 ]}
@@ -1331,18 +1805,15 @@ export function ChatbotConversationScreen({
             style={({ pressed }) => [
               styles.routeActionCard,
               {
-                left: 24,
-                bottom: 118,
-                width: 345,
-                borderRadius: 18,
+                left: horizontalPadding,
+                bottom: miniPanelBottom,
+                width: contentWidth,
+                borderRadius: 16,
                 opacity: pressed ? 0.88 : 1,
               },
             ]}
           >
-            <Text style={[styles.routeActionTitle, { fontSize: 16, lineHeight: 20 }]}>추천 경로 확인하기</Text>
-            <Text style={[styles.routeActionSubtitle, { fontSize: 12, lineHeight: 16 }]}>
-              분류된 민원을 바탕으로 접수 채널을 추천해 드릴게요.
-            </Text>
+            <Text style={[styles.routeActionTitle, { fontSize: 16, lineHeight: 24 }]}>추천 경로 확인하기</Text>
           </Pressable>
         ) : null}
 
@@ -1351,47 +1822,216 @@ export function ChatbotConversationScreen({
             style={[
               styles.miniInterfaceWrap,
               {
-                left: 24,
-                bottom: 108,
-                width: 345,
-                borderRadius: 20,
+                left: horizontalPadding,
+                bottom: miniPanelBottom,
+                width: contentWidth,
+                borderRadius: 24,
                 opacity: miniInterfaceRevealAnim,
                 transform: [{ translateY: miniInterfaceMotionY }],
               },
             ]}
           >
-            <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
-              {miniSelectionHint}
-            </Text>
-            {currentMiniOptions.map((option, index) => {
-              const isSelected = selectedMiniOptionIds.includes(option.id);
-              return (
-                <Pressable
-                  key={option.id}
-                  style={({ pressed }) => [
-                    styles.miniOptionButton,
-                    isSelected && styles.miniOptionSelected,
-                    pressed && styles.miniOptionPressed,
+            {miniContext === "evidence" ? (
+              <>
+                <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
+                  {miniSelectionHint}
+                </Text>
+                <Text style={styles.evidenceStatusText}>{evidenceStatusText}</Text>
+
+                <View style={styles.evidenceChecklistBlock}>
+                  <MiniAnimatedPressable
+                    style={[
+                      styles.evidenceChecklistItem,
+                      hasAudioAttachment && styles.evidenceChecklistItemChecked,
+                    ]}
+                    onPress={() =>
+                      void handleEvidenceMiniOptionDirect({
+                        id: EVIDENCE_OPTION_ADD_AUDIO,
+                        label: "녹음 파일 첨부",
+                      })
+                    }
+                  >
+                    <View style={[styles.evidenceCheckCircle, hasAudioAttachment && styles.evidenceCheckCircleChecked]}>
+                      <Text style={[styles.evidenceCheckText, hasAudioAttachment && styles.evidenceCheckTextChecked]}>
+                        {hasAudioAttachment ? "✓" : ""}
+                      </Text>
+                    </View>
+                    <View style={styles.evidenceChecklistLabelWrap}>
+                      <Text
+                        style={[
+                          styles.evidenceChecklistTitle,
+                          hasAudioAttachment && styles.evidenceChecklistTitleChecked,
+                        ]}
+                      >
+                        녹음 파일 첨부
+                      </Text>
+                      <Text
+                        style={[
+                          styles.evidenceChecklistSubtitle,
+                          hasAudioAttachment && styles.evidenceChecklistSubtitleChecked,
+                        ]}
+                      >
+                        {hasAudioAttachment ? `${evidenceSummary.audioCount}건 첨부됨` : "누르면 라이브러리 열기"}
+                      </Text>
+                    </View>
+                  </MiniAnimatedPressable>
+
+                  {audioEvidenceAttachments.length > 0 ? (
+                    <View style={styles.evidenceAttachmentList}>
+                      {audioEvidenceAttachments.map((attachment) => (
+                        <MiniAnimatedPressable
+                          key={attachment.id}
+                          style={styles.evidenceAttachmentItem}
+                          onPress={() => handleRemoveLocalEvidenceAttachment(attachment.id)}
+                        >
+                          <Text style={styles.evidenceAttachmentName} numberOfLines={1}>
+                            {attachment.name}
+                          </Text>
+                          <Text style={styles.evidenceAttachmentRemove}>선택 해제</Text>
+                        </MiniAnimatedPressable>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.evidenceChecklistBlock}>
+                  <MiniAnimatedPressable
+                    style={[
+                      styles.evidenceChecklistItem,
+                      hasLogAttachment && styles.evidenceChecklistItemChecked,
+                    ]}
+                    onPress={() =>
+                      void handleEvidenceMiniOptionDirect({
+                        id: EVIDENCE_OPTION_ADD_LOG,
+                        label: "소음 일지 첨부",
+                      })
+                    }
+                  >
+                    <View style={[styles.evidenceCheckCircle, hasLogAttachment && styles.evidenceCheckCircleChecked]}>
+                      <Text style={[styles.evidenceCheckText, hasLogAttachment && styles.evidenceCheckTextChecked]}>
+                        {hasLogAttachment ? "✓" : ""}
+                      </Text>
+                    </View>
+                    <View style={styles.evidenceChecklistLabelWrap}>
+                      <Text
+                        style={[
+                          styles.evidenceChecklistTitle,
+                          hasLogAttachment && styles.evidenceChecklistTitleChecked,
+                        ]}
+                      >
+                        소음 일지 첨부
+                      </Text>
+                      <Text
+                        style={[
+                          styles.evidenceChecklistSubtitle,
+                          hasLogAttachment && styles.evidenceChecklistSubtitleChecked,
+                        ]}
+                      >
+                        {hasLogAttachment ? `${evidenceSummary.logCount}건 첨부됨` : "누르면 라이브러리 열기"}
+                      </Text>
+                    </View>
+                  </MiniAnimatedPressable>
+
+                  {logEvidenceAttachments.length > 0 ? (
+                    <View style={styles.evidenceAttachmentList}>
+                      {logEvidenceAttachments.map((attachment) => (
+                        <MiniAnimatedPressable
+                          key={attachment.id}
+                          style={styles.evidenceAttachmentItem}
+                          onPress={() => handleRemoveLocalEvidenceAttachment(attachment.id)}
+                        >
+                          <Text style={styles.evidenceAttachmentName} numberOfLines={1}>
+                            {attachment.name}
+                          </Text>
+                          <Text style={styles.evidenceAttachmentRemove}>선택 해제</Text>
+                        </MiniAnimatedPressable>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+
+                <MiniAnimatedPressable
+                  style={[
+                    styles.evidenceActionButton,
+                    evidenceSummary.totalCount > 0
+                      ? styles.evidenceActionButtonActive
+                      : styles.evidenceActionButtonSkip,
                   ]}
-                  onPress={() => handleMiniOptionPress(option)}
+                  onPress={() =>
+                    void handleEvidenceMiniOptionDirect({
+                      id: EVIDENCE_OPTION_NEXT,
+                      label: evidenceActionLabel,
+                    })
+                  }
                 >
                   <Text
                     style={[
-                      styles.miniOptionText,
-                      isSelected && styles.miniOptionTextSelected,
-                      { fontSize: 16, lineHeight: 20 },
+                      styles.evidenceActionButtonText,
+                      evidenceSummary.totalCount > 0
+                        ? styles.evidenceActionButtonTextActive
+                        : styles.evidenceActionButtonTextSkip,
                     ]}
                   >
-                    {`${index + 1}번 ${option.label}`}
+                    {evidenceActionLabel}
                   </Text>
-                  {option.description ? (
-                    <Text style={[styles.miniOptionDescription, { fontSize: 12, lineHeight: 15 }]}>
-                      {option.description}
-                    </Text>
-                  ) : null}
-                </Pressable>
-              );
-            })}
+                </MiniAnimatedPressable>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
+                  {miniSelectionHint}
+                </Text>
+                <View style={styles.miniCardGrid}>
+                  {currentMiniOptions.map((option, index) => {
+                    const isSelected = selectedMiniOptionIds.includes(option.id);
+                    const appearStart = Math.min(0.7, 0.18 + index * 0.12);
+                    const cardOpacity = miniInterfaceRevealAnim.interpolate({
+                      inputRange: [0, appearStart, 1],
+                      outputRange: [0, 0, 1],
+                      extrapolate: "clamp",
+                    });
+                    const cardTranslateY = miniInterfaceRevealAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [12 + index * 4, 0],
+                      extrapolate: "clamp",
+                    });
+                    const cardScale = miniInterfaceRevealAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.985, 1],
+                      extrapolate: "clamp",
+                    });
+                    return (
+                      <Animated.View
+                        key={option.id}
+                        style={{
+                          width: miniCardWidth,
+                          opacity: cardOpacity,
+                          transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
+                        }}
+                      >
+                        <MiniAnimatedPressable
+                          style={[
+                            styles.miniTaskCard,
+                            isSelected && styles.miniTaskCardSelected,
+                          ]}
+                          onPress={() => handleMiniOptionPress(option)}
+                        >
+                          <Text
+                            style={[
+                              styles.miniTaskCardTitle,
+                              isSelected && styles.miniTaskCardTitleSelected,
+                              { fontSize: 16, lineHeight: 24 },
+                            ]}
+                          >
+                            {`${index + 1}번 ${option.label}`}
+                          </Text>
+                        </MiniAnimatedPressable>
+                      </Animated.View>
+                    );
+                  })}
+                </View>
+              </>
+            )}
           </Animated.View>
         ) : null}
 
@@ -1399,16 +2039,16 @@ export function ChatbotConversationScreen({
           style={[
             styles.inputWrap,
             {
-              left: 24,
-              top: 762,
-              width: 341,
-              height: 54,
-              borderRadius: 27,
+              left: horizontalPadding,
+              bottom: inputBaseBottom,
+              width: contentWidth,
+              height: 56,
+              borderRadius: 28,
               borderWidth: 1,
-              paddingLeft: 22.07,
-              paddingRight: 11.04,
-              borderColor: isInputDisabled ? "#dbe4ef" : inputBorderColor,
-              backgroundColor: isInputDisabled ? "#f8fafc" : inputBackgroundColor,
+              paddingLeft: 24,
+              paddingRight: 8,
+              borderColor: isInputDisabled ? "#f3f4f6" : inputBorderColor,
+              backgroundColor: isInputDisabled ? "#f9fafb" : inputBackgroundColor,
               opacity: inputStateOpacity,
               transform: [{ translateY: inputTranslateY }, { scale: inputScale }, { scale: inputStateScale }],
             },
@@ -1419,13 +2059,13 @@ export function ChatbotConversationScreen({
               styles.input,
               isInputDisabled && styles.inputDisabled,
               {
-                fontSize: 14,
-                lineHeight: 17,
-                marginRight: 8,
+                fontSize: 16,
+                lineHeight: 20,
+                marginRight: 6,
               },
             ]}
             placeholder={inputPlaceholder}
-            placeholderTextColor={isInputDisabled ? "#a3afbf" : "#94a3b8"}
+            placeholderTextColor={isInputDisabled ? "#9ca3af" : "#9ca3af"}
             value={draft}
             onChangeText={setDraft}
             onSubmitEditing={handleSend}
@@ -1433,13 +2073,14 @@ export function ChatbotConversationScreen({
             onBlur={() => setIsInputFocused(false)}
             returnKeyType="send"
             editable={!isInputDisabled}
+            allowFontScaling={false}
           />
           <Pressable
             style={({ pressed }) => [
               styles.sendButton,
               {
-                width: 39.73,
-                height: 36,
+                width: 40,
+                height: 40,
               },
               isSendDisabled && styles.sendButtonDisabled,
               pressed && !isSendDisabled && styles.sendButtonPressed,
@@ -1451,9 +2092,10 @@ export function ChatbotConversationScreen({
               style={[
                 styles.sendText,
                 shouldShowMiniInterface
-                  ? { fontSize: 15, lineHeight: 18 }
-                  : { fontSize: 16, lineHeight: 19 },
+                  ? { fontSize: 20, lineHeight: 22 }
+                  : { fontSize: 26, lineHeight: 28 },
               ]}
+              allowFontScaling={false}
             >
               {sendIcon}
             </Text>
@@ -1470,39 +2112,137 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
   },
   frame: {
-    position: "absolute",
-    width: BASE_WIDTH,
-    height: BASE_HEIGHT,
+    position: "relative",
     backgroundColor: "#ffffff",
     overflow: "hidden",
   },
   backButton: {
     position: "absolute",
-    borderColor: "#d7deea",
+    zIndex: 20,
+  },
+  backButtonCircle: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#e5edf4",
     backgroundColor: "#ffffff",
+    shadowColor: "#111827",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
+  backButtonHit: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
   backIcon: {
-    color: "#334155",
-    fontWeight: "600",
+    color: "#1f2937",
+    fontWeight: "400",
   },
   chatTitle: {
     position: "absolute",
-    color: "#0f172a",
+    color: "#111827",
     fontWeight: "700",
     textAlign: "center",
+  },
+  stepSubtitleWrap: {
+    position: "absolute",
+    left: 0,
+    width: BASE_WIDTH,
+    alignItems: "center",
+  },
+  stepSubtitleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    backgroundColor: "#f8fbff",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  stepSubtitleText: {
+    color: "#1d4ed8",
+    fontWeight: "700",
+  },
+  stepSubtitleAction: {
+    color: "#64748b",
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  stepTodoPanel: {
+    position: "absolute",
+    left: 72,
+    width: 249,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  stepTodoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 2,
+  },
+  stepTodoDot: {
+    width: 14,
+    color: "#94a3b8",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  stepTodoDotDone: {
+    color: "#2563eb",
+  },
+  stepTodoDotCurrent: {
+    color: "#0f172a",
+  },
+  stepTodoText: {
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
+    marginLeft: 6,
+  },
+  stepTodoTextDone: {
+    color: "#2563eb",
+  },
+  stepTodoTextCurrent: {
+    color: "#0f172a",
   },
   topMessageContainer: {
     position: "absolute",
   },
   topMessage: {
-    color: "#2589ff",
-    fontWeight: "400",
+    color: "#2d5d7b",
+    fontWeight: "500",
   },
   thinkingMessage: {
     color: "#9ca3af",
     fontWeight: "500",
+  },
+  stepToast: {
+    position: "absolute",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  stepToastText: {
+    color: "#1d4ed8",
+    fontWeight: "700",
+    textAlign: "center",
   },
   apiErrorText: {
     position: "absolute",
@@ -1512,14 +2252,20 @@ const styles = StyleSheet.create({
   routeActionCard: {
     position: "absolute",
     borderWidth: 1,
-    borderColor: "#bfdbfe",
-    backgroundColor: "#f8fbff",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderColor: "#eaf1f5",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    justifyContent: "center",
+    shadowColor: "#111827",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
   },
   routeActionTitle: {
-    color: "#1d4ed8",
-    fontWeight: "700",
+    color: "#1f2937",
+    fontWeight: "500",
   },
   routeActionSubtitle: {
     color: "#475569",
@@ -1528,87 +2274,250 @@ const styles = StyleSheet.create({
   },
   inputWrap: {
     position: "absolute",
-    borderColor: "#cbd5e1",
+    borderColor: "#f3f4f6",
     backgroundColor: "#ffffff",
     flexDirection: "row",
     alignItems: "center",
+    shadowColor: "#111827",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
   input: {
     flex: 1,
-    color: "#0f172a",
-    fontWeight: "500",
+    color: "#374151",
+    fontWeight: "400",
   },
   inputDisabled: {
-    color: "#94a3b8",
+    color: "#9ca3af",
   },
   sendButton: {
     borderRadius: 999,
-    backgroundColor: "#1d4ed8",
+    backgroundColor: "#2d5d7b",
     alignItems: "center",
     justifyContent: "center",
   },
   sendButtonDisabled: {
-    backgroundColor: "#bfd0f5",
+    backgroundColor: "#cddae2",
   },
   sendButtonPressed: {
-    backgroundColor: "#1e40af",
+    backgroundColor: "#264f68",
   },
   sendText: {
     color: "#ffffff",
-    fontWeight: "700",
+    fontWeight: "500",
   },
   miniInterfaceWrap: {
     position: "absolute",
     borderWidth: 1,
-    borderColor: "#bfdbfe",
-    backgroundColor: "#f8fbff",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  miniInterfaceTitle: {
-    color: "#1e40af",
-    fontWeight: "700",
-  },
-  miniInterfaceSubtitle: {
-    marginTop: 4,
-    color: "#64748b",
-    fontWeight: "500",
-  },
-  miniOptionButton: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#dbeafe",
+    borderColor: "#eaf1f5",
     backgroundColor: "#ffffff",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginVertical: 5,
-    minHeight: 52,
-    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    shadowColor: "#111827",
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
   },
   miniSelectionHint: {
     color: "#9ca3af",
     fontWeight: "500",
-    marginBottom: 4,
-    marginLeft: 4,
+    marginBottom: 8,
+    marginLeft: 2,
   },
-  miniOptionSelected: {
-    borderColor: "#93c5fd",
-    backgroundColor: "#eaf2ff",
+  evidenceStatusText: {
+    color: "#9ca3af",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "500",
+    marginBottom: 8,
+    marginLeft: 2,
   },
-  miniOptionPressed: {
-    opacity: 0.72,
+  evidenceChecklistItem: {
+    marginTop: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#f3f4f6",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
   },
-  miniOptionText: {
-    color: "#1e293b",
-    fontWeight: "600",
+  evidenceChecklistBlock: {
+    marginTop: 2,
   },
-  miniOptionTextSelected: {
-    color: "#1d4ed8",
+  evidenceChecklistItemChecked: {
+    borderColor: "#2d5d7b",
+    borderWidth: 2,
+    backgroundColor: "#f4f9fc",
+  },
+  evidenceCheckCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+  },
+  evidenceCheckCircleChecked: {
+    borderColor: "#2d5d7b",
+    backgroundColor: "#2d5d7b",
+  },
+  evidenceCheckText: {
+    color: "#ffffff",
+    fontSize: 12,
+    lineHeight: 12,
     fontWeight: "700",
   },
-  miniOptionDescription: {
+  evidenceCheckTextChecked: {
+    color: "#ffffff",
+  },
+  evidenceChecklistLabelWrap: {
+    marginLeft: 10,
+    flex: 1,
+  },
+  evidenceChecklistTitle: {
+    color: "#1f2937",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  evidenceChecklistTitleChecked: {
+    color: "#2d5d7b",
+    fontWeight: "700",
+  },
+  evidenceChecklistSubtitle: {
+    color: "#9ca3af",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  evidenceChecklistSubtitleChecked: {
+    color: "#2d5d7b",
+    fontWeight: "600",
+  },
+  evidenceAttachmentList: {
+    marginTop: 6,
+    marginLeft: 8,
+    marginRight: 8,
+  },
+  evidenceAttachmentItem: {
+    minHeight: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#ffffff",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+    marginTop: 6,
+  },
+  evidenceAttachmentName: {
+    flex: 1,
+    color: "#475569",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "500",
+    marginRight: 10,
+  },
+  evidenceAttachmentRemove: {
+    color: "#2d5d7b",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  evidenceActionButton: {
+    marginTop: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  evidenceActionButtonSkip: {
+    borderColor: "#d7dee6",
+    backgroundColor: "#ffffff",
+  },
+  evidenceActionButtonActive: {
+    borderColor: "#2d5d7b",
+    backgroundColor: "#2d5d7b",
+  },
+  evidenceActionButtonPressed: {
+    opacity: 0.84,
+  },
+  evidenceActionButtonText: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  evidenceActionButtonTextSkip: {
+    color: "#64748b",
+  },
+  evidenceActionButtonTextActive: {
+    color: "#ffffff",
+  },
+  miniCardGrid: {
+    marginTop: 0,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  miniTaskCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#f3f4f6",
+    backgroundColor: "#ffffff",
+    paddingVertical: 17,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    minHeight: 58,
+    justifyContent: "center",
+    shadowColor: "#111827",
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  miniTaskCardSelected: {
+    borderColor: "#2d5d7b",
+    borderWidth: 2,
+    backgroundColor: "#f4f9fc",
+  },
+  miniTaskCardPressed: {
+    opacity: 0.84,
+  },
+  miniTaskCardBadge: {
+    color: "#64748b",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  miniTaskCardBadgeSelected: {
+    color: "#1d4ed8",
+  },
+  miniTaskCardTitle: {
+    color: "#1f2937",
+    fontWeight: "500",
+  },
+  miniTaskCardTitleSelected: {
+    color: "#2d5d7b",
+    fontWeight: "700",
+  },
+  miniTaskCardDescription: {
     marginTop: 5,
     color: "#64748b",
     fontWeight: "500",
+  },
+  miniTaskCardDescriptionSelected: {
+    color: "#334155",
   },
 });

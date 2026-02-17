@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Animated,
   Easing,
@@ -28,11 +29,14 @@ const BASE_HEIGHT = 852;
 const DEFAULT_TRANSITION_DURATION = 800;
 const BUTTON_TRANSITION_DURATION = DEFAULT_TRANSITION_DURATION;
 const AUTO_ADVANCE_RULES: Partial<Record<number, { delayMs: number; nextStage: number }>> = {
-  1: { delayMs: 1200, nextStage: 2 },
-  2: { delayMs: 1200, nextStage: 3 },
-  5: { delayMs: 3000, nextStage: 8 },
+  3: { delayMs: 1800, nextStage: 4 },
 };
+const DISABLE_CHAT_INTAKE_STAGES = true;
 const DEFAULT_CHAT_PREVIEW = "대화를 시작해 주세요.";
+const START_MOBILE_BG = "#f3f4f6";
+const START_MOBILE_ACCENT = "#2d5d7b";
+const START_MOBILE_TEXT = "#1f2937";
+const START_MOBILE_CAPTION = "#9ca3af";
 
 function toStatusLabel(status: CaseStatus | null): string {
   if (!status) {
@@ -221,6 +225,479 @@ function AbsoluteButton({
   );
 }
 
+function StartMobileBackdrop() {
+  return <Rect x={0} y={0} width={393} height={852} fill={START_MOBILE_BG} />;
+}
+
+function StartMobileCard({
+  x,
+  y,
+  width,
+  height,
+  radius = 32,
+  children,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  radius?: number;
+  children?: ReactNode;
+}) {
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.abs,
+        styles.startCardShadow,
+        {
+          left: x,
+          top: y,
+          width,
+          height,
+          borderRadius: radius,
+          borderWidth: 1,
+          borderColor: "#e5e7eb",
+          backgroundColor: "#f3f4f6",
+          alignItems: "center",
+          justifyContent: "center",
+        },
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
+function StartFrame1Stage({
+  onStartPress,
+  buttonPressed,
+}: {
+  onStartPress: () => void;
+  buttonPressed?: boolean;
+}) {
+  const logoAnim = useRef(new Animated.Value(0)).current;
+  const headingAnim = useRef(new Animated.Value(0)).current;
+  const ctaAnim = useRef(new Animated.Value(0)).current;
+  const [isCtaReady, setIsCtaReady] = useState(false);
+
+  useEffect(() => {
+    logoAnim.setValue(0);
+    headingAnim.setValue(0);
+    ctaAnim.setValue(0);
+    setIsCtaReady(false);
+
+    const logo = Animated.timing(logoAnim, {
+      toValue: 1,
+      duration: 380,
+      delay: 200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    const heading = Animated.timing(headingAnim, {
+      toValue: 1,
+      duration: 360,
+      delay: 620,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    const cta = Animated.timing(ctaAnim, {
+      toValue: 1,
+      duration: 360,
+      delay: 1020,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+
+    const ctaReadyTimer = setTimeout(() => {
+      setIsCtaReady(true);
+    }, 1380);
+
+    const sequence = Animated.parallel([logo, heading, cta]);
+    sequence.start();
+
+    return () => {
+      clearTimeout(ctaReadyTimer);
+      sequence.stop();
+    };
+  }, [ctaAnim, headingAnim, logoAnim]);
+
+  const logoTranslateY = logoAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [12, 0],
+  });
+  const headingTranslateY = headingAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [10, 0],
+  });
+  const ctaTranslateY = ctaAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [10, 0],
+  });
+
+  return (
+    <>
+      <StartMobileBackdrop />
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.abs,
+          {
+            left: 0,
+            top: 0,
+            opacity: logoAnim,
+            transform: [{ translateY: logoTranslateY }],
+          },
+        ]}
+      >
+        <StartMobileCard x={131} y={276} width={128} height={128}>
+          <View style={styles.startCardStack}>
+            <Text style={styles.startGov24Text}>정부24</Text>
+            <Text style={styles.startGov24SubText}>연동</Text>
+          </View>
+        </StartMobileCard>
+      </Animated.View>
+
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.abs,
+          {
+            left: 0,
+            top: 0,
+            opacity: headingAnim,
+            transform: [{ translateY: headingTranslateY }],
+          },
+        ]}
+      >
+        <Label
+          x={90}
+          y={445}
+          width={214}
+          text="신속한 처리, 정부 24"
+          color={START_MOBILE_TEXT}
+          size={24}
+          weight={700}
+          lineHeight={39}
+        />
+      </Animated.View>
+
+      <Animated.View
+        style={[
+          styles.abs,
+          {
+            left: 0,
+            top: 0,
+            opacity: ctaAnim,
+            transform: [{ translateY: ctaTranslateY }],
+          },
+        ]}
+      >
+        <AbsoluteButton
+          x={40}
+          y={678}
+          width={310}
+          height={60}
+          radius={24}
+          fill={START_MOBILE_ACCENT}
+          stroke={START_MOBILE_ACCENT}
+          label="시작하기"
+          labelColor="#ffffff"
+          labelSize={18}
+          labelWeight={700}
+          onPress={onStartPress}
+          pressedFill="#244c65"
+          forcePressed={buttonPressed}
+          disabled={buttonPressed || !isCtaReady}
+        />
+        <Label
+          x={96}
+          y={754}
+          width={199}
+          text="평균 2분 · 언제든 중단 후 이어하기 가능"
+          color={START_MOBILE_CAPTION}
+          size={12}
+          weight={500}
+          lineHeight={16}
+        />
+      </Animated.View>
+    </>
+  );
+}
+
+function StartFrame2Stage({
+  onNext,
+  buttonPressed,
+}: {
+  onNext: () => void;
+  buttonPressed?: boolean;
+}) {
+  return (
+    <>
+      <StartMobileBackdrop />
+      <Label
+        x={118}
+        y={305}
+        width={154}
+        text="정부24 로그인"
+        color={START_MOBILE_ACCENT}
+        size={24}
+        weight={700}
+        lineHeight={32}
+      />
+
+      <Label
+        x={71}
+        y={425}
+        width={248}
+        text={"본인 확인 후 민원 신청을\n이어서 진행합니다."}
+        color={START_MOBILE_TEXT}
+        size={24}
+        weight={700}
+        lineHeight={39}
+      />
+
+      <AbsoluteButton
+        x={40}
+        y={678}
+        width={310}
+        height={60}
+        radius={24}
+        fill={START_MOBILE_ACCENT}
+        stroke={START_MOBILE_ACCENT}
+        label="정부24에서 계속"
+        labelColor="#ffffff"
+        labelSize={18}
+        labelWeight={700}
+        onPress={onNext}
+        pressedFill="#244c65"
+        forcePressed={buttonPressed}
+        disabled={buttonPressed}
+      />
+      <Label
+        x={108}
+        y={754}
+        width={174}
+        text="소요 1~2분 · 암호화된 안전한 인증"
+        color={START_MOBILE_CAPTION}
+        size={12}
+        weight={500}
+        lineHeight={16}
+      />
+    </>
+  );
+}
+
+function AuthenticationLoadingRing() {
+  const spinAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    spinAnim.setValue(0);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(spinAnim, {
+          toValue: 0.4,
+          duration: 1100,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+        Animated.timing(spinAnim, {
+          toValue: 0.7,
+          duration: 580,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+
+    return () => {
+      loop.stop();
+      spinAnim.stopAnimation();
+    };
+  }, [spinAnim]);
+
+  const rotate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["-36deg", "324deg"],
+  });
+
+  return (
+    <View
+      pointerEvents="none"
+      style={styles.loadingRingWrap}
+    >
+      <View style={styles.loadingRingBase} />
+      <Animated.View style={[styles.loadingRingAccent, { transform: [{ rotate }] }]} />
+    </View>
+  );
+}
+
+function StartFrame3Stage() {
+  return (
+    <>
+      <StartMobileBackdrop />
+      <View
+        pointerEvents="none"
+        style={[
+          styles.abs,
+          {
+            left: 167,
+            top: 305,
+          },
+        ]}
+      >
+        <AuthenticationLoadingRing />
+      </View>
+
+      <Label
+        x={122}
+        y={437}
+        width={147}
+        text={"본인 확인\n진행 중입니다."}
+        color={START_MOBILE_TEXT}
+        size={24}
+        weight={700}
+        lineHeight={39}
+      />
+      <Label
+        x={108}
+        y={754}
+        width={174}
+        text="소요 1~2분 · 암호화된 안전한 인증"
+        color={START_MOBILE_CAPTION}
+        size={12}
+        weight={500}
+        lineHeight={16}
+      />
+    </>
+  );
+}
+
+function StartFrame4Stage({
+  onNext,
+  buttonPressed,
+}: {
+  onNext: () => void;
+  buttonPressed?: boolean;
+}) {
+  const badgeAnim = useRef(new Animated.Value(0)).current;
+  const checkAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    badgeAnim.setValue(0);
+    checkAnim.setValue(0);
+
+    const badge = Animated.timing(badgeAnim, {
+      toValue: 1,
+      duration: 360,
+      delay: 140,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    const check = Animated.timing(checkAnim, {
+      toValue: 1,
+      duration: 220,
+      delay: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+
+    const sequence = Animated.parallel([badge, check]);
+    sequence.start();
+    return () => sequence.stop();
+  }, [badgeAnim, checkAnim]);
+
+  const badgeScale = badgeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.72, 1],
+  });
+  const badgeTranslateY = badgeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [8, 0],
+  });
+  const checkTranslateY = checkAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [4, 0],
+  });
+
+  return (
+    <>
+      <StartMobileBackdrop />
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.abs,
+          styles.checkCircle,
+          {
+            left: 169,
+            top: 307,
+            opacity: badgeAnim,
+            transform: [{ scale: badgeScale }, { translateY: badgeTranslateY }],
+          },
+        ]}
+      >
+        <Animated.Text
+          style={[
+            styles.checkIcon,
+            {
+              opacity: checkAnim,
+              transform: [{ translateY: checkTranslateY }],
+            },
+          ]}
+        >
+          ✓
+        </Animated.Text>
+      </Animated.View>
+
+      <Label
+        x={114}
+        y={425}
+        width={162}
+        text={"본인 확인이\n완료되었습니다."}
+        color={START_MOBILE_TEXT}
+        size={24}
+        weight={700}
+        lineHeight={39}
+      />
+
+      <AbsoluteButton
+        x={40}
+        y={678}
+        width={310}
+        height={60}
+        radius={24}
+        fill={START_MOBILE_ACCENT}
+        stroke={START_MOBILE_ACCENT}
+        label="계속하기"
+        labelColor="#ffffff"
+        labelSize={18}
+        labelWeight={700}
+        onPress={onNext}
+        pressedFill="#244c65"
+        forcePressed={buttonPressed}
+        disabled={buttonPressed}
+      />
+      <Label
+        x={122}
+        y={754}
+        width={146}
+        text="민원 신고를 계속 진행합니다."
+        color={START_MOBILE_CAPTION}
+        size={12}
+        weight={500}
+        lineHeight={16}
+      />
+    </>
+  );
+}
+
 function Backdrop({ bgColor }: { bgColor: string }) {
   return (
     <>
@@ -241,368 +718,6 @@ function Backdrop({ bgColor }: { bgColor: string }) {
         radius={999}
         fill="rgba(181, 227, 255, 0.45)"
       />
-    </>
-  );
-}
-
-function GovernmentIconMock() {
-  return (
-    <>
-      <Rect
-        x={145}
-        y={168}
-        width={102}
-        height={102}
-        radius={22}
-        fill="#ffffff"
-        stroke="#d9e2f2"
-      />
-      <Label x={169} y={201} text="정부24" color="#1d4ed8" size={22} weight={700} />
-      <Label x={180} y={229} text="연동" color="#64748b" size={13} weight={600} />
-    </>
-  );
-}
-
-function StartStage({
-  onStartPress,
-  buttonPressed,
-  showHeadline = true,
-  showPrimaryCta = true,
-}: {
-  onStartPress?: () => void;
-  buttonPressed?: boolean;
-  showHeadline?: boolean;
-  showPrimaryCta?: boolean;
-}) {
-  const iconAnim = useRef(new Animated.Value(0)).current;
-  const headlineAnim = useRef(new Animated.Value(showHeadline ? 1 : 0)).current;
-  const ctaAnim = useRef(new Animated.Value(showPrimaryCta ? 1 : 0)).current;
-
-  useEffect(() => {
-    iconAnim.setValue(0);
-    const animation = Animated.timing(iconAnim, {
-      toValue: 1,
-      duration: 520,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [iconAnim]);
-
-  useEffect(() => {
-    if (!showHeadline) {
-      headlineAnim.stopAnimation();
-      headlineAnim.setValue(0);
-      return;
-    }
-
-    headlineAnim.setValue(0);
-    const animation = Animated.timing(headlineAnim, {
-      toValue: 1,
-      duration: 460,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [showHeadline, headlineAnim]);
-
-  useEffect(() => {
-    if (!showPrimaryCta) {
-      ctaAnim.stopAnimation();
-      ctaAnim.setValue(0);
-      return;
-    }
-
-    ctaAnim.setValue(0);
-    const animation = Animated.timing(ctaAnim, {
-      toValue: 1,
-      duration: 460,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [showPrimaryCta, ctaAnim]);
-
-  const iconTranslateY = iconAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [12, 0],
-  });
-
-  const headlineTranslateY = headlineAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [10, 0],
-  });
-
-  const ctaTranslateY = ctaAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [14, 0],
-  });
-
-  return (
-    <>
-      <Backdrop bgColor="#eef7ff" />
-      <Rect
-        x={24}
-        y={114}
-        width={345}
-        height={642}
-        radius={30}
-        fill="rgba(255, 255, 255, 0.94)"
-        stroke="rgba(77, 171, 247, 0.22)"
-      />
-      <Animated.View
-        style={[
-          styles.abs,
-          {
-            left: 0,
-            top: 0,
-            opacity: iconAnim,
-            transform: [{ translateY: iconTranslateY }],
-          },
-        ]}
-      >
-        <GovernmentIconMock />
-      </Animated.View>
-      {showHeadline ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.abs,
-            {
-              left: 0,
-              top: 0,
-              opacity: headlineAnim,
-              transform: [{ translateY: headlineTranslateY }],
-            },
-          ]}
-        >
-          <Label
-            x={88}
-            y={377}
-            text="신속한 처리, "
-            color="#0f172a"
-            size={24}
-            weight={400}
-            lineHeight={42}
-          />
-          <Label
-            x={211}
-            y={377}
-            text="정부 24"
-            color="#0f172a"
-            size={24}
-            weight={400}
-            lineHeight={42}
-          />
-        </Animated.View>
-      ) : null}
-      {showPrimaryCta ? (
-        <Animated.View
-          style={[
-            styles.abs,
-            {
-              left: 0,
-              top: 0,
-              opacity: ctaAnim,
-              transform: [{ translateY: ctaTranslateY }],
-            },
-          ]}
-        >
-          <AbsoluteButton
-            x={42}
-            y={558}
-            width={309}
-            height={58}
-            radius={30}
-            fill="#2589ff"
-            stroke="#1d74ed"
-            label="시작하기"
-            labelColor="#ffffff"
-            labelSize={22}
-            labelWeight={700}
-            onPress={onStartPress}
-            pressedFill="#1d74ed"
-            forcePressed={buttonPressed}
-            disabled={buttonPressed}
-          />
-          <Label
-            x={96}
-            y={634}
-            text="평균 2분 · 언제든 중단 후 이어하기 가능"
-            color="#64748b"
-            size={12}
-            weight={500}
-          />
-        </Animated.View>
-      ) : null}
-    </>
-  );
-}
-
-function BridgeStage({
-  onNext,
-  buttonPressed,
-}: {
-  onNext: () => void;
-  buttonPressed?: boolean;
-}) {
-  return (
-    <>
-      <Backdrop bgColor="#f8fafc" />
-      <Rect x={24} y={114} width={345} height={642} radius={30} fill="#ffffff" stroke="#d9e2f2" />
-
-      <Label x={73} y={242} text="정부24 로그인" color="#0f172a" size={24} weight={700} />
-      <Label
-        x={73}
-        y={294}
-        text="본인 확인 후 민원 신청을 이어서 진행합니다."
-        color="#1e293b"
-        size={16}
-        weight={500}
-      />
-      <Label
-        x={73}
-        y={343}
-        text="소요 1~2분 · 암호화된 안전한 인증"
-        color="#475569"
-        size={14}
-        weight={500}
-      />
-
-      <AbsoluteButton
-        x={42}
-        y={558}
-        width={309}
-        height={58}
-        radius={30}
-        fill="#1d4ed8"
-        stroke="#1d4ed8"
-        label="정부24에서 계속"
-        labelColor="#ffffff"
-        labelSize={22}
-        labelWeight={700}
-        onPress={onNext}
-        pressedFill="#1e40af"
-        forcePressed={buttonPressed}
-        disabled={buttonPressed}
-      />
-      <Label x={181} y={637} text="나중에" color="#64748b" size={16} weight={600} />
-    </>
-  );
-}
-
-function CircularLoadingSpinner({ running }: { running: boolean }) {
-  const spin = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!running) {
-      spin.stopAnimation();
-      spin.setValue(0);
-      return;
-    }
-
-    spin.setValue(0);
-
-    const spinLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(spin, {
-          toValue: 0.35,
-          duration: 1400,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-        Animated.timing(spin, {
-          toValue: 0.65,
-          duration: 650,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-        Animated.timing(spin, {
-          toValue: 1,
-          duration: 1400,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-
-    spinLoop.start();
-
-    return () => {
-      spinLoop.stop();
-      spin.stopAnimation();
-    };
-  }, [running, spin]);
-
-  const rotate = spin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
-
-  return (
-    <View
-      style={[
-        styles.abs,
-        {
-          left: 166,
-          top: 438,
-          width: 60,
-          height: 60,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-      ]}
-    >
-      <View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          width: 58,
-          height: 58,
-          borderRadius: 29,
-          borderWidth: 5,
-          borderColor: "#d6dbe4",
-        }}
-      />
-      <Animated.View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          width: 58,
-          height: 58,
-          borderRadius: 29,
-          borderWidth: 5,
-          borderColor: "transparent",
-          borderTopColor: "#7f8898",
-          borderRightColor: "#7f8898",
-          transform: [{ rotate }],
-        }}
-      />
-    </View>
-  );
-}
-
-function LoadingStage() {
-
-  return (
-    <>
-      <Backdrop bgColor="#f8fafc" />
-      <Rect x={24} y={114} width={345} height={642} radius={30} fill="#ffffff" stroke="#d9e2f2" />
-      <Label
-        x={60}
-        y={236}
-        text="정부24 인증 페이지로 이동 중입니다"
-        color="#0f172a"
-        size={28}
-        weight={700}
-        width={280}
-      />
-      <Label x={102} y={346} text="잠시만 기다려주세요." color="#475569" size={18} weight={500} />
-
-      <CircularLoadingSpinner running />
     </>
   );
 }
@@ -998,33 +1113,34 @@ function renderStage(
   onNext: () => void,
   onStartPress: () => void,
   onBridgePress: () => void,
+  onFinishAuthPress: () => void,
   startButtonPressed: boolean,
   bridgeButtonPressed: boolean,
+  finishAuthButtonPressed: boolean,
 ) {
   switch (stage) {
     case 1:
-      return <StartStage showHeadline={false} showPrimaryCta={false} />;
+      return <StartFrame1Stage onStartPress={onStartPress} buttonPressed={startButtonPressed} />;
     case 2:
-      return <StartStage showPrimaryCta={false} />;
+      return <StartFrame2Stage onNext={onBridgePress} buttonPressed={bridgeButtonPressed} />;
     case 3:
-      return <StartStage onStartPress={onStartPress} buttonPressed={startButtonPressed} />;
+      return <StartFrame3Stage />;
     case 4:
-      return <BridgeStage onNext={onBridgePress} buttonPressed={bridgeButtonPressed} />;
+      return <StartFrame4Stage onNext={onFinishAuthPress} buttonPressed={finishAuthButtonPressed} />;
     case 5:
-      return <LoadingStage />;
     case 6:
     case 7:
-      return <LoadingStage />;
+      return <StartFrame4Stage onNext={onFinishAuthPress} buttonPressed={finishAuthButtonPressed} />;
     case 8:
-      return <ChatIntakeStartStage onNext={onNext} />;
+      return DISABLE_CHAT_INTAKE_STAGES ? null : <ChatIntakeStartStage onNext={onNext} />;
     case 9:
-      return <ChatIntakeConversationStage onNext={onNext} />;
+      return DISABLE_CHAT_INTAKE_STAGES ? null : <ChatIntakeConversationStage onNext={onNext} />;
     case 10:
-      return <ChatIntakeQuestionsStage onNext={onNext} />;
+      return DISABLE_CHAT_INTAKE_STAGES ? null : <ChatIntakeQuestionsStage onNext={onNext} />;
     case 11:
-      return <ChatIntakeEvidenceStage onNext={onNext} />;
+      return DISABLE_CHAT_INTAKE_STAGES ? null : <ChatIntakeEvidenceStage onNext={onNext} />;
     case 12:
-      return <ChatIntakeReviewStage onNext={onNext} />;
+      return DISABLE_CHAT_INTAKE_STAGES ? null : <ChatIntakeReviewStage onNext={onNext} />;
     default:
       return null;
   }
@@ -1034,6 +1150,7 @@ export function ScenarioFlowTestScreen() {
   const [stage, setStage] = useState(1);
   const [startButtonPressed, setStartButtonPressed] = useState(false);
   const [bridgeButtonPressed, setBridgeButtonPressed] = useState(false);
+  const [finishAuthButtonPressed, setFinishAuthButtonPressed] = useState(false);
   const [isConversationListVisible, setIsConversationListVisible] = useState(false);
   const [chatSession, setChatSession] = useState<ConversationListItem>({
     id: "session-current",
@@ -1046,7 +1163,7 @@ export function ScenarioFlowTestScreen() {
   const { resetCase, caseId, status, lastFollowUpQuestion } = useCaseContext();
   const { width, height } = useWindowDimensions();
   const transition = useRef(new Animated.Value(1)).current;
-  const previousStageRef = useRef(1);
+  const conversationListTransition = useRef(new Animated.Value(0)).current;
   const transitionDurationRef = useRef(DEFAULT_TRANSITION_DURATION);
 
   const availableWidth = width;
@@ -1083,17 +1200,16 @@ export function ScenarioFlowTestScreen() {
   }, [stage]);
 
   useEffect(() => {
-    const previousStage = previousStageRef.current;
-    const skipIntroTransition = previousStage <= 3 && stage <= 3;
-    previousStageRef.current = stage;
-
-    if (skipIntroTransition) {
-      transition.stopAnimation();
-      transition.setValue(1);
-      transitionDurationRef.current = DEFAULT_TRANSITION_DURATION;
+    if (!DISABLE_CHAT_INTAKE_STAGES) {
       return;
     }
+    if (stage >= 8 && stage < CHAT_STAGE) {
+      transitionDurationRef.current = BUTTON_TRANSITION_DURATION;
+      setStage(CHAT_STAGE);
+    }
+  }, [stage]);
 
+  useEffect(() => {
     const duration = transitionDurationRef.current;
     transitionDurationRef.current = DEFAULT_TRANSITION_DURATION;
 
@@ -1114,6 +1230,17 @@ export function ScenarioFlowTestScreen() {
       setIsConversationListVisible(false);
     }
   }, [isConversationListVisible, stage]);
+
+  useEffect(() => {
+    const animation = Animated.timing(conversationListTransition, {
+      toValue: isConversationListVisible ? 1 : 0,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [conversationListTransition, isConversationListVisible]);
 
   useEffect(() => {
     setChatSession((prev) => ({
@@ -1148,7 +1275,7 @@ export function ScenarioFlowTestScreen() {
     setTimeout(() => {
       setStartButtonPressed(false);
       transitionDurationRef.current = BUTTON_TRANSITION_DURATION;
-      setStage(4);
+      setStage(2);
     }, 180);
   };
 
@@ -1160,7 +1287,19 @@ export function ScenarioFlowTestScreen() {
     setTimeout(() => {
       setBridgeButtonPressed(false);
       transitionDurationRef.current = BUTTON_TRANSITION_DURATION;
-      setStage(5);
+      setStage(3);
+    }, 180);
+  };
+
+  const handleFinishAuthPress = () => {
+    if (finishAuthButtonPressed) {
+      return;
+    }
+    setFinishAuthButtonPressed(true);
+    setTimeout(() => {
+      setFinishAuthButtonPressed(false);
+      transitionDurationRef.current = BUTTON_TRANSITION_DURATION;
+      setStage(CHAT_STAGE);
     }, 180);
   };
 
@@ -1170,13 +1309,47 @@ export function ScenarioFlowTestScreen() {
   };
 
   if (stage === CHAT_STAGE) {
-    const chatLayerStyle: StyleProp<ViewStyle> = isConversationListVisible
-      ? [styles.chatLayer, styles.chatLayerHidden]
-      : styles.chatLayer;
+    const chatLayerStyle: StyleProp<ViewStyle> = [
+      styles.chatLayer,
+      {
+        opacity: conversationListTransition.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 0.24],
+        }),
+        transform: [
+          {
+            translateX: conversationListTransition.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -18],
+            }),
+          },
+        ],
+      },
+    ];
+    const listLayerStyle: StyleProp<ViewStyle> = [
+      styles.listLayer,
+      {
+        opacity: conversationListTransition,
+        transform: [
+          {
+            translateX: conversationListTransition.interpolate({
+              inputRange: [0, 1],
+              outputRange: [26, 0],
+            }),
+          },
+          {
+            scale: conversationListTransition.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.988, 1],
+            }),
+          },
+        ],
+      },
+    ];
 
     return (
       <View style={styles.chatRoot}>
-        <View pointerEvents={isConversationListVisible ? "none" : "auto"} style={chatLayerStyle}>
+        <Animated.View pointerEvents={isConversationListVisible ? "none" : "auto"} style={chatLayerStyle}>
           <ChatbotConversationScreen
             onBack={() => setIsConversationListVisible(true)}
             onRestartFlow={() => {
@@ -1185,13 +1358,14 @@ export function ScenarioFlowTestScreen() {
               moveToStage(1);
             }}
           />
-        </View>
-        {isConversationListVisible ? (
+        </Animated.View>
+        <Animated.View pointerEvents={isConversationListVisible ? "auto" : "none"} style={listLayerStyle}>
           <ConversationListScreen
             session={chatSession}
+            isVisible={isConversationListVisible}
             onSelectSession={() => setIsConversationListVisible(false)}
           />
-        ) : null}
+        </Animated.View>
       </View>
     );
   }
@@ -1269,8 +1443,10 @@ export function ScenarioFlowTestScreen() {
           handleNext,
           handleStartPress,
           handleBridgePress,
+          handleFinishAuthPress,
           startButtonPressed,
           bridgeButtonPressed,
+          finishAuthButtonPressed,
         )}
       </Animated.View>
     </View>
@@ -1296,13 +1472,83 @@ const styles = StyleSheet.create({
   chatLayer: {
     ...StyleSheet.absoluteFillObject,
   },
-  chatLayerHidden: {
-    opacity: 0,
+  listLayer: {
+    ...StyleSheet.absoluteFillObject,
   },
   abs: {
     position: "absolute",
   },
   absText: {
     position: "absolute",
+  },
+  startCardShadow: {
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 5,
+  },
+  startCardStack: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  startGov24Text: {
+    color: START_MOBILE_ACCENT,
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: "700",
+  },
+  startGov24SubText: {
+    color: START_MOBILE_CAPTION,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  startLoginTitle: {
+    color: START_MOBILE_ACCENT,
+    fontSize: 24,
+    lineHeight: 32,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  loadingRingWrap: {
+    width: 56,
+    height: 56,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingRingBase: {
+    position: "absolute",
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 7,
+    borderColor: "#bfd0da",
+  },
+  loadingRingAccent: {
+    position: "absolute",
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 7,
+    borderColor: "transparent",
+    borderTopColor: START_MOBILE_ACCENT,
+    borderLeftColor: START_MOBILE_ACCENT,
+    transform: [{ rotate: "-36deg" }],
+  },
+  checkCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: START_MOBILE_ACCENT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkIcon: {
+    color: "#ffffff",
+    fontSize: 28,
+    lineHeight: 30,
+    fontWeight: "700",
   },
 });
