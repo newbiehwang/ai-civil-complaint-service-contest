@@ -36,13 +36,13 @@ function buildRecommendation(params: {
 
   if (!evidenceSufficient) {
     return {
-      title: "증거 보강 우선 권고",
-      reason: "필수 증거가 부족하면 제출 단계에서 보완 요청 가능성이 높습니다.",
+      title: "선택 증빙 안내",
+      reason: "증빙 자료는 선택사항입니다. 필요하면 첨부 후 제출할 수 있어요.",
       details: [
-        "AUDIO + LOG를 먼저 충족한 뒤 제출하면 안정적입니다.",
-        "원하면 지금 제출로 바로 진행할 수 있습니다.",
+        "지금 바로 정식 제출을 진행할 수 있습니다.",
+        "필요 시 AUDIO/LOG를 추가 첨부해 설명력을 높일 수 있습니다.",
       ],
-      severity: "warning",
+      severity: "info",
     };
   }
 
@@ -150,7 +150,7 @@ export function MediationSupportScreen({ onNext, onBack }: MediationSupportScree
             <Text style={styles.metaItem}>• 기존 조정 시도: {priorMediation ? "있음" : "없음"}</Text>
             <Text style={styles.metaItem}>• 조정 실패 상태: {mediationFailed ? "감지됨" : "없음"}</Text>
             <Text style={styles.metaItem}>
-              • 증거 충분도: {evidenceSufficient ? "충분" : "부족"}
+              • 증빙 자료: {evidenceSufficient ? "첨부됨 (선택사항)" : "선택 첨부 없음/일부 (선택사항)"}
             </Text>
           </View>
 

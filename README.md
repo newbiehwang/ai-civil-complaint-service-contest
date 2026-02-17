@@ -81,5 +81,5 @@ npm run tokens:build
 - Tests run on in-memory H2 (PostgreSQL mode) via `src/test/resources/application.yml`.
 - Security enforces Bearer JWT on `/api/v1/**`.
 - State transition conflicts are returned as `409 CASE_STATE_CONFLICT`.
-- Submission with insufficient evidence returns `409 EVIDENCE_INSUFFICIENT`.
+- Evidence is optional; submission can proceed without attachments after route confirmation.
 - `Idempotency-Key` is supported for `POST /cases` and `POST /cases/{caseId}/submission`.

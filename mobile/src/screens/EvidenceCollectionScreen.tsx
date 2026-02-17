@@ -145,16 +145,16 @@ export function EvidenceCollectionScreen({ onNext, onBack }: EvidenceCollectionS
   const missingItems = evidenceChecklist?.missingItems ?? [];
   const hasAudio = !missingItems.some((item) => item.includes("AUDIO"));
   const hasLog = !missingItems.some((item) => item.includes("LOG"));
-  const canProceed = Boolean(evidenceChecklist?.isSufficient) && !isSubmitting && !isChecklistLoading;
+  const canProceed = Boolean(caseId) && !isSubmitting && !isChecklistLoading;
 
   const checklistStatusText = useMemo(() => {
     if (isChecklistLoading) {
       return "상태를 확인하는 중이에요...";
     }
     if (evidenceChecklist?.isSufficient) {
-      return "준비 완료! 다음 단계로 이동할 수 있어요.";
+      return "증빙 자료가 첨부되었어요. 바로 다음 단계로 이동할 수 있어요.";
     }
-    return "아직 준비 중이에요. 1번과 2번을 눌러 주세요.";
+    return "증빙 자료는 선택사항이에요. 필요하면 첨부하고 다음 단계로 이동해 주세요.";
   }, [evidenceChecklist?.isSufficient, isChecklistLoading]);
 
   return (
@@ -180,13 +180,13 @@ export function EvidenceCollectionScreen({ onNext, onBack }: EvidenceCollectionS
             <View style={styles.progressRow}>
               <Text style={styles.progressLabel}>녹음 파일</Text>
               <Text style={[styles.progressValue, hasAudio && styles.progressValueDone]}>
-                {hasAudio ? "완료" : "필요"}
+                {hasAudio ? "첨부됨" : "선택"}
               </Text>
             </View>
             <View style={styles.progressRow}>
               <Text style={styles.progressLabel}>소음 일지</Text>
               <Text style={[styles.progressValue, hasLog && styles.progressValueDone]}>
-                {hasLog ? "완료" : "필요"}
+                {hasLog ? "첨부됨" : "선택"}
               </Text>
             </View>
           </View>

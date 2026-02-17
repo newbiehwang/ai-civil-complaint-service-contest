@@ -394,7 +394,7 @@ public class CaseWorkflowService {
             transition(aggregate.caseEntity, ApiModels.CaseStatus.FORMAL_SUBMISSION_READY);
             aggregate.caseEntity.setCurrentActionRequired("SUBMIT_CASE");
         } else {
-            aggregate.caseEntity.setCurrentActionRequired("ADD_MORE_EVIDENCE");
+            aggregate.caseEntity.setCurrentActionRequired("OPTIONAL_EVIDENCE_OR_SUBMIT");
         }
 
         appendTimeline(
@@ -420,21 +420,24 @@ public class CaseWorkflowService {
     public ApiModels.SubmissionResponse submitCase(UUID caseId, ApiModels.SubmitCaseRequest request) {
         CaseAggregate aggregate = loadAggregate(caseId);
 
-        if (aggregate.caseEntity.getStatus() != ApiModels.CaseStatus.FORMAL_SUBMISSION_READY) {
-            ApiModels.CaseStatus currentState = aggregate.caseEntity.getStatus();
-            ApiModels.EvidenceChecklist checklist = computeChecklist(aggregate.evidenceItems);
-            if (isEvidenceCollectionState(currentState) && !checklist.isSufficient()) {
-                throw ApiException.conflict(
-                        "EVIDENCE_INSUFFICIENT",
-                        "Cannot submit until required evidence is collected.",
-                        evidenceInsufficientDetails(currentState, checklist)
-                );
-            }
+        ApiModels.CaseStatus currentState = aggregate.caseEntity.getStatus();
+        if (currentState == ApiModels.CaseStatus.ROUTE_CONFIRMED) {
+            transition(aggregate.caseEntity, ApiModels.CaseStatus.EVIDENCE_COLLECTING);
+            aggregate.caseEntity.setCurrentActionRequired("OPTIONAL_EVIDENCE_OR_SUBMIT");
+            currentState = aggregate.caseEntity.getStatus();
+        }
 
+        if (currentState == ApiModels.CaseStatus.EVIDENCE_COLLECTING) {
+            transition(aggregate.caseEntity, ApiModels.CaseStatus.FORMAL_SUBMISSION_READY);
+            aggregate.caseEntity.setCurrentActionRequired("SUBMIT_CASE");
+            currentState = aggregate.caseEntity.getStatus();
+        }
+
+        if (currentState != ApiModels.CaseStatus.FORMAL_SUBMISSION_READY) {
             throw ApiException.conflict(
                     "CASE_STATE_CONFLICT",
-                    "Cannot submit before evidence becomes sufficient.",
-                    List.of("currentState=" + aggregate.caseEntity.getStatus(), "requiredState=FORMAL_SUBMISSION_READY")
+                    "Cannot submit before route confirmation.",
+                    List.of("currentState=" + currentState, "requiredState=ROUTE_CONFIRMED")
             );
         }
 
@@ -666,27 +669,14 @@ public class CaseWorkflowService {
 
         boolean sufficient = missing.isEmpty();
         String guidance = sufficient
-                ? "증거가 충분합니다. 기관 제출 단계를 진행하세요."
-                : "필수 증거를 추가하면 제출 준비 상태로 전환됩니다.";
+                ? "증거가 준비되었습니다. 바로 제출하거나 추가 첨부할 수 있어요."
+                : "증빙 자료는 선택사항입니다. 필요하면 첨부하고 제출을 진행해 주세요.";
 
         return new ApiModels.EvidenceChecklist(sufficient, missing, guidance);
     }
 
     private String defaultMessage(String message, String fallback) {
         return message == null || message.isBlank() ? fallback : message;
-    }
-
-    private boolean isEvidenceCollectionState(ApiModels.CaseStatus status) {
-        return status == ApiModels.CaseStatus.ROUTE_CONFIRMED
-                || status == ApiModels.CaseStatus.EVIDENCE_COLLECTING;
-    }
-
-    private List<String> evidenceInsufficientDetails(ApiModels.CaseStatus currentState, ApiModels.EvidenceChecklist checklist) {
-        List<String> details = new ArrayList<>();
-        details.add("currentState=" + currentState);
-        details.add("requiredState=FORMAL_SUBMISSION_READY");
-        checklist.missingItems().forEach(item -> details.add("missingItem=" + item));
-        return details;
     }
 
     private boolean shouldFailInstitutionGateway(ApiModels.SubmissionChannel channel) {

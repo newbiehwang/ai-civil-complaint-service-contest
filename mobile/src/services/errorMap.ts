@@ -8,7 +8,6 @@ const ERROR_CODE_TO_MESSAGE: Record<string, string> = {
   CASE_NOT_FOUND: "민원 케이스를 찾을 수 없습니다.",
   CASE_STATE_CONFLICT: "현재 단계에서는 이 요청을 처리할 수 없습니다.",
   ROUTE_OPTION_NOT_FOUND: "선택한 경로 정보를 찾을 수 없습니다.",
-  EVIDENCE_INSUFFICIENT: "증빙 자료가 부족합니다. 안내에 따라 추가해 주세요.",
   INSTITUTION_GATEWAY_ERROR: "기관 연동이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
   INTERNAL_ERROR: "서버 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.",
   NETWORK_ERROR:

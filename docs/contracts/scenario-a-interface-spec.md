@@ -69,7 +69,6 @@ Required error codes (minimum set):
 - `CASE_NOT_FOUND` (404)
 - `CASE_STATE_CONFLICT` (409)
 - `ROUTE_OPTION_NOT_FOUND` (404)
-- `EVIDENCE_INSUFFICIENT` (409)
 - `INSTITUTION_GATEWAY_ERROR` (502/503)
 
 ## 7) Figma Screen to API Mapping

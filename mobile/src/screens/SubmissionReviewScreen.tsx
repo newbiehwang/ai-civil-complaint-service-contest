@@ -109,7 +109,7 @@ export function SubmissionReviewScreen({ onSubmitted, onBack }: SubmissionReview
             <Text style={styles.summaryTitle}>제출 요약</Text>
             <Text style={styles.summaryItem}>• 확정 경로: {selectedRouteLabel}</Text>
             <Text style={styles.summaryItem}>
-              • 증거 충분도: {evidenceChecklist?.isSufficient ? "충분" : "추가 필요"}
+              • 증빙 자료: {evidenceChecklist?.isSufficient ? "첨부됨 (선택사항)" : "선택 첨부 없음/일부 (선택사항)"}
             </Text>
             <Text style={styles.summaryItem}>
               • 제출 상태: {submissionResponse?.submissionStatus ?? "미제출"}

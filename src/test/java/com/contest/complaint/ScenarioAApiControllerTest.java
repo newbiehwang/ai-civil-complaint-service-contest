@@ -187,10 +187,10 @@ class ScenarioAApiControllerTest {
     }
 
     @Test
-    void submitCaseWhenEvidenceIsInsufficientReturnsConflictContractCode() throws Exception {
+    void submitCaseWithInsufficientEvidenceIsAccepted() throws Exception {
         String caseId = prepareCaseWithInsufficientEvidence();
 
-        String response = mockMvc.perform(post("/api/v1/cases/{caseId}/submission", caseId)
+        mockMvc.perform(post("/api/v1/cases/{caseId}/submission", caseId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -199,16 +199,8 @@ class ScenarioAApiControllerTest {
                                   "identityVerified":true
                                 }
                                 """))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("EVIDENCE_INSUFFICIENT"))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
-        JsonNode root = objectMapper.readTree(response);
-        List<String> details = new ArrayList<>();
-        root.path("details").forEach(node -> details.add(node.asText()));
-        assertThat(details).anyMatch(item -> item.contains("missingItem="));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.submissionStatus").value("QUEUED"));
     }
 
     @Test
