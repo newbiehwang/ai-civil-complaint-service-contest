@@ -41,6 +41,16 @@ public final class ApiModels {
         AGENT
     }
 
+    public enum FollowUpInterfaceType {
+        OPTIONS,
+        DATE
+    }
+
+    public enum FollowUpSelectionMode {
+        SINGLE,
+        MULTIPLE
+    }
+
     public enum DecompositionNodeType {
         LIVING_NOISE,
         IMMEDIATE_RISK,
@@ -143,11 +153,25 @@ public final class ApiModels {
     ) {
     }
 
+    public record FollowUpOption(
+            String optionId,
+            String label
+    ) {
+    }
+
+    public record FollowUpInterface(
+            FollowUpInterfaceType interfaceType,
+            FollowUpSelectionMode selectionMode,
+            List<FollowUpOption> options
+    ) {
+    }
+
     public record IntakeUpdateResponse(
             UUID caseId,
             CaseStatus status,
             IntakeSnapshot intake,
-            String recommendedFollowUpQuestion
+            String recommendedFollowUpQuestion,
+            FollowUpInterface followUpInterface
     ) {
     }
 

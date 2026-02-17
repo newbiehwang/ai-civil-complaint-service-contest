@@ -122,6 +122,40 @@ class ScenarioAApiControllerTest {
     }
 
     @Test
+    void appendIntakeMessageReturnsMiniInterfaceHintWhenFollowUpNeedsChoices() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v1/cases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scenarioType":"INTER_FLOOR_NOISE",
+                                  "housingType":"APARTMENT",
+                                  "consentAccepted":true
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String caseId = objectMapper.readTree(createResponse).get("caseId").asText();
+
+        mockMvc.perform(post("/api/v1/cases/{caseId}/intake/messages", caseId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "role":"USER",
+                                  "message":"소음이 거의 매일 반복됩니다."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RECEIVED"))
+                .andExpect(jsonPath("$.recommendedFollowUpQuestion").value("소음이 주로 발생하는 시간대를 알려주세요."))
+                .andExpect(jsonPath("$.followUpInterface.interfaceType").value("OPTIONS"))
+                .andExpect(jsonPath("$.followUpInterface.selectionMode").value("MULTIPLE"))
+                .andExpect(jsonPath("$.followUpInterface.options.length()").value(4));
+    }
+
+    @Test
     void registerEvidenceBeforeRouteConfirmationReturnsConflict() throws Exception {
         String createResponse = mockMvc.perform(post("/api/v1/cases")
                         .contentType(MediaType.APPLICATION_JSON)

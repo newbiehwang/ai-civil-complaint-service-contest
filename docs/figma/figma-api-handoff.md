@@ -22,6 +22,10 @@ Figma 프로토타입의 모든 화면 액션을 API `operationId`와 1:1 매핑
 - Endpoint: `POST /cases/{caseId}/intake/messages`
 - Request example: `frontend/mocks/requests/intake-message.json`
 - Response example: `frontend/mocks/responses/intake-update-response.json`
+- UI hint: `followUpInterface`가 있으면 입력창 대신 미니 인터페이스를 노출
+  - `interfaceType=OPTIONS`일 때만 옵션형 UI 렌더
+  - `selectionMode` (`SINGLE`/`MULTIPLE`) 기반으로 단일/복수 선택 처리
+  - 옵션은 최대 4개 제공
 - Error states: case not found, validation error
 
 3. 경로 추천 화면

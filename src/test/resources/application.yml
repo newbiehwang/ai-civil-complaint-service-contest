@@ -20,5 +20,8 @@ complaint:
     processing-delay-ms: 50
   institution-gateway:
     fail-direct-api: false
+  ai:
+    followup:
+      use-llm: false
   security:
     jwt-secret: test-jwt-secret-key-must-be-32chars

@@ -10,8 +10,15 @@ import {
   View,
 } from "react-native";
 import { ChatbotConversationScreen } from "./ChatbotConversationScreen";
+import { CompletionSummaryScreen } from "./CompletionSummaryScreen";
+import { EvidenceCollectionScreen } from "./EvidenceCollectionScreen";
+import { MediationSupportScreen } from "./MediationSupportScreen";
+import { SubmissionReviewScreen } from "./SubmissionReviewScreen";
+import { TimelineScreen } from "./TimelineScreen";
+import { useCaseContext } from "../store/caseContext";
 
-const FINAL_STAGE = 13;
+const FINAL_STAGE = 18;
+const CHAT_STAGE = 13;
 const BASE_WIDTH = 393;
 const BASE_HEIGHT = 852;
 const DEFAULT_TRANSITION_DURATION = 800;
@@ -985,6 +992,7 @@ export function ScenarioFlowTestScreen() {
   const [stage, setStage] = useState(1);
   const [startButtonPressed, setStartButtonPressed] = useState(false);
   const [bridgeButtonPressed, setBridgeButtonPressed] = useState(false);
+  const { resetCase } = useCaseContext();
   const { width, height } = useWindowDimensions();
   const transition = useRef(new Animated.Value(1)).current;
   const previousStageRef = useRef(1);
@@ -1044,13 +1052,14 @@ export function ScenarioFlowTestScreen() {
 
   const handleNext = () => {
     transitionDurationRef.current = BUTTON_TRANSITION_DURATION;
-    setStage((prev) => Math.min(prev + 1, FINAL_STAGE));
+    setStage((prev) => Math.min(prev + 1, CHAT_STAGE));
   };
 
   const handleStartPress = () => {
     if (startButtonPressed) {
       return;
     }
+    resetCase();
     setStartButtonPressed(true);
     setTimeout(() => {
       setStartButtonPressed(false);
@@ -1071,8 +1080,65 @@ export function ScenarioFlowTestScreen() {
     }, 180);
   };
 
+  const moveToStage = (nextStage: number) => {
+    transitionDurationRef.current = BUTTON_TRANSITION_DURATION;
+    setStage(nextStage);
+  };
+
+  if (stage === CHAT_STAGE) {
+    return (
+      <ChatbotConversationScreen
+        onBack={() => moveToStage(12)}
+        onRouteConfirmed={() => moveToStage(14)}
+      />
+    );
+  }
+
+  if (stage === 14) {
+    return (
+      <EvidenceCollectionScreen
+        onBack={() => moveToStage(13)}
+        onNext={() => moveToStage(15)}
+      />
+    );
+  }
+
+  if (stage === 15) {
+    return (
+      <MediationSupportScreen
+        onBack={() => moveToStage(14)}
+        onNext={() => moveToStage(16)}
+      />
+    );
+  }
+
+  if (stage === 16) {
+    return (
+      <SubmissionReviewScreen
+        onBack={() => moveToStage(15)}
+        onSubmitted={() => moveToStage(17)}
+      />
+    );
+  }
+
+  if (stage === 17) {
+    return (
+      <TimelineScreen
+        onBack={() => moveToStage(16)}
+        onCompleted={() => moveToStage(18)}
+      />
+    );
+  }
+
   if (stage === FINAL_STAGE) {
-    return <ChatbotConversationScreen onBack={() => setStage(12)} />;
+    return (
+      <CompletionSummaryScreen
+        onRestart={() => {
+          resetCase();
+          moveToStage(1);
+        }}
+      />
+    );
   }
 
   return (

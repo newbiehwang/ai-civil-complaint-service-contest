@@ -1,0 +1,22 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap');
+@import './styles/generated/tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color: var(--color-text-primary);
+  font-family: var(--font-family-body);
+  line-height: 1.4;
+  font-weight: var(--font-weight-regular);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100dvh;
+  background:
+    linear-gradient(170deg, #eaf0ff 0%, #f7fafc 38%, #fef6ec 100%),
+    var(--color-surface-canvas);
+}

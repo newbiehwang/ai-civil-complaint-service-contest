@@ -1,0 +1,35 @@
+.primary-button {
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: var(--space-3) var(--space-6);
+  font-family: var(--font-family-body);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-inverse);
+  background: linear-gradient(120deg, var(--color-brand-primary), #3b82f6);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-fast) var(--motion-easing-standard),
+    box-shadow var(--motion-duration-normal) var(--motion-easing-standard),
+    opacity var(--motion-duration-fast) var(--motion-easing-standard);
+}
+
+.primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.primary-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-border-focus) 40%, transparent);
+  outline-offset: 2px;
+}
+
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.primary-button.danger {
+  background: linear-gradient(120deg, var(--color-state-danger), #e64980);
+}

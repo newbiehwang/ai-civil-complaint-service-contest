@@ -2,6 +2,9 @@ package com.contest.complaint.application;
 
 import com.contest.complaint.api.ApiException;
 import com.contest.complaint.api.model.ApiModels;
+import com.contest.complaint.application.intake.IntakeFollowUpAdvisor;
+import com.contest.complaint.application.intake.IntakeFollowUpRequest;
+import com.contest.complaint.application.intake.IntakeFollowUpSuggestion;
 import com.contest.complaint.infrastructure.persistence.entity.CaseEntity;
 import com.contest.complaint.infrastructure.persistence.entity.EvidenceEntity;
 import com.contest.complaint.infrastructure.persistence.entity.TimelineEventEntity;
@@ -59,6 +62,7 @@ public class CaseWorkflowService {
     private final EvidenceEntityRepository evidenceRepository;
     private final TimelineEventEntityRepository timelineRepository;
     private final MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker;
+    private final IntakeFollowUpAdvisor intakeFollowUpAdvisor;
     private final ObjectMapper objectMapper;
     private final boolean mockSubmissionAutoProcessEnabled;
     private final boolean institutionGatewayFailDirectApi;
@@ -68,6 +72,7 @@ public class CaseWorkflowService {
             EvidenceEntityRepository evidenceRepository,
             TimelineEventEntityRepository timelineRepository,
             MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker,
+            IntakeFollowUpAdvisor intakeFollowUpAdvisor,
             ObjectMapper objectMapper,
             @Value("${complaint.mock-submission.auto-process-enabled:true}") boolean mockSubmissionAutoProcessEnabled,
             @Value("${complaint.institution-gateway.fail-direct-api:false}") boolean institutionGatewayFailDirectApi
@@ -76,6 +81,7 @@ public class CaseWorkflowService {
         this.evidenceRepository = evidenceRepository;
         this.timelineRepository = timelineRepository;
         this.mockInstitutionSubmissionWorker = mockInstitutionSubmissionWorker;
+        this.intakeFollowUpAdvisor = intakeFollowUpAdvisor;
         this.objectMapper = objectMapper;
         this.mockSubmissionAutoProcessEnabled = mockSubmissionAutoProcessEnabled;
         this.institutionGatewayFailDirectApi = institutionGatewayFailDirectApi;
@@ -153,13 +159,22 @@ public class CaseWorkflowService {
         persistCase(aggregate);
 
         List<String> missing = missingSlots(aggregate.filledSlots);
-        String followUp = missing.isEmpty() ? null : followUpQuestionFor(missing.getFirst());
+        IntakeFollowUpSuggestion followUpSuggestion = intakeFollowUpAdvisor.suggest(
+                new IntakeFollowUpRequest(
+                        message,
+                        List.copyOf(missing),
+                        Map.copyOf(aggregate.filledSlots),
+                        aggregate.caseEntity.getStatus(),
+                        aggregate.caseEntity.isRiskSignalDetected()
+                )
+        );
 
         return new ApiModels.IntakeUpdateResponse(
                 aggregate.caseEntity.getId(),
                 aggregate.caseEntity.getStatus(),
                 new ApiModels.IntakeSnapshot(REQUIRED_SLOTS, Map.copyOf(aggregate.filledSlots), aggregate.caseEntity.isRiskSignalDetected()),
-                followUp
+                followUpSuggestion.question(),
+                followUpSuggestion.followUpInterface()
         );
     }
 
@@ -584,13 +599,13 @@ public class CaseWorkflowService {
     }
 
     private void extractSlots(Map<String, Object> filledSlots, String message) {
-        if (containsAny(message, "밤", "새벽", "저녁")) {
+        if (containsAny(message, "밤", "새벽", "저녁", "아침", "낮", "오전", "오후")) {
             filledSlots.put("incidentTime", "야간");
         }
-        if (containsAny(message, "매일", "자주", "반복", "매주")) {
+        if (containsAny(message, "매일", "자주", "반복", "매주", "주 ", "회", "가끔", "불규칙")) {
             filledSlots.put("frequency", "반복 발생");
         }
-        if (containsAny(message, "쿵", "발망치", "소음", "끌", "뛰")) {
+        if (containsAny(message, "쿵", "발망치", "소음", "끌", "뛰", "발걸음", "가구", "tv", "음악", "의자")) {
             filledSlots.put("noiseType", "충격/생활 소음");
         }
         if (containsAny(message, "관리사무소", "조정", "중재")) {
@@ -613,8 +628,9 @@ public class CaseWorkflowService {
     }
 
     private static boolean containsAny(String text, String... keywords) {
+        String normalizedText = text.toLowerCase();
         for (String keyword : keywords) {
-            if (text.contains(keyword)) {
+            if (normalizedText.contains(keyword.toLowerCase())) {
                 return true;
             }
         }
@@ -625,15 +641,6 @@ public class CaseWorkflowService {
         return REQUIRED_SLOTS.stream()
                 .filter(slot -> !filledSlots.containsKey(slot))
                 .toList();
-    }
-
-    private String followUpQuestionFor(String slot) {
-        return switch (slot) {
-            case "incidentTime" -> "소음이 주로 발생하는 시간대를 알려주세요.";
-            case "frequency" -> "소음이 얼마나 자주 반복되는지 알려주세요.";
-            case "noiseType" -> "어떤 종류의 소음인지 예시와 함께 알려주세요.";
-            default -> "추가 정보를 입력해 주세요.";
-        };
     }
 
     private double adequacyScore(ApiModels.EvidenceType type) {

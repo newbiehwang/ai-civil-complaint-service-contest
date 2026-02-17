@@ -498,6 +498,39 @@ components:
           $ref: '#/components/schemas/IntakeSnapshot'
         recommendedFollowUpQuestion:
           type: string
+        followUpInterface:
+          $ref: '#/components/schemas/FollowUpInterface'
+
+    FollowUpInterfaceType:
+      type: string
+      enum: [OPTIONS, DATE]
+
+    FollowUpSelectionMode:
+      type: string
+      enum: [SINGLE, MULTIPLE]
+
+    FollowUpOption:
+      type: object
+      required: [optionId, label]
+      properties:
+        optionId:
+          type: string
+        label:
+          type: string
+
+    FollowUpInterface:
+      type: object
+      required: [interfaceType, selectionMode, options]
+      properties:
+        interfaceType:
+          $ref: '#/components/schemas/FollowUpInterfaceType'
+        selectionMode:
+          $ref: '#/components/schemas/FollowUpSelectionMode'
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/FollowUpOption'
+          maxItems: 4
 
     DecompositionNode:
       type: object
