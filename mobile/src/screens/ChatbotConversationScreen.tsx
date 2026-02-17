@@ -22,9 +22,14 @@ import { useCaseContext } from "../store/caseContext";
 import type {
   CaseStatus,
   CreateCaseRequest,
+  EvidenceChecklist,
+  EvidenceType,
   FollowUpInterface,
   IntakeUpdateResponse,
+  RegisterEvidenceRequest,
   RoutingRecommendation,
+  SubmitCaseRequest,
+  TimelineEvent,
 } from "../types/api";
 
 const BASE_WIDTH = 393;
@@ -34,7 +39,14 @@ const KEYBOARD_GAP = 12;
 
 type ResponseInputMode = "text" | "mini";
 type MiniSelectionMode = "single" | "multiple";
-type MiniInterfaceContext = "intake" | "routing";
+type MiniInterfaceContext =
+  | "intake"
+  | "routing"
+  | "evidence"
+  | "mediation"
+  | "submission"
+  | "timeline"
+  | "completion";
 
 type MiniOptionKind = "choice" | "other";
 
@@ -70,6 +82,7 @@ const INITIAL_AI_TURN: AiTurn = {
 type ChatbotConversationScreenProps = {
   onBack?: () => void;
   onRouteConfirmed?: () => void;
+  onRestartFlow?: () => void;
 };
 
 type ThinkingWaveTextProps = {
@@ -79,6 +92,23 @@ type ThinkingWaveTextProps = {
 
 const THINKING_TEXT = "답변을 준비하고 있어요.";
 const REQUEST_ERROR_FALLBACK = "요청 처리 중 문제가 발생했어요. 다시 시도해 주세요.";
+const TIMELINE_COMPLETED_EVENT = "CASE_COMPLETED";
+
+const EVIDENCE_OPTION_ADD_AUDIO = "evidence-add-audio";
+const EVIDENCE_OPTION_ADD_LOG = "evidence-add-log";
+const EVIDENCE_OPTION_REFRESH = "evidence-refresh";
+const EVIDENCE_OPTION_NEXT = "evidence-next";
+
+const MEDIATION_OPTION_TRY_FIRST = "mediation-try-first";
+const MEDIATION_OPTION_PROCEED_SUBMISSION = "mediation-proceed-submission";
+
+const SUBMISSION_OPTION_MCP = "submission-mcp-api";
+const SUBMISSION_OPTION_MANUAL = "submission-manual-pdf";
+
+const TIMELINE_OPTION_REFRESH = "timeline-refresh";
+const TIMELINE_OPTION_RESTART = "timeline-restart";
+
+const COMPLETION_OPTION_RESTART = "completion-restart";
 
 const STATUS_FALLBACK_TEXT: Partial<Record<CaseStatus, string>> = {
   RECEIVED: "내용을 잘 받았어요. 핵심 정보를 더 알려주시면 분류를 진행할게요.",
@@ -177,6 +207,111 @@ function mapRoutingRecommendationToMiniInterface(
     context: "routing",
     selectionHint: "단일 선택",
     options,
+  };
+}
+
+function createEvidenceMiniInterface(checklist: EvidenceChecklist | null): MiniInterfaceConfig {
+  const missing = checklist?.missingItems ?? [];
+  const hasAudio = !missing.some((item) => item.includes("AUDIO"));
+  const hasLog = !missing.some((item) => item.includes("LOG"));
+
+  const prompt = checklist?.isSufficient
+    ? "좋아요. 증거 준비가 끝났어요.\n4번을 눌러 다음 단계로 이동해 주세요."
+    : `증거를 쉽게 준비해볼게요.\n현재 상태: 녹음 파일 ${hasAudio ? "완료" : "필요"}, 소음 일지 ${hasLog ? "완료" : "필요"}`;
+
+  return {
+    prompt,
+    selectionMode: "single",
+    context: "evidence",
+    selectionHint: "단일 선택",
+    options: [
+      { id: EVIDENCE_OPTION_ADD_AUDIO, label: "녹음 파일 추가하기" },
+      { id: EVIDENCE_OPTION_ADD_LOG, label: "소음 일지 추가하기" },
+      { id: EVIDENCE_OPTION_REFRESH, label: "지금 상태 다시 확인" },
+      { id: EVIDENCE_OPTION_NEXT, label: "다음 단계로 이동" },
+    ],
+  };
+}
+
+function createMediationMiniInterface(): MiniInterfaceConfig {
+  return {
+    prompt: "진행 방법을 선택해 주세요.\n어렵게 느껴지면 정식 제출 진행을 눌러도 됩니다.",
+    selectionMode: "single",
+    context: "mediation",
+    selectionHint: "단일 선택",
+    options: [
+      { id: MEDIATION_OPTION_TRY_FIRST, label: "조정 먼저 시도" },
+      { id: MEDIATION_OPTION_PROCEED_SUBMISSION, label: "정식 제출 진행" },
+    ],
+  };
+}
+
+function createSubmissionMiniInterface(hasFallbackHint = false): MiniInterfaceConfig {
+  return {
+    prompt: hasFallbackHint
+      ? "기관 연동이 잠시 지연되고 있어요.\n2번 수동 제출로 진행해 주세요."
+      : "제출 방식을 선택해 주세요.\n(데모에서는 동의/본인확인을 자동으로 처리합니다.)",
+    selectionMode: "single",
+    context: "submission",
+    selectionHint: "단일 선택",
+    options: [
+      { id: SUBMISSION_OPTION_MCP, label: "정부24 연계 제출" },
+      { id: SUBMISSION_OPTION_MANUAL, label: "수동 제출 서식(PDF)" },
+    ],
+  };
+}
+
+function createTimelineMiniInterface(lastEvent?: TimelineEvent): MiniInterfaceConfig {
+  const prompt = lastEvent
+    ? `현재 상태: ${lastEvent.title}\n아래에서 진행 방식을 선택해 주세요.`
+    : "진행 상태를 확인해 볼까요?";
+
+  return {
+    prompt,
+    selectionMode: "single",
+    context: "timeline",
+    selectionHint: "단일 선택",
+    options: [
+      { id: TIMELINE_OPTION_REFRESH, label: "지금 상태 다시 확인" },
+      { id: TIMELINE_OPTION_RESTART, label: "처음으로 돌아가기" },
+    ],
+  };
+}
+
+function createCompletionMiniInterface(): MiniInterfaceConfig {
+  return {
+    prompt: "민원 처리가 완료됐어요.\n처음 화면으로 돌아갈까요?",
+    selectionMode: "single",
+    context: "completion",
+    selectionHint: "단일 선택",
+    options: [{ id: COMPLETION_OPTION_RESTART, label: "처음으로 돌아가기" }],
+  };
+}
+
+function createEvidenceRequest(evidenceType: EvidenceType): RegisterEvidenceRequest {
+  const now = new Date();
+  const timestamp = now.getTime();
+
+  if (evidenceType === "AUDIO") {
+    return {
+      evidenceType,
+      storageKey: `demo/audio/${timestamp}.m4a`,
+      originalFileName: `sample-${timestamp}.m4a`,
+      mimeType: "audio/m4a",
+      sizeBytes: 320_000,
+      capturedAt: now.toISOString(),
+      notes: "chat-mini-interface-audio",
+    };
+  }
+
+  return {
+    evidenceType,
+    storageKey: `demo/log/${timestamp}.json`,
+    originalFileName: `noise-log-${timestamp}.json`,
+    mimeType: "application/json",
+    sizeBytes: 8_192,
+    capturedAt: now.toISOString(),
+    notes: "chat-mini-interface-log",
   };
 }
 
@@ -290,7 +425,11 @@ function keyboardEasingToAnimated(easing?: KeyboardEvent["easing"]) {
   }
 }
 
-export function ChatbotConversationScreen({ onBack, onRouteConfirmed }: ChatbotConversationScreenProps) {
+export function ChatbotConversationScreen({
+  onBack,
+  onRouteConfirmed,
+  onRestartFlow,
+}: ChatbotConversationScreenProps) {
   const [draft, setDraft] = useState("");
   const [selectedMiniOptionIds, setSelectedMiniOptionIds] = useState<string[]>([]);
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -305,8 +444,13 @@ export function ChatbotConversationScreen({ onBack, onRouteConfirmed }: ChatbotC
     traceId,
     applyCaseDetail,
     applyIntakeUpdate,
+    setEvidenceChecklist,
+    setSubmissionResponse,
+    setTimelineEvents,
+    setMediationDecision,
     setCaseFromCreate,
     setRoutingRecommendation,
+    resetCase,
   } = useCaseContext();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -326,7 +470,8 @@ export function ChatbotConversationScreen({ onBack, onRouteConfirmed }: ChatbotC
   const currentMiniInterface = currentAiTurn.miniInterface ?? null;
   const currentMiniOptions = currentMiniInterface?.options ?? [];
   const currentMiniSelectionMode = currentMiniInterface?.selectionMode ?? "single";
-  const isRoutingMiniInterface = currentMiniInterface?.context === "routing";
+  const miniContext = currentMiniInterface?.context ?? null;
+  const isRoutingMiniInterface = miniContext === "routing";
   const isMiniInterfaceMode = currentAiTurn.inputMode === "mini";
   const shouldShowMiniInterface =
     isAiMessageCompleted && !isGeneratingReply && isMiniInterfaceMode && currentMiniOptions.length > 0;
@@ -450,6 +595,50 @@ export function ChatbotConversationScreen({ onBack, onRouteConfirmed }: ChatbotC
     [applyIntakeUpdate, ensureCaseId, traceId],
   );
 
+  const refreshEvidenceProgress = useCallback(
+    async (targetCaseId: string) => {
+      const [checklist, detail] = await Promise.all([
+        apiClient.getEvidenceChecklist(targetCaseId, { traceId }),
+        apiClient.getCase(targetCaseId, { traceId }),
+      ]);
+      setEvidenceChecklist(checklist);
+      applyCaseDetail(detail);
+      return checklist;
+    },
+    [applyCaseDetail, setEvidenceChecklist, traceId],
+  );
+
+  const fetchTimelineState = useCallback(
+    async (targetCaseId: string) => {
+      const timeline = await apiClient.getTimeline(targetCaseId, { traceId });
+      const sorted = [...timeline.events].sort(
+        (a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
+      );
+      setTimelineEvents(sorted);
+      return sorted;
+    },
+    [setTimelineEvents, traceId],
+  );
+
+  const restartFromChat = useCallback(() => {
+    setApiErrorMessage(null);
+    setDraft("");
+    setSelectedMiniOptionIds([]);
+    setIsInputFocused(false);
+    setIsAiMessageCompleted(false);
+    setIsGeneratingReply(false);
+    setVisibleSentenceCount(1);
+    turnSequenceRef.current = 2;
+
+    if (onRestartFlow) {
+      onRestartFlow();
+      return;
+    }
+
+    resetCase();
+    setCurrentAiTurn(INITIAL_AI_TURN);
+  }, [onRestartFlow, resetCase]);
+
   const handleRequestRouteRecommendation = useCallback(async () => {
     if (isGeneratingReply) {
       return;
@@ -500,9 +689,11 @@ export function ChatbotConversationScreen({ onBack, onRouteConfirmed }: ChatbotC
         selectedMiniOptionIds.includes(option.id),
       );
       setSelectedMiniOptionIds([]);
+      const selectedPrimary = selectedOptions[0];
+      const miniContext = currentMiniInterface?.context ?? "intake";
 
-      if (isRoutingMiniInterface) {
-        const selectedRouteOption = selectedOptions[0];
+      if (miniContext === "routing") {
+        const selectedRouteOption = selectedPrimary;
         if (!selectedRouteOption) {
           return;
         }
@@ -530,13 +721,221 @@ export function ChatbotConversationScreen({ onBack, onRouteConfirmed }: ChatbotC
               ? `${selectedRouteOption.label} 경로로 확정했어요.\n이제 증빙 자료를 등록하면 제출 단계로 넘어갈 수 있어요.`
               : "경로를 반영했어요. 다음 단계를 이어서 진행해 주세요.";
 
-          pushAiTurn(routeConfirmedText, "text", null);
+          const checklist = await refreshEvidenceProgress(ensuredCaseId);
+          pushAiTurn(
+            `${routeConfirmedText}\n아래 번호를 눌러 간단하게 증거를 준비해 주세요.`,
+            "mini",
+            createEvidenceMiniInterface(checklist),
+          );
           onRouteConfirmed?.();
         } catch (error: unknown) {
           setApiErrorMessage(toKoreanErrorMessage(error));
           pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
         } finally {
           setIsGeneratingReply(false);
+        }
+        return;
+      }
+
+      if (miniContext === "evidence") {
+        if (!selectedPrimary) {
+          return;
+        }
+
+        setApiErrorMessage(null);
+        setIsGeneratingReply(true);
+        setIsAiMessageCompleted(false);
+        setVisibleSentenceCount(0);
+
+        try {
+          const ensuredCaseId = await ensureCaseId();
+
+          if (selectedPrimary.id === EVIDENCE_OPTION_ADD_AUDIO) {
+            await apiClient.registerEvidence(
+              ensuredCaseId,
+              createEvidenceRequest("AUDIO"),
+              { traceId },
+            );
+          } else if (selectedPrimary.id === EVIDENCE_OPTION_ADD_LOG) {
+            await apiClient.registerEvidence(
+              ensuredCaseId,
+              createEvidenceRequest("LOG"),
+              { traceId },
+            );
+          }
+
+          const checklist = await refreshEvidenceProgress(ensuredCaseId);
+
+          if (selectedPrimary.id === EVIDENCE_OPTION_NEXT) {
+            if (!checklist.isSufficient) {
+              pushAiTurn(
+                "아직 필요한 항목이 있어요. 1번과 2번으로 준비를 완료해 주세요.",
+                "mini",
+                createEvidenceMiniInterface(checklist),
+              );
+            } else {
+              pushAiTurn(
+                "증거 준비가 완료됐어요.\n이제 다음 진행 방식을 선택해 주세요.",
+                "mini",
+                createMediationMiniInterface(),
+              );
+            }
+          } else {
+            pushAiTurn(
+              checklist.isSufficient
+                ? "좋아요. 증거가 충분합니다.\n4번을 누르면 다음 단계로 이동할 수 있어요."
+                : "확인했어요. 아직 필요한 항목이 있으면 계속 선택해 주세요.",
+              "mini",
+              createEvidenceMiniInterface(checklist),
+            );
+          }
+        } catch (error: unknown) {
+          setApiErrorMessage(toKoreanErrorMessage(error));
+          pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
+        } finally {
+          setIsGeneratingReply(false);
+        }
+        return;
+      }
+
+      if (miniContext === "mediation") {
+        if (!selectedPrimary) {
+          return;
+        }
+
+        if (selectedPrimary.id === MEDIATION_OPTION_TRY_FIRST) {
+          setMediationDecision("TRY_MEDIATION_FIRST");
+          pushAiTurn(
+            "조정을 먼저 시도하는 방향으로 선택했어요.\n필요하면 바로 정식 제출도 가능합니다.",
+            "mini",
+            createSubmissionMiniInterface(),
+          );
+          return;
+        }
+
+        setMediationDecision("PROCEED_FORMAL_SUBMISSION");
+        pushAiTurn(
+          "정식 제출 진행을 선택했어요.\n제출 방식을 골라주세요.",
+          "mini",
+          createSubmissionMiniInterface(),
+        );
+        return;
+      }
+
+      if (miniContext === "submission") {
+        if (!selectedPrimary) {
+          return;
+        }
+
+        const submissionChannel: SubmitCaseRequest["submissionChannel"] =
+          selectedPrimary.id === SUBMISSION_OPTION_MANUAL ? "MANUAL_PDF" : "MCP_API";
+
+        setApiErrorMessage(null);
+        setIsGeneratingReply(true);
+        setIsAiMessageCompleted(false);
+        setVisibleSentenceCount(0);
+
+        try {
+          const ensuredCaseId = await ensureCaseId();
+          const response = await apiClient.submitCase(
+            ensuredCaseId,
+            {
+              submissionChannel,
+              userConsent: true,
+              identityVerified: true,
+            },
+            {
+              traceId,
+              idempotencyKey: `chat-submit-${ensuredCaseId}-${submissionChannel}`,
+            },
+          );
+          setSubmissionResponse(response);
+
+          const detail = await apiClient.getCase(ensuredCaseId, { traceId });
+          applyCaseDetail(detail);
+
+          const timeline = await fetchTimelineState(ensuredCaseId);
+          const completedEvent = timeline.find((event) => event.eventType === TIMELINE_COMPLETED_EVENT);
+
+          if (completedEvent) {
+            pushAiTurn(
+              "접수가 완료되어 최종 처리까지 끝났어요.",
+              "mini",
+              createCompletionMiniInterface(),
+            );
+          } else {
+            pushAiTurn(
+              "제출이 접수됐어요. 진행 상태를 확인해 볼까요?",
+              "mini",
+              createTimelineMiniInterface(timeline[timeline.length - 1]),
+            );
+          }
+        } catch (error: unknown) {
+          const code = typeof error === "object" && error !== null ? (error as { code?: string }).code : undefined;
+          setApiErrorMessage(toKoreanErrorMessage(error));
+          if (code === "INSTITUTION_GATEWAY_ERROR" && submissionChannel === "MCP_API") {
+            pushAiTurn(
+              "기관 연동이 잠시 지연되고 있어요.\n2번 수동 제출을 선택해 진행해 주세요.",
+              "mini",
+              createSubmissionMiniInterface(true),
+            );
+          } else {
+            pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
+          }
+        } finally {
+          setIsGeneratingReply(false);
+        }
+        return;
+      }
+
+      if (miniContext === "timeline") {
+        if (!selectedPrimary) {
+          return;
+        }
+
+        if (selectedPrimary.id === TIMELINE_OPTION_RESTART) {
+          restartFromChat();
+          return;
+        }
+
+        setApiErrorMessage(null);
+        setIsGeneratingReply(true);
+        setIsAiMessageCompleted(false);
+        setVisibleSentenceCount(0);
+
+        try {
+          const ensuredCaseId = await ensureCaseId();
+          const timeline = await fetchTimelineState(ensuredCaseId);
+          const completedEvent = timeline.find((event) => event.eventType === TIMELINE_COMPLETED_EVENT);
+
+          if (completedEvent) {
+            pushAiTurn(
+              "민원 처리가 완료됐어요.\n확인 후 처음으로 돌아갈 수 있습니다.",
+              "mini",
+              createCompletionMiniInterface(),
+            );
+          } else {
+            const latestEvent = timeline[timeline.length - 1];
+            pushAiTurn(
+              latestEvent
+                ? `아직 처리 진행 중이에요.\n최근 상태: ${latestEvent.title}`
+                : "아직 등록된 진행 이벤트가 없어요. 잠시 후 다시 확인해 주세요.",
+              "mini",
+              createTimelineMiniInterface(latestEvent),
+            );
+          }
+        } catch (error: unknown) {
+          setApiErrorMessage(toKoreanErrorMessage(error));
+          pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
+        } finally {
+          setIsGeneratingReply(false);
+        }
+        return;
+      }
+
+      if (miniContext === "completion") {
+        if (selectedPrimary?.id === COMPLETION_OPTION_RESTART) {
+          restartFromChat();
         }
         return;
       }
@@ -604,15 +1003,20 @@ export function ChatbotConversationScreen({ onBack, onRouteConfirmed }: ChatbotC
     currentMiniOptions,
     draft,
     ensureCaseId,
-    isRoutingMiniInterface,
+    fetchTimelineState,
     isGeneratingReply,
+    miniContext,
+    onRouteConfirmed,
     pushAiTurn,
+    refreshEvidenceProgress,
+    restartFromChat,
     selectedMiniOptionIds,
     sendMessageToApi,
+    setMediationDecision,
+    setSubmissionResponse,
     shouldShowMiniInterface,
     startGeneratingThenRespond,
     setApiErrorMessage,
-    onRouteConfirmed,
     traceId,
   ]);
 
@@ -797,11 +1201,21 @@ export function ChatbotConversationScreen({ onBack, onRouteConfirmed }: ChatbotC
   const inputPlaceholder = isGeneratingReply
     ? "답변을 준비하는 중입니다..."
     : shouldShowMiniInterface
-      ? isRoutingMiniInterface
+      ? miniContext === "routing"
         ? "위 항목에서 접수 경로를 선택해 주세요."
-        : currentMiniSelectionMode === "multiple"
-        ? "위 항목에서 해당되는 내용을 모두 선택해 주세요."
-        : "위 항목에서 가장 가까운 내용을 선택해 주세요."
+        : miniContext === "evidence"
+          ? "위 항목에서 필요한 증거 항목을 선택해 주세요."
+          : miniContext === "mediation"
+            ? "진행 방식을 하나 선택해 주세요."
+            : miniContext === "submission"
+              ? "제출 방식을 하나 선택해 주세요."
+              : miniContext === "timeline"
+                ? "진행 상태 확인 방법을 선택해 주세요."
+                : miniContext === "completion"
+                  ? "처음으로 돌아가기 버튼을 선택해 주세요."
+                  : currentMiniSelectionMode === "multiple"
+                    ? "위 항목에서 해당되는 내용을 모두 선택해 주세요."
+                    : "위 항목에서 가장 가까운 내용을 선택해 주세요."
       : "답변 입력 또는 음성으로 말하기";
 
   return (

@@ -43,14 +43,43 @@ function createEvidenceRequest(evidenceType: EvidenceType): RegisterEvidenceRequ
   };
 }
 
+function MiniOptionButton({
+  label,
+  onPress,
+  disabled,
+  primary = false,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.miniOptionButton,
+        primary && styles.miniOptionButtonPrimary,
+        disabled && styles.miniOptionButtonDisabled,
+        pressed && !disabled && styles.miniOptionButtonPressed,
+      ]}
+    >
+      <Text
+        style={[
+          styles.miniOptionLabel,
+          primary && styles.miniOptionLabelPrimary,
+          disabled && styles.miniOptionLabelDisabled,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export function EvidenceCollectionScreen({ onNext, onBack }: EvidenceCollectionScreenProps) {
-  const {
-    caseId,
-    traceId,
-    evidenceChecklist,
-    setEvidenceChecklist,
-    applyCaseDetail,
-  } = useCaseContext();
+  const { caseId, traceId, evidenceChecklist, setEvidenceChecklist, applyCaseDetail } = useCaseContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isChecklistLoading, setIsChecklistLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -68,6 +97,7 @@ export function EvidenceCollectionScreen({ onNext, onBack }: EvidenceCollectionS
       ]);
       setEvidenceChecklist(checklist);
       applyCaseDetail(caseDetail);
+      setErrorMessage(null);
     } catch (error: unknown) {
       setErrorMessage(toKoreanErrorMessage(error));
     } finally {
@@ -112,15 +142,19 @@ export function EvidenceCollectionScreen({ onNext, onBack }: EvidenceCollectionS
     }
   };
 
+  const missingItems = evidenceChecklist?.missingItems ?? [];
+  const hasAudio = !missingItems.some((item) => item.includes("AUDIO"));
+  const hasLog = !missingItems.some((item) => item.includes("LOG"));
   const canProceed = Boolean(evidenceChecklist?.isSufficient) && !isSubmitting && !isChecklistLoading;
-  const checklistStateText = useMemo(() => {
+
+  const checklistStatusText = useMemo(() => {
     if (isChecklistLoading) {
-      return "체크리스트를 확인 중입니다...";
+      return "상태를 확인하는 중이에요...";
     }
     if (evidenceChecklist?.isSufficient) {
-      return "증거가 충분합니다. 다음 단계로 진행할 수 있어요.";
+      return "준비 완료! 다음 단계로 이동할 수 있어요.";
     }
-    return "필수 증거를 더 등록해 주세요.";
+    return "아직 준비 중이에요. 1번과 2번을 눌러 주세요.";
   }, [evidenceChecklist?.isSufficient, isChecklistLoading]);
 
   return (
@@ -128,66 +162,66 @@ export function EvidenceCollectionScreen({ onNext, onBack }: EvidenceCollectionS
       <View style={styles.panel}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.stepBadge}>STEP 4 · 증거 수집</Text>
-          <Text style={styles.title}>증거를 추가해 제출 준비를 완료하세요</Text>
+          <Text style={styles.title}>쉽게 증거 준비하기</Text>
           <Text style={styles.subtitle}>
-            데모에서는 샘플 AUDIO, LOG를 각각 등록하고 체크리스트 충족 여부를 확인합니다.
+            어렵게 파일을 고를 필요 없어요. 아래 버튼 1번, 2번만 누르면 데모용 자료가 자동 등록됩니다.
           </Text>
 
           {!caseId ? (
             <View style={styles.warningCard}>
-              <Text style={styles.warningTitle}>케이스 ID가 없습니다.</Text>
-              <Text style={styles.warningBody}>챗봇 단계에서 경로를 먼저 확정해 주세요.</Text>
+              <Text style={styles.warningTitle}>먼저 챗봇에서 경로를 확정해 주세요.</Text>
+              <Text style={styles.warningBody}>케이스가 만들어지면 여기서 바로 이어서 진행됩니다.</Text>
             </View>
           ) : null}
 
-          <View style={styles.buttonRow}>
-            <Pressable
-              onPress={() => handleRegisterEvidence("AUDIO")}
-              disabled={!caseId || isSubmitting}
-              style={({ pressed }) => [
-                styles.actionButton,
-                (!caseId || isSubmitting) && styles.actionButtonDisabled,
-                pressed && caseId && !isSubmitting && styles.actionButtonPressed,
-              ]}
-            >
-              <Text style={styles.actionButtonLabel}>샘플 AUDIO 추가</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => handleRegisterEvidence("LOG")}
-              disabled={!caseId || isSubmitting}
-              style={({ pressed }) => [
-                styles.actionButton,
-                (!caseId || isSubmitting) && styles.actionButtonDisabled,
-                pressed && caseId && !isSubmitting && styles.actionButtonPressed,
-              ]}
-            >
-              <Text style={styles.actionButtonLabel}>샘플 LOG 추가</Text>
-            </Pressable>
+          <View style={styles.progressCard}>
+            <Text style={styles.progressTitle}>현재 준비 상태</Text>
+            <Text style={styles.progressStatus}>{checklistStatusText}</Text>
+            <View style={styles.progressRow}>
+              <Text style={styles.progressLabel}>녹음 파일</Text>
+              <Text style={[styles.progressValue, hasAudio && styles.progressValueDone]}>
+                {hasAudio ? "완료" : "필요"}
+              </Text>
+            </View>
+            <View style={styles.progressRow}>
+              <Text style={styles.progressLabel}>소음 일지</Text>
+              <Text style={[styles.progressValue, hasLog && styles.progressValueDone]}>
+                {hasLog ? "완료" : "필요"}
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.checklistCard}>
-            <Text style={styles.checklistTitle}>증거 충분도</Text>
-            <Text style={[styles.checklistState, evidenceChecklist?.isSufficient && styles.checklistStateReady]}>
-              {checklistStateText}
-            </Text>
-            {evidenceChecklist?.missingItems?.length ? (
-              <View style={styles.missingListWrap}>
-                {evidenceChecklist.missingItems.map((item) => (
-                  <Text key={item} style={styles.missingItemText}>
-                    • {item}
-                  </Text>
-                ))}
-              </View>
-            ) : null}
-            {evidenceChecklist?.guidance ? <Text style={styles.guidance}>{evidenceChecklist.guidance}</Text> : null}
+          <View style={styles.miniWrap}>
+            <Text style={styles.miniHint}>선택형 미니 인터페이스</Text>
+            <MiniOptionButton
+              label="1번 녹음 파일 추가하기"
+              onPress={() => handleRegisterEvidence("AUDIO")}
+              disabled={!caseId || isSubmitting}
+            />
+            <MiniOptionButton
+              label="2번 소음 일지 추가하기"
+              onPress={() => handleRegisterEvidence("LOG")}
+              disabled={!caseId || isSubmitting}
+            />
+            <MiniOptionButton
+              label="3번 지금 상태 다시 확인"
+              onPress={refreshEvidenceState}
+              disabled={!caseId || isSubmitting || isChecklistLoading}
+            />
+            <MiniOptionButton
+              label="4번 다음 단계로 이동"
+              onPress={() => onNext?.()}
+              disabled={!canProceed}
+              primary
+            />
           </View>
 
           <View style={styles.logCard}>
-            <Text style={styles.logTitle}>등록 로그</Text>
+            <Text style={styles.logTitle}>방금 등록한 항목</Text>
             {evidenceLogs.length === 0 ? (
-              <Text style={styles.logEmpty}>아직 등록된 데모 증거가 없습니다.</Text>
+              <Text style={styles.logEmpty}>아직 등록한 항목이 없어요.</Text>
             ) : (
-              evidenceLogs.map((item) => (
+              evidenceLogs.slice(-4).map((item) => (
                 <Text key={item.evidenceId} style={styles.logItem}>
                   • {item.evidenceType} ({new Date(item.uploadedAt).toLocaleTimeString()})
                 </Text>
@@ -199,19 +233,8 @@ export function EvidenceCollectionScreen({ onNext, onBack }: EvidenceCollectionS
         </ScrollView>
 
         <View style={styles.footer}>
-          <Pressable onPress={onBack} style={({ pressed }) => [styles.ghostButton, pressed && styles.ghostButtonPressed]}>
-            <Text style={styles.ghostButtonLabel}>이전</Text>
-          </Pressable>
-          <Pressable
-            onPress={onNext}
-            disabled={!canProceed}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              !canProceed && styles.primaryButtonDisabled,
-              pressed && canProceed && styles.primaryButtonPressed,
-            ]}
-          >
-            <Text style={styles.primaryButtonLabel}>다음: 조정 지원</Text>
+          <Pressable onPress={onBack} style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}>
+            <Text style={styles.backButtonLabel}>이전 단계</Text>
           </Pressable>
         </View>
       </View>
@@ -256,7 +279,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: "#0f172a",
-    fontSize: 23,
+    fontSize: 24,
     lineHeight: 30,
     fontWeight: "700",
   },
@@ -287,32 +310,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "500",
   },
-  buttonRow: {
-    gap: 10,
-  },
-  actionButton: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#1d4ed8",
-    backgroundColor: "#1d4ed8",
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  actionButtonDisabled: {
-    borderColor: "#9cb7ef",
-    backgroundColor: "#9cb7ef",
-  },
-  actionButtonPressed: {
-    backgroundColor: "#1e40af",
-    borderColor: "#1e40af",
-  },
-  actionButtonLabel: {
-    color: "#ffffff",
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "700",
-  },
-  checklistCard: {
+  progressCard: {
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#d9e2f2",
@@ -321,35 +319,85 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 8,
   },
-  checklistTitle: {
+  progressTitle: {
     color: "#1e293b",
     fontSize: 15,
     lineHeight: 20,
     fontWeight: "700",
   },
-  checklistState: {
+  progressStatus: {
     color: "#334155",
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 19,
     fontWeight: "600",
   },
-  checklistStateReady: {
-    color: "#15803d",
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  missingListWrap: {
-    gap: 4,
+  progressLabel: {
+    color: "#334155",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "600",
   },
-  missingItemText: {
+  progressValue: {
     color: "#b91c1c",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "600",
+    fontWeight: "700",
   },
-  guidance: {
-    color: "#64748b",
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "500",
+  progressValueDone: {
+    color: "#15803d",
+  },
+  miniWrap: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#f8fbff",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  miniHint: {
+    color: "#94a3b8",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
+    marginLeft: 4,
+    marginBottom: 2,
+  },
+  miniOptionButton: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    backgroundColor: "#ffffff",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  miniOptionButtonPrimary: {
+    borderColor: "#1d4ed8",
+    backgroundColor: "#1d4ed8",
+  },
+  miniOptionButtonDisabled: {
+    borderColor: "#dbe4ef",
+    backgroundColor: "#f8fafc",
+  },
+  miniOptionButtonPressed: {
+    opacity: 0.78,
+  },
+  miniOptionLabel: {
+    color: "#1e293b",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  miniOptionLabelPrimary: {
+    color: "#ffffff",
+  },
+  miniOptionLabelDisabled: {
+    color: "#94a3b8",
   },
   logCard: {
     borderRadius: 16,
@@ -390,48 +438,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 12,
     paddingBottom: 14,
-    flexDirection: "row",
-    gap: 10,
   },
-  ghostButton: {
-    flex: 1,
+  backButton: {
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "#cbd5e1",
     backgroundColor: "#ffffff",
+    minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 44,
   },
-  ghostButtonPressed: {
+  backButtonPressed: {
     backgroundColor: "#f8fafc",
   },
-  ghostButtonLabel: {
+  backButtonLabel: {
     color: "#475569",
-    fontSize: 15,
-    lineHeight: 19,
-    fontWeight: "700",
-  },
-  primaryButton: {
-    flex: 2,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#1d4ed8",
-    backgroundColor: "#1d4ed8",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 44,
-  },
-  primaryButtonDisabled: {
-    borderColor: "#9cb7ef",
-    backgroundColor: "#9cb7ef",
-  },
-  primaryButtonPressed: {
-    backgroundColor: "#1e40af",
-    borderColor: "#1e40af",
-  },
-  primaryButtonLabel: {
-    color: "#ffffff",
     fontSize: 15,
     lineHeight: 19,
     fontWeight: "700",

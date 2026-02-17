@@ -1179,7 +1179,11 @@ export function ScenarioFlowTestScreen() {
         <View pointerEvents={isConversationListVisible ? "none" : "auto"} style={chatLayerStyle}>
           <ChatbotConversationScreen
             onBack={() => setIsConversationListVisible(true)}
-            onRouteConfirmed={() => moveToStage(14)}
+            onRestartFlow={() => {
+              resetCase();
+              setIsConversationListVisible(false);
+              moveToStage(1);
+            }}
           />
         </View>
         {isConversationListVisible ? (
