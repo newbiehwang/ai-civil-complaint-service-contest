@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { apiClient } from "../services/apiClient";
 import { toKoreanErrorMessage } from "../services/errorMap";
@@ -56,7 +56,7 @@ export function EvidenceCollectionScreen({ onNext, onBack }: EvidenceCollectionS
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [evidenceLogs, setEvidenceLogs] = useState<LocalEvidenceLog[]>([]);
 
-  const refreshEvidenceState = useCallback(async () => {
+  const refreshEvidenceState = async () => {
     if (!caseId) {
       return;
     }
@@ -73,44 +73,44 @@ export function EvidenceCollectionScreen({ onNext, onBack }: EvidenceCollectionS
     } finally {
       setIsChecklistLoading(false);
     }
-  }, [applyCaseDetail, caseId, setEvidenceChecklist, traceId]);
+  };
 
   useEffect(() => {
+    if (!caseId) {
+      return;
+    }
     refreshEvidenceState();
-  }, [refreshEvidenceState]);
+  }, [caseId, traceId]);
 
-  const handleRegisterEvidence = useCallback(
-    async (evidenceType: EvidenceType) => {
-      if (!caseId || isSubmitting) {
-        return;
-      }
+  const handleRegisterEvidence = async (evidenceType: EvidenceType) => {
+    if (!caseId || isSubmitting) {
+      return;
+    }
 
-      setErrorMessage(null);
-      setIsSubmitting(true);
+    setErrorMessage(null);
+    setIsSubmitting(true);
 
-      try {
-        const created = await apiClient.registerEvidence(
-          caseId,
-          createEvidenceRequest(evidenceType),
-          { traceId },
-        );
-        setEvidenceLogs((prev) => [
-          ...prev,
-          {
-            evidenceId: created.evidenceId,
-            evidenceType,
-            uploadedAt: created.uploadedAt,
-          },
-        ]);
-        await refreshEvidenceState();
-      } catch (error: unknown) {
-        setErrorMessage(toKoreanErrorMessage(error));
-      } finally {
-        setIsSubmitting(false);
-      }
-    },
-    [caseId, isSubmitting, refreshEvidenceState, traceId],
-  );
+    try {
+      const created = await apiClient.registerEvidence(
+        caseId,
+        createEvidenceRequest(evidenceType),
+        { traceId },
+      );
+      setEvidenceLogs((prev) => [
+        ...prev,
+        {
+          evidenceId: created.evidenceId,
+          evidenceType,
+          uploadedAt: created.uploadedAt,
+        },
+      ]);
+      await refreshEvidenceState();
+    } catch (error: unknown) {
+      setErrorMessage(toKoreanErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const canProceed = Boolean(evidenceChecklist?.isSufficient) && !isSubmitting && !isChecklistLoading;
   const checklistStateText = useMemo(() => {

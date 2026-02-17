@@ -1,21 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
   Pressable,
+  StyleProp,
   StyleSheet,
   Text,
   TextStyle,
   useWindowDimensions,
   View,
+  ViewStyle,
 } from "react-native";
 import { ChatbotConversationScreen } from "./ChatbotConversationScreen";
 import { CompletionSummaryScreen } from "./CompletionSummaryScreen";
+import { ConversationListItem, ConversationListScreen } from "./ConversationListScreen";
 import { EvidenceCollectionScreen } from "./EvidenceCollectionScreen";
 import { MediationSupportScreen } from "./MediationSupportScreen";
 import { SubmissionReviewScreen } from "./SubmissionReviewScreen";
 import { TimelineScreen } from "./TimelineScreen";
 import { useCaseContext } from "../store/caseContext";
+import type { CaseStatus } from "../types/api";
 
 const FINAL_STAGE = 18;
 const CHAT_STAGE = 13;
@@ -28,6 +32,44 @@ const AUTO_ADVANCE_RULES: Partial<Record<number, { delayMs: number; nextStage: n
   2: { delayMs: 1200, nextStage: 3 },
   5: { delayMs: 3000, nextStage: 8 },
 };
+const DEFAULT_CHAT_PREVIEW = "대화를 시작해 주세요.";
+
+function toStatusLabel(status: CaseStatus | null): string {
+  if (!status) {
+    return "준비 중";
+  }
+  switch (status) {
+    case "RECEIVED":
+      return "접수 중";
+    case "CLASSIFIED":
+      return "분류 완료";
+    case "ROUTE_CONFIRMED":
+      return "경로 확정";
+    case "EVIDENCE_COLLECTING":
+      return "증거 수집";
+    case "FORMAL_SUBMISSION_READY":
+      return "제출 준비";
+    case "INSTITUTION_PROCESSING":
+      return "기관 처리 중";
+    case "COMPLETED":
+      return "처리 완료";
+    default:
+      return status;
+  }
+}
+
+function formatSessionUpdatedAt(epochMs: number): string {
+  const date = new Date(epochMs);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  return date.toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 type RectProps = {
   x: number;
@@ -992,7 +1034,16 @@ export function ScenarioFlowTestScreen() {
   const [stage, setStage] = useState(1);
   const [startButtonPressed, setStartButtonPressed] = useState(false);
   const [bridgeButtonPressed, setBridgeButtonPressed] = useState(false);
-  const { resetCase } = useCaseContext();
+  const [isConversationListVisible, setIsConversationListVisible] = useState(false);
+  const [chatSession, setChatSession] = useState<ConversationListItem>({
+    id: "session-current",
+    title: "층간소음 상담",
+    preview: DEFAULT_CHAT_PREVIEW,
+    statusLabel: "준비 중",
+    caseId: null,
+    updatedAtText: formatSessionUpdatedAt(Date.now()),
+  });
+  const { resetCase, caseId, status, lastFollowUpQuestion } = useCaseContext();
   const { width, height } = useWindowDimensions();
   const transition = useRef(new Animated.Value(1)).current;
   const previousStageRef = useRef(1);
@@ -1008,6 +1059,14 @@ export function ScenarioFlowTestScreen() {
   const scaledHeight = BASE_HEIGHT * scale;
   const offsetX = (availableWidth - scaledWidth) / 2;
   const offsetY = useWidthFit ? 0 : (availableHeight - scaledHeight) / 2;
+
+  const activeSessionPreview = useMemo(() => {
+    const followUp = lastFollowUpQuestion?.trim();
+    if (followUp && followUp.length > 0) {
+      return followUp;
+    }
+    return chatSession.preview || DEFAULT_CHAT_PREVIEW;
+  }, [chatSession.preview, lastFollowUpQuestion]);
 
   useEffect(() => {
     const rule = AUTO_ADVANCE_RULES[stage];
@@ -1050,6 +1109,22 @@ export function ScenarioFlowTestScreen() {
     return () => animation.stop();
   }, [stage, transition]);
 
+  useEffect(() => {
+    if (stage !== CHAT_STAGE && isConversationListVisible) {
+      setIsConversationListVisible(false);
+    }
+  }, [isConversationListVisible, stage]);
+
+  useEffect(() => {
+    setChatSession((prev) => ({
+      ...prev,
+      caseId: caseId ?? prev.caseId,
+      preview: activeSessionPreview,
+      statusLabel: toStatusLabel(status),
+      updatedAtText: formatSessionUpdatedAt(Date.now()),
+    }));
+  }, [activeSessionPreview, caseId, status]);
+
   const handleNext = () => {
     transitionDurationRef.current = BUTTON_TRANSITION_DURATION;
     setStage((prev) => Math.min(prev + 1, CHAT_STAGE));
@@ -1060,6 +1135,15 @@ export function ScenarioFlowTestScreen() {
       return;
     }
     resetCase();
+    setChatSession({
+      id: "session-current",
+      title: "층간소음 상담",
+      preview: DEFAULT_CHAT_PREVIEW,
+      statusLabel: "준비 중",
+      caseId: null,
+      updatedAtText: formatSessionUpdatedAt(Date.now()),
+    });
+    setIsConversationListVisible(false);
     setStartButtonPressed(true);
     setTimeout(() => {
       setStartButtonPressed(false);
@@ -1086,11 +1170,25 @@ export function ScenarioFlowTestScreen() {
   };
 
   if (stage === CHAT_STAGE) {
+    const chatLayerStyle: StyleProp<ViewStyle> = isConversationListVisible
+      ? [styles.chatLayer, styles.chatLayerHidden]
+      : styles.chatLayer;
+
     return (
-      <ChatbotConversationScreen
-        onBack={() => moveToStage(12)}
-        onRouteConfirmed={() => moveToStage(14)}
-      />
+      <View style={styles.chatRoot}>
+        <View pointerEvents={isConversationListVisible ? "none" : "auto"} style={chatLayerStyle}>
+          <ChatbotConversationScreen
+            onBack={() => setIsConversationListVisible(true)}
+            onRouteConfirmed={() => moveToStage(14)}
+          />
+        </View>
+        {isConversationListVisible ? (
+          <ConversationListScreen
+            session={chatSession}
+            onSelectSession={() => setIsConversationListVisible(false)}
+          />
+        ) : null}
+      </View>
     );
   }
 
@@ -1186,6 +1284,16 @@ const styles = StyleSheet.create({
     height: 852,
     backgroundColor: "#ffffff",
     overflow: "hidden",
+  },
+  chatRoot: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+  },
+  chatLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  chatLayerHidden: {
+    opacity: 0,
   },
   abs: {
     position: "absolute",
