@@ -129,6 +129,23 @@ type EvidenceSummary = {
   totalCount: number;
 };
 
+type DebugLogLevel = "INFO" | "ERROR";
+
+type DebugLogItem = {
+  id: string;
+  timestamp: string;
+  level: DebugLogLevel;
+  message: string;
+};
+
+type ApiLikeError = {
+  code?: string;
+  status?: number;
+  traceId?: string;
+  details?: string[];
+  message?: string;
+};
+
 const THINKING_TEXT = "답변을 준비하고 있어요.";
 const REQUEST_ERROR_FALLBACK = "요청 처리 중 문제가 발생했어요. 다시 시도해 주세요.";
 const TIMELINE_COMPLETED_EVENT = "CASE_COMPLETED";
@@ -624,6 +641,29 @@ function keyboardEasingToAnimated(easing?: KeyboardEvent["easing"]) {
   }
 }
 
+function extractApiErrorInfo(error: unknown): {
+  code: string | null;
+  status: number | null;
+  traceId: string | null;
+  details: string[];
+} {
+  if (!error || typeof error !== "object") {
+    return { code: null, status: null, traceId: null, details: [] };
+  }
+
+  const candidate = error as ApiLikeError;
+  const details = Array.isArray(candidate.details)
+    ? candidate.details.filter((item): item is string => typeof item === "string")
+    : [];
+
+  return {
+    code: typeof candidate.code === "string" ? candidate.code : null,
+    status: typeof candidate.status === "number" ? candidate.status : null,
+    traceId: typeof candidate.traceId === "string" ? candidate.traceId : null,
+    details,
+  };
+}
+
 export function ChatbotConversationScreen({
   onBack,
   onRouteConfirmed,
@@ -642,6 +682,8 @@ export function ChatbotConversationScreen({
   const [isStepTodoOpen, setIsStepTodoOpen] = useState(false);
   const [stepToastMessage, setStepToastMessage] = useState<string | null>(null);
   const [localEvidenceAttachments, setLocalEvidenceAttachments] = useState<LocalEvidenceAttachment[]>([]);
+  const [debugLogs, setDebugLogs] = useState<DebugLogItem[]>([]);
+  const [isDebugLogOpen, setIsDebugLogOpen] = useState(false);
   const {
     caseId,
     status,
@@ -734,6 +776,10 @@ export function ChatbotConversationScreen({
     onBack?.();
   }, [onBack]);
 
+  const toggleDebugLog = useCallback(() => {
+    setIsDebugLogOpen((previous) => !previous);
+  }, []);
+
   const pushAiTurn = useCallback(
     (text: string, inputMode: ResponseInputMode, miniInterface: MiniInterfaceConfig | null = null) => {
       const nextTurnId = `chatbot-turn-${turnSequenceRef.current}`;
@@ -747,6 +793,52 @@ export function ChatbotConversationScreen({
     },
     [],
   );
+
+  const appendDebugLog = useCallback((message: string, level: DebugLogLevel = "INFO") => {
+    const now = new Date();
+    const timestamp = now.toLocaleTimeString("ko-KR", { hour12: false });
+    setDebugLogs((previous) => {
+      const next: DebugLogItem = {
+        id: `${now.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp,
+        level,
+        message,
+      };
+      return [next, ...previous].slice(0, 40);
+    });
+  }, []);
+
+  const applyApiError = useCallback((error: unknown, action: string) => {
+    const info = extractApiErrorInfo(error);
+    let userMessage = toKoreanErrorMessage(error);
+
+    if (info.code === "CASE_STATE_CONFLICT") {
+      const currentState = info.details
+        .find((detail) => detail.startsWith("currentState="))
+        ?.replace("currentState=", "");
+      const requiredState = info.details
+        .find((detail) => detail.startsWith("requiredState="))
+        ?.replace("requiredState=", "");
+
+      if (currentState || requiredState) {
+        userMessage = `요청 순서가 맞지 않아요. 현재: ${currentState ?? "-"}, 필요: ${requiredState ?? "-"}`;
+      }
+    }
+
+    setApiErrorMessage(userMessage);
+
+    const summaryParts = [
+      `action=${action}`,
+      info.status ? `status=${info.status}` : null,
+      info.code ? `code=${info.code}` : null,
+      info.traceId ? `traceId=${info.traceId}` : null,
+    ].filter((part): part is string => Boolean(part));
+
+    appendDebugLog(summaryParts.join(" | "), "ERROR");
+    if (info.details.length > 0) {
+      appendDebugLog(`details: ${info.details.join(" | ")}`, "ERROR");
+    }
+  }, [appendDebugLog]);
 
   const showStepDoneToast = useCallback(
     (message: string) => {
@@ -854,6 +946,7 @@ export function ChatbotConversationScreen({
 
       if (option.id === EVIDENCE_OPTION_NEXT) {
         setApiErrorMessage(null);
+        appendDebugLog("action=evidence-next | 증거 첨부 단계 종료", "INFO");
         markFlowStepCompleted("evidence");
         moveToFlowStep("mediation");
         pushAiTurn(
@@ -881,6 +974,7 @@ export function ChatbotConversationScreen({
       setApiErrorMessage(null);
 
       try {
+        appendDebugLog(`action=evidence-pick | type=${evidenceKind} | 라이브러리 열기`, "INFO");
         const imagePicker = getExpoImagePickerModule();
         if (!imagePicker) {
           throw new Error("라이브러리 기능을 불러오지 못했어요. 앱을 다시 실행해 주세요.");
@@ -889,6 +983,7 @@ export function ChatbotConversationScreen({
         const permission = await imagePicker.requestMediaLibraryPermissionsAsync();
         if (!permission.granted) {
           setApiErrorMessage("라이브러리 권한이 필요해요. 권한을 허용한 뒤 다시 시도해 주세요.");
+          appendDebugLog("action=evidence-pick | 권한 거부", "ERROR");
           return;
         }
 
@@ -900,6 +995,7 @@ export function ChatbotConversationScreen({
 
         if (pickerResult.canceled || !pickerResult.assets?.length) {
           setApiErrorMessage(null);
+          appendDebugLog("action=evidence-pick | 사용자가 선택 취소", "INFO");
           return;
         }
 
@@ -933,16 +1029,20 @@ export function ChatbotConversationScreen({
 
         if (nextAttachments.length === 0) {
           setApiErrorMessage("이미 첨부된 파일이에요. 아래 목록에서 해제할 수 있어요.");
+          appendDebugLog(`action=evidence-pick | 중복 파일 선택`, "ERROR");
           return;
         }
 
         setLocalEvidenceAttachments((previous) => [...previous, ...nextAttachments]);
         setApiErrorMessage(null);
+        appendDebugLog(`action=evidence-pick | 첨부 완료 ${nextAttachments.length}건`, "INFO");
       } catch (error: unknown) {
-        setApiErrorMessage(toKoreanErrorMessage(error));
+        applyApiError(error, "evidence-pick");
       }
     },
     [
+      applyApiError,
+      appendDebugLog,
       isGeneratingReply,
       localEvidenceAttachments,
       markFlowStepCompleted,
@@ -960,6 +1060,7 @@ export function ChatbotConversationScreen({
 
   const ensureCaseId = useCallback(async () => {
     if (caseId) {
+      appendDebugLog(`action=create-case | 기존 case 사용 ${caseId}`, "INFO");
       return caseId;
     }
 
@@ -969,6 +1070,7 @@ export function ChatbotConversationScreen({
       consentAccepted: true,
     };
 
+    appendDebugLog("action=create-case | 새 케이스 생성 요청", "INFO");
     const createdCase = await apiClient.createCase(requestBody, {
       traceId,
       idempotencyKey: createCaseIdempotencyKeyRef.current,
@@ -979,12 +1081,14 @@ export function ChatbotConversationScreen({
     }
 
     setCaseFromCreate(createdCase);
+    appendDebugLog(`action=create-case | 생성 성공 ${createdCase.caseId}`, "INFO");
     return createdCase.caseId;
-  }, [caseId, setCaseFromCreate, traceId]);
+  }, [appendDebugLog, caseId, setCaseFromCreate, traceId]);
 
   const sendMessageToApi = useCallback(
     async (message: string) => {
       const ensuredCaseId = await ensureCaseId();
+      appendDebugLog(`action=intake-message | case=${ensuredCaseId} | message=${message}`, "INFO");
 
       const intakeResponse = await apiClient.appendIntakeMessage(
         ensuredCaseId,
@@ -996,9 +1100,10 @@ export function ChatbotConversationScreen({
       );
 
       applyIntakeUpdate(intakeResponse);
+      appendDebugLog(`action=intake-message | status=${intakeResponse.status}`, "INFO");
       return intakeResponse;
     },
-    [applyIntakeUpdate, ensureCaseId, traceId],
+    [appendDebugLog, applyIntakeUpdate, ensureCaseId, traceId],
   );
 
   const syncFlowWithStatus = useCallback(
@@ -1041,9 +1146,10 @@ export function ChatbotConversationScreen({
         (a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
       );
       setTimelineEvents(sorted);
+      appendDebugLog(`action=get-timeline | 이벤트 ${sorted.length}건`, "INFO");
       return sorted;
     },
-    [setTimelineEvents, traceId],
+    [appendDebugLog, setTimelineEvents, traceId],
   );
 
   const restartFromChat = useCallback(() => {
@@ -1087,9 +1193,12 @@ export function ChatbotConversationScreen({
 
     try {
       const ensuredCaseId = await ensureCaseId();
+      appendDebugLog(`action=decompose-case | case=${ensuredCaseId}`, "INFO");
       await apiClient.decomposeCase(ensuredCaseId, { traceId });
+      appendDebugLog(`action=recommend-route | case=${ensuredCaseId}`, "INFO");
       const recommendation = await apiClient.recommendRoute(ensuredCaseId, { traceId });
       setRoutingRecommendation(recommendation);
+      appendDebugLog(`action=recommend-route | 옵션 ${recommendation.options.length}개`, "INFO");
 
       const miniInterface = mapRoutingRecommendationToMiniInterface(recommendation);
       if (!miniInterface) {
@@ -1099,12 +1208,12 @@ export function ChatbotConversationScreen({
 
       pushAiTurn(miniInterface.prompt, "mini", miniInterface);
     } catch (error: unknown) {
-      setApiErrorMessage(toKoreanErrorMessage(error));
+      applyApiError(error, "recommend-route");
       pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
     } finally {
       setIsGeneratingReply(false);
     }
-  }, [ensureCaseId, isGeneratingReply, moveToFlowStep, pushAiTurn, setRoutingRecommendation, traceId]);
+  }, [applyApiError, appendDebugLog, ensureCaseId, isGeneratingReply, moveToFlowStep, pushAiTurn, setRoutingRecommendation, traceId]);
 
   const handleSend = useCallback(async () => {
     if (isGeneratingReply) {
@@ -1139,6 +1248,7 @@ export function ChatbotConversationScreen({
 
         try {
           const ensuredCaseId = await ensureCaseId();
+          appendDebugLog(`action=confirm-route | case=${ensuredCaseId} | option=${selectedRouteOption.id}`, "INFO");
           const confirmedCase = await apiClient.confirmRouteDecision(
             ensuredCaseId,
             {
@@ -1149,6 +1259,7 @@ export function ChatbotConversationScreen({
             { traceId },
           );
           applyCaseDetail(confirmedCase);
+          appendDebugLog(`action=confirm-route | status=${confirmedCase.status}`, "INFO");
           markFlowStepCompleted("routing");
           moveToFlowStep("evidence");
 
@@ -1164,7 +1275,7 @@ export function ChatbotConversationScreen({
           );
           onRouteConfirmed?.();
         } catch (error: unknown) {
-          setApiErrorMessage(toKoreanErrorMessage(error));
+          applyApiError(error, "confirm-route");
           pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
         } finally {
           setIsGeneratingReply(false);
@@ -1223,6 +1334,7 @@ export function ChatbotConversationScreen({
 
         try {
           const ensuredCaseId = await ensureCaseId();
+          appendDebugLog(`action=submit-case | case=${ensuredCaseId} | channel=${submissionChannel}`, "INFO");
           const response = await apiClient.submitCase(
             ensuredCaseId,
             {
@@ -1236,11 +1348,13 @@ export function ChatbotConversationScreen({
             },
           );
           setSubmissionResponse(response);
+          appendDebugLog(`action=submit-case | submissionId=${response.submissionId}`, "INFO");
           markFlowStepCompleted("submission");
           moveToFlowStep("tracking");
 
           const detail = await apiClient.getCase(ensuredCaseId, { traceId });
           applyCaseDetail(detail);
+          appendDebugLog(`action=get-case | status=${detail.status}`, "INFO");
 
           const timeline = await fetchTimelineState(ensuredCaseId);
           const completedEvent = timeline.find((event) => event.eventType === TIMELINE_COMPLETED_EVENT);
@@ -1263,7 +1377,7 @@ export function ChatbotConversationScreen({
           }
         } catch (error: unknown) {
           const code = typeof error === "object" && error !== null ? (error as { code?: string }).code : undefined;
-          setApiErrorMessage(toKoreanErrorMessage(error));
+          applyApiError(error, "submit-case");
           if (code === "INSTITUTION_GATEWAY_ERROR" && submissionChannel === "MCP_API") {
             pushAiTurn(
               "기관 연동이 지연돼요. 수동 제출을 선택해 주세요.",
@@ -1297,6 +1411,7 @@ export function ChatbotConversationScreen({
         try {
           const ensuredCaseId = await ensureCaseId();
           moveToFlowStep("tracking");
+          appendDebugLog(`action=get-timeline | case=${ensuredCaseId}`, "INFO");
           const timeline = await fetchTimelineState(ensuredCaseId);
           const completedEvent = timeline.find((event) => event.eventType === TIMELINE_COMPLETED_EVENT);
 
@@ -1320,7 +1435,7 @@ export function ChatbotConversationScreen({
             );
           }
         } catch (error: unknown) {
-          setApiErrorMessage(toKoreanErrorMessage(error));
+          applyApiError(error, "get-timeline");
           pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
         } finally {
           setIsGeneratingReply(false);
@@ -1354,7 +1469,7 @@ export function ChatbotConversationScreen({
         const nextMiniInterface = mapApiFollowUpInterface(intakeResponse.followUpInterface, aiText);
         pushAiTurn(aiText, nextMiniInterface ? "mini" : "text", nextMiniInterface);
       } catch (error: unknown) {
-        setApiErrorMessage(toKoreanErrorMessage(error));
+        applyApiError(error, "mini-intake-send");
         pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
       } finally {
         setIsGeneratingReply(false);
@@ -1390,13 +1505,15 @@ export function ChatbotConversationScreen({
       const nextMiniInterface = mapApiFollowUpInterface(intakeResponse.followUpInterface, aiText);
       pushAiTurn(aiText, nextMiniInterface ? "mini" : "text", nextMiniInterface);
     } catch (error: unknown) {
-      setApiErrorMessage(toKoreanErrorMessage(error));
+      applyApiError(error, "text-intake-send");
       pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
     } finally {
       setIsGeneratingReply(false);
     }
   }, [
+    applyApiError,
     applyCaseDetail,
+    appendDebugLog,
     currentMiniOptions,
     draft,
     ensureCaseId,
@@ -1440,6 +1557,10 @@ export function ChatbotConversationScreen({
     setSelectedMiniOptionIds([]);
     setIsInputFocused(false);
   }, [aiSentences.length, currentAiTurn.id]);
+
+  useEffect(() => {
+    appendDebugLog(`chat-screen mounted | traceId=${traceId}`, "INFO");
+  }, [appendDebugLog, traceId]);
 
   useEffect(
     () => () => {
@@ -1638,6 +1759,8 @@ export function ChatbotConversationScreen({
     evidenceSummary.totalCount > 0
       ? `첨부 ${evidenceSummary.totalCount}건 · 파일 탭으로 해제 가능`
       : "아직 첨부한 파일이 없어요.";
+  const debugLogsToRender = debugLogs.slice(0, 8);
+  const isDebugMode = __DEV__;
   const inputPlaceholder = isGeneratingReply
     ? "답변을 준비하는 중입니다..."
     : shouldShowMiniInterface
@@ -1736,6 +1859,56 @@ export function ChatbotConversationScreen({
         >
           층간소음 상담
         </Text>
+
+        {isDebugMode ? (
+          <>
+            <Pressable
+              onPress={toggleDebugLog}
+              style={[
+                styles.debugToggle,
+                {
+                  right: horizontalPadding,
+                  top: 21 + topInsetOffset,
+                },
+              ]}
+            >
+              <Text style={styles.debugToggleText}>
+                {isDebugLogOpen ? "로그 닫기" : "로그 보기"}
+              </Text>
+            </Pressable>
+
+            {isDebugLogOpen ? (
+              <View
+                style={[
+                  styles.debugPanel,
+                  {
+                    right: horizontalPadding,
+                    top: 56 + topInsetOffset,
+                    width: Math.min(320, contentWidth),
+                  },
+                ]}
+              >
+                <Text style={styles.debugPanelTitle}>API 로그</Text>
+                {debugLogsToRender.length === 0 ? (
+                  <Text style={styles.debugPanelEmpty}>아직 로그가 없어요.</Text>
+                ) : (
+                  debugLogsToRender.map((entry) => (
+                    <Text
+                      key={entry.id}
+                      style={[
+                        styles.debugPanelLine,
+                        entry.level === "ERROR" && styles.debugPanelLineError,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      [{entry.timestamp}] {entry.message}
+                    </Text>
+                  ))
+                )}
+              </View>
+            ) : null}
+          </>
+        ) : null}
 
         <View
           style={[
@@ -2248,6 +2421,60 @@ const styles = StyleSheet.create({
     position: "absolute",
     color: "#dc2626",
     fontWeight: "500",
+  },
+  debugToggle: {
+    position: "absolute",
+    zIndex: 25,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    backgroundColor: "#f8fbff",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  debugToggleText: {
+    color: "#1d4ed8",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+  },
+  debugPanel: {
+    position: "absolute",
+    zIndex: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  debugPanelTitle: {
+    color: "#1e293b",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  debugPanelEmpty: {
+    color: "#64748b",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "500",
+  },
+  debugPanelLine: {
+    color: "#334155",
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  debugPanelLineError: {
+    color: "#b91c1c",
   },
   routeActionCard: {
     position: "absolute",
