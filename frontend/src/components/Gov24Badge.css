@@ -1,0 +1,116 @@
+.gov24-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  opacity: 0;
+  transform: translateY(10px) scale(0.94);
+  animation: icon-intro 860ms cubic-bezier(0.2, 0.7, 0.2, 1) 180ms forwards;
+}
+
+.gov24-mark {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 23px;
+  background: linear-gradient(148deg, #2e8fff, #65bbff);
+  border: 1px solid color-mix(in srgb, #2e8fff 40%, white);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 12px 24px rgba(37, 137, 255, 0.28);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.gov24-mark::after {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.35) 0%, transparent 55%);
+  animation: mark-orbit 2800ms linear infinite;
+}
+
+.gov24-ribbon {
+  position: absolute;
+  width: 78px;
+  height: 18px;
+  border-radius: 999px;
+  opacity: 0.92;
+  mix-blend-mode: screen;
+  z-index: 1;
+}
+
+.gov24-blue {
+  background: linear-gradient(90deg, rgba(193, 232, 255, 0.7), rgba(116, 185, 255, 0.45));
+  transform: rotate(-32deg) translate(-13px, -2px);
+}
+
+.gov24-green {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.72), rgba(151, 224, 255, 0.45));
+  transform: rotate(32deg) translate(13px, 2px);
+}
+
+.gov24-dot {
+  position: relative;
+  z-index: 2;
+  min-width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  color: #1877ea;
+  font-family: var(--font-family-heading);
+  font-size: 0.9rem;
+  font-weight: var(--font-weight-bold);
+  border: 1px solid color-mix(in srgb, #2e8fff 30%, white);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.gov24-label {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: #1d4ed8;
+  letter-spacing: 0.02em;
+}
+
+@keyframes icon-intro {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+    filter: blur(2px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.02);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes mark-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gov24-badge {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .gov24-mark::after {
+    animation: none;
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "color": {
+    "brand": {
+      "primary": { "value": "#1864FF", "type": "color" },
+      "secondary": { "value": "#2F9E44", "type": "color" },
+      "accent": { "value": "#FF922B", "type": "color" }
+    },
+    "surface": {
+      "canvas": { "value": "#F3F6FB", "type": "color" },
+      "panel": { "value": "#FFFFFF", "type": "color" },
+      "inverse": { "value": "#0B1220", "type": "color" }
+    },
+    "text": {
+      "primary": { "value": "#111827", "type": "color" },
+      "secondary": { "value": "#4B5563", "type": "color" },
+      "inverse": { "value": "#F8FAFC", "type": "color" }
+    },
+    "state": {
+      "danger": { "value": "#D6336C", "type": "color" },
+      "warning": { "value": "#F08C00", "type": "color" },
+      "success": { "value": "#2B8A3E", "type": "color" }
+    },
+    "border": {
+      "default": { "value": "#D0D7E2", "type": "color" },
+      "focus": { "value": "#1864FF", "type": "color" }
+    }
+  },
+  "font": {
+    "family": {
+      "heading": { "value": "'Space Grotesk', 'IBM Plex Sans KR', sans-serif", "type": "fontFamilies" },
+      "body": { "value": "'IBM Plex Sans KR', sans-serif", "type": "fontFamilies" }
+    },
+    "size": {
+      "xs": { "value": "0.75rem", "type": "fontSizes" },
+      "sm": { "value": "0.875rem", "type": "fontSizes" },
+      "md": { "value": "1rem", "type": "fontSizes" },
+      "lg": { "value": "1.25rem", "type": "fontSizes" },
+      "xl": { "value": "2rem", "type": "fontSizes" }
+    },
+    "weight": {
+      "regular": { "value": "400", "type": "fontWeights" },
+      "medium": { "value": "500", "type": "fontWeights" },
+      "bold": { "value": "700", "type": "fontWeights" }
+    }
+  },
+  "space": {
+    "2": { "value": "0.5rem", "type": "spacing" },
+    "3": { "value": "0.75rem", "type": "spacing" },
+    "4": { "value": "1rem", "type": "spacing" },
+    "6": { "value": "1.5rem", "type": "spacing" },
+    "8": { "value": "2rem", "type": "spacing" },
+    "12": { "value": "3rem", "type": "spacing" }
+  },
+  "radius": {
+    "sm": { "value": "0.5rem", "type": "borderRadius" },
+    "md": { "value": "0.75rem", "type": "borderRadius" },
+    "lg": { "value": "1.25rem", "type": "borderRadius" },
+    "pill": { "value": "999px", "type": "borderRadius" }
+  },
+  "shadow": {
+    "sm": { "value": "0 2px 6px rgba(10, 22, 50, 0.08)", "type": "boxShadow" },
+    "md": { "value": "0 10px 30px rgba(10, 22, 50, 0.15)", "type": "boxShadow" }
+  },
+  "motion": {
+    "duration": {
+      "fast": { "value": "120ms", "type": "duration" },
+      "normal": { "value": "220ms", "type": "duration" }
+    },
+    "easing": {
+      "standard": { "value": "cubic-bezier(0.2, 0, 0, 1)", "type": "cubicBezier" }
+    }
+  }
+}

@@ -80,6 +80,7 @@ Required error codes (minimum set):
 2. Screen: Intake Chat
 - `POST /api/v1/cases/{caseId}/intake/messages`
 - Output: filled slots, risk signal, next follow-up question
+- Optional UI hint: `followUpInterface` (`OPTIONS`/`DATE`) with `selectionMode` (`SINGLE`/`MULTIPLE`) and up to 4 options
 
 3. Screen: Route Recommendation
 - `POST /api/v1/cases/{caseId}/decomposition`

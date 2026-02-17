@@ -5,3 +5,12 @@ out/
 .DS_Store
 .context/
 .idea/
+frontend/node_modules/
+frontend/dist/
+frontend/storybook-static/
+frontend/*.tsbuildinfo
+frontend/design-tokens/build/
+frontend/src/styles/generated/
+mobile/.env
+mobile/.env.local
+.env.backend

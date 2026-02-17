@@ -16,6 +16,16 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TypewriterText } from "../components/TypewriterText";
+import { apiClient } from "../services/apiClient";
+import { toKoreanErrorMessage } from "../services/errorMap";
+import { useCaseContext } from "../store/caseContext";
+import type {
+  CaseStatus,
+  CreateCaseRequest,
+  FollowUpInterface,
+  IntakeUpdateResponse,
+  RoutingRecommendation,
+} from "../types/api";
 
 const BASE_WIDTH = 393;
 const BASE_HEIGHT = 852;
@@ -24,6 +34,7 @@ const KEYBOARD_GAP = 12;
 
 type ResponseInputMode = "text" | "mini";
 type MiniSelectionMode = "single" | "multiple";
+type MiniInterfaceContext = "intake" | "routing";
 
 type MiniOptionKind = "choice" | "other";
 
@@ -31,11 +42,14 @@ type MiniOption = {
   id: string;
   label: string;
   kind?: MiniOptionKind;
+  description?: string;
 };
 
 type MiniInterfaceConfig = {
   prompt: string;
   selectionMode: MiniSelectionMode;
+  context: MiniInterfaceContext;
+  selectionHint?: string;
   options: MiniOption[];
 };
 
@@ -55,6 +69,7 @@ const INITIAL_AI_TURN: AiTurn = {
 
 type ChatbotConversationScreenProps = {
   onBack?: () => void;
+  onRouteConfirmed?: () => void;
 };
 
 type ThinkingWaveTextProps = {
@@ -63,15 +78,75 @@ type ThinkingWaveTextProps = {
 };
 
 const THINKING_TEXT = "답변을 준비하고 있어요.";
+const REQUEST_ERROR_FALLBACK = "요청 처리 중 문제가 발생했어요. 다시 시도해 주세요.";
+
+const STATUS_FALLBACK_TEXT: Partial<Record<CaseStatus, string>> = {
+  RECEIVED: "내용을 잘 받았어요. 핵심 정보를 더 알려주시면 분류를 진행할게요.",
+  CLASSIFIED: "상황 분류를 마쳤어요. 다음 단계를 안내해 드릴게요.",
+  ROUTE_CONFIRMED: "접수 경로를 확정했어요. 필요한 자료를 준비해볼게요.",
+  EVIDENCE_COLLECTING: "증빙 자료를 등록하면 제출 준비를 이어서 진행할 수 있어요.",
+  FORMAL_SUBMISSION_READY: "제출 준비가 완료됐어요. 정부24 제출 단계를 진행해 주세요.",
+};
+
+function resolveAiTurnText(response: IntakeUpdateResponse): string {
+  const followUp = response.recommendedFollowUpQuestion?.trim();
+  if (followUp) {
+    return followUp;
+  }
+
+  return (
+    STATUS_FALLBACK_TEXT[response.status] ??
+    "입력해 주신 내용을 확인했어요. 이어서 필요한 정보를 안내할게요."
+  );
+}
+
+function mapApiFollowUpInterface(
+  followUpInterface: FollowUpInterface | null | undefined,
+  prompt: string,
+): MiniInterfaceConfig | null {
+  if (!followUpInterface || followUpInterface.interfaceType !== "OPTIONS") {
+    return null;
+  }
+
+  const options = (followUpInterface.options ?? []).slice(0, 4).reduce<MiniOption[]>((acc, option, index) => {
+    const label = option.label?.trim();
+    if (!label) {
+      return acc;
+    }
+
+    const id = option.optionId?.trim() || `mini-option-${index + 1}`;
+    acc.push({
+      id,
+      label,
+      kind: label === "기타" ? "other" : "choice",
+    });
+    return acc;
+  }, []);
+
+  if (options.length === 0) {
+    return null;
+  }
+
+  return {
+    prompt,
+    selectionMode: followUpInterface.selectionMode === "MULTIPLE" ? "multiple" : "single",
+    context: "intake",
+    selectionHint: followUpInterface.selectionMode === "MULTIPLE" ? "복수 선택 가능" : "단일 선택",
+    options,
+  };
+}
 
 function createMiniInterface(
   prompt: string,
   optionLabels: string[],
   selectionMode: MiniSelectionMode = "single",
+  context: MiniInterfaceContext = "intake",
 ): MiniInterfaceConfig {
   return {
     prompt,
     selectionMode,
+    context,
+    selectionHint: selectionMode === "multiple" ? "복수 선택 가능" : "단일 선택",
     options: optionLabels.map((label, index) => ({
       id: `mini-option-${index + 1}-${label}`,
       label,
@@ -80,86 +155,57 @@ function createMiniInterface(
   };
 }
 
-function decideMockAiResponse(userInput: string): {
-  text: string;
-  inputMode: ResponseInputMode;
-  miniInterface: MiniInterfaceConfig | null;
-} {
-  const compact = userInput.replace(/\s+/g, "");
+function mapRoutingRecommendationToMiniInterface(
+  recommendation: RoutingRecommendation,
+): MiniInterfaceConfig | null {
+  const options = (recommendation.options ?? [])
+    .slice(0, 4)
+    .map((option) => ({
+      id: option.optionId,
+      label: option.label,
+      kind: "choice" as const,
+      description: option.reason?.trim() || undefined,
+    }));
 
-  if (compact === "2") {
+  if (options.length === 0) {
+    return null;
+  }
+
+  return {
+    prompt: "추천 경로를 준비했어요. 아래에서 가장 적합한 경로를 선택해 주세요.",
+    selectionMode: "single",
+    context: "routing",
+    selectionHint: "단일 선택",
+    options,
+  };
+}
+
+function createDebugMiniInterfaceInput(
+  compactUserInput: string,
+): { text: string; inputMode: ResponseInputMode; miniInterface: MiniInterfaceConfig | null } | null {
+  if (!__DEV__) {
+    return null;
+  }
+
+  if (compactUserInput === "2") {
     const miniInterface = createMiniInterface(
       "테스트(복수 선택)입니다. 해당되는 시간대를 모두 선택해 주세요.",
       ["아침", "낮", "저녁", "기타"],
       "multiple",
     );
-    return {
-      text: miniInterface.prompt,
-      inputMode: "mini",
-      miniInterface,
-    };
+    return { text: miniInterface.prompt, inputMode: "mini", miniInterface };
   }
 
-  if (compact === "3") {
+  if (compactUserInput === "3") {
     const miniInterface = createMiniInterface(
       "테스트(단일 선택)입니다. 가장 불편한 시간대를 하나 선택해 주세요.",
       ["아침", "낮", "저녁", "기타"],
       "single",
     );
-    return {
-      text: miniInterface.prompt,
-      inputMode: "mini",
-      miniInterface,
-    };
+    return { text: miniInterface.prompt, inputMode: "mini", miniInterface };
   }
 
-  if (/시간|언제|몇시|야간|아침|저녁|새벽/.test(userInput)) {
-    const miniInterface = createMiniInterface("어느 시간대에 소음이 가장 불편하신가요?", [
-      "아침",
-      "낮",
-      "저녁",
-      "기타",
-    ]);
-    return {
-      text: miniInterface.prompt,
-      inputMode: "mini",
-      miniInterface,
-    };
-  }
-
-  if (/소음|소리|유형|종류|패턴/.test(userInput)) {
-    const miniInterface = createMiniInterface("어떤 소음 유형이 가장 불편하신가요?", [
-      "발걸음/뛰는 소리",
-      "가구 끄는 소리",
-      "TV/음악 소리",
-      "기타",
-    ]);
-    return {
-      text: miniInterface.prompt,
-      inputMode: "mini",
-      miniInterface,
-    };
-  }
-
-  if (/빈도|자주|가끔|매일|횟수/.test(userInput)) {
-    const miniInterface = createMiniInterface("소음 발생 빈도는 어느 정도인가요?", [
-      "거의 매일",
-      "주 2~3회",
-      "가끔",
-      "기타",
-    ]);
-    return {
-      text: miniInterface.prompt,
-      inputMode: "mini",
-      miniInterface,
-    };
-  }
-
-  return {
-    text: userInput,
-    inputMode: "text",
-    miniInterface: null,
-  };
+  return null;
 }
 
 function ThinkingWaveText({ text, style }: ThinkingWaveTextProps) {
@@ -244,17 +290,28 @@ function keyboardEasingToAnimated(easing?: KeyboardEvent["easing"]) {
   }
 }
 
-export function ChatbotConversationScreen({ onBack }: ChatbotConversationScreenProps) {
+export function ChatbotConversationScreen({ onBack, onRouteConfirmed }: ChatbotConversationScreenProps) {
   const [draft, setDraft] = useState("");
   const [selectedMiniOptionIds, setSelectedMiniOptionIds] = useState<string[]>([]);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isAiMessageCompleted, setIsAiMessageCompleted] = useState(false);
   const [isGeneratingReply, setIsGeneratingReply] = useState(false);
+  const [apiErrorMessage, setApiErrorMessage] = useState<string | null>(null);
   const [visibleSentenceCount, setVisibleSentenceCount] = useState(1);
   const [currentAiTurn, setCurrentAiTurn] = useState<AiTurn>(INITIAL_AI_TURN);
+  const {
+    caseId,
+    status,
+    traceId,
+    applyCaseDetail,
+    applyIntakeUpdate,
+    setCaseFromCreate,
+    setRoutingRecommendation,
+  } = useCaseContext();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const turnSequenceRef = useRef(2);
+  const createCaseIdempotencyKeyRef = useRef(`mobile-create-case-${Date.now()}`);
   const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Keep AI responses rendered sentence-by-sentence so each sentence appears on its own line.
   const aiSentences = useMemo(() => {
@@ -269,9 +326,12 @@ export function ChatbotConversationScreen({ onBack }: ChatbotConversationScreenP
   const currentMiniInterface = currentAiTurn.miniInterface ?? null;
   const currentMiniOptions = currentMiniInterface?.options ?? [];
   const currentMiniSelectionMode = currentMiniInterface?.selectionMode ?? "single";
+  const isRoutingMiniInterface = currentMiniInterface?.context === "routing";
   const isMiniInterfaceMode = currentAiTurn.inputMode === "mini";
   const shouldShowMiniInterface =
     isAiMessageCompleted && !isGeneratingReply && isMiniInterfaceMode && currentMiniOptions.length > 0;
+  const shouldShowRouteRecommendationAction =
+    status === "CLASSIFIED" && isAiMessageCompleted && !isGeneratingReply && !shouldShowMiniInterface;
   const isInputDisabled = isGeneratingReply || shouldShowMiniInterface;
 
   const availableWidth = width;
@@ -347,7 +407,83 @@ export function ChatbotConversationScreen({ onBack }: ChatbotConversationScreenP
     [currentMiniSelectionMode, isGeneratingReply],
   );
 
-  const handleSend = useCallback(() => {
+  const ensureCaseId = useCallback(async () => {
+    if (caseId) {
+      return caseId;
+    }
+
+    const requestBody: CreateCaseRequest = {
+      scenarioType: "INTER_FLOOR_NOISE",
+      housingType: "APARTMENT",
+      consentAccepted: true,
+    };
+
+    const createdCase = await apiClient.createCase(requestBody, {
+      traceId,
+      idempotencyKey: createCaseIdempotencyKeyRef.current,
+    });
+
+    if (!createdCase.caseId) {
+      throw new Error("민원 케이스 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+
+    setCaseFromCreate(createdCase);
+    return createdCase.caseId;
+  }, [caseId, setCaseFromCreate, traceId]);
+
+  const sendMessageToApi = useCallback(
+    async (message: string) => {
+      const ensuredCaseId = await ensureCaseId();
+
+      const intakeResponse = await apiClient.appendIntakeMessage(
+        ensuredCaseId,
+        {
+          role: "USER",
+          message,
+        },
+        { traceId },
+      );
+
+      applyIntakeUpdate(intakeResponse);
+      return intakeResponse;
+    },
+    [applyIntakeUpdate, ensureCaseId, traceId],
+  );
+
+  const handleRequestRouteRecommendation = useCallback(async () => {
+    if (isGeneratingReply) {
+      return;
+    }
+
+    Keyboard.dismiss();
+    setIsInputFocused(false);
+    setApiErrorMessage(null);
+    setIsGeneratingReply(true);
+    setIsAiMessageCompleted(false);
+    setVisibleSentenceCount(0);
+
+    try {
+      const ensuredCaseId = await ensureCaseId();
+      await apiClient.decomposeCase(ensuredCaseId, { traceId });
+      const recommendation = await apiClient.recommendRoute(ensuredCaseId, { traceId });
+      setRoutingRecommendation(recommendation);
+
+      const miniInterface = mapRoutingRecommendationToMiniInterface(recommendation);
+      if (!miniInterface) {
+        pushAiTurn("추천 경로를 아직 정리하지 못했어요. 잠시 후 다시 시도해 주세요.", "text", null);
+        return;
+      }
+
+      pushAiTurn(miniInterface.prompt, "mini", miniInterface);
+    } catch (error: unknown) {
+      setApiErrorMessage(toKoreanErrorMessage(error));
+      pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
+    } finally {
+      setIsGeneratingReply(false);
+    }
+  }, [ensureCaseId, isGeneratingReply, pushAiTurn, setRoutingRecommendation, traceId]);
+
+  const handleSend = useCallback(async () => {
     if (isGeneratingReply) {
       return;
     }
@@ -365,13 +501,69 @@ export function ChatbotConversationScreen({ onBack }: ChatbotConversationScreenP
       );
       setSelectedMiniOptionIds([]);
 
+      if (isRoutingMiniInterface) {
+        const selectedRouteOption = selectedOptions[0];
+        if (!selectedRouteOption) {
+          return;
+        }
+
+        setApiErrorMessage(null);
+        setIsGeneratingReply(true);
+        setIsAiMessageCompleted(false);
+        setVisibleSentenceCount(0);
+
+        try {
+          const ensuredCaseId = await ensureCaseId();
+          const confirmedCase = await apiClient.confirmRouteDecision(
+            ensuredCaseId,
+            {
+              optionId: selectedRouteOption.id,
+              userConfirmed: true,
+              note: "mobile-chat-route-confirm",
+            },
+            { traceId },
+          );
+          applyCaseDetail(confirmedCase);
+
+          const routeConfirmedText =
+            confirmedCase.status === "ROUTE_CONFIRMED"
+              ? `${selectedRouteOption.label} 경로로 확정했어요.\n이제 증빙 자료를 등록하면 제출 단계로 넘어갈 수 있어요.`
+              : "경로를 반영했어요. 다음 단계를 이어서 진행해 주세요.";
+
+          pushAiTurn(routeConfirmedText, "text", null);
+          onRouteConfirmed?.();
+        } catch (error: unknown) {
+          setApiErrorMessage(toKoreanErrorMessage(error));
+          pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
+        } finally {
+          setIsGeneratingReply(false);
+        }
+        return;
+      }
+
       if (selectedOptions.some((option) => option.kind === "other")) {
+        setApiErrorMessage(null);
         startGeneratingThenRespond("구체적으로 알려주시겠어요?", "text", 3000);
         return;
       }
 
-      const responseText = selectedOptions.map((option) => option.label).join(", ");
-      pushAiTurn(responseText, "text", null);
+      const userMessage = selectedOptions.map((option) => option.label).join(", ");
+      setApiErrorMessage(null);
+      setIsGeneratingReply(true);
+      setIsAiMessageCompleted(false);
+      setVisibleSentenceCount(0);
+
+      try {
+        const intakeResponse = await sendMessageToApi(userMessage);
+        const aiText = resolveAiTurnText(intakeResponse);
+        const nextMiniInterface = mapApiFollowUpInterface(intakeResponse.followUpInterface, aiText);
+        pushAiTurn(aiText, nextMiniInterface ? "mini" : "text", nextMiniInterface);
+      } catch (error: unknown) {
+        setApiErrorMessage(toKoreanErrorMessage(error));
+        pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
+      } finally {
+        setIsGeneratingReply(false);
+      }
       return;
     }
 
@@ -384,21 +576,44 @@ export function ChatbotConversationScreen({ onBack }: ChatbotConversationScreenP
     Keyboard.dismiss();
     setIsInputFocused(false);
 
-    if (trimmed === "1") {
-      startGeneratingThenRespond("안녕하세요.", "text", 3000);
+    const debugMiniTurn = createDebugMiniInterfaceInput(trimmed.replace(/\s+/g, ""));
+    if (debugMiniTurn) {
+      setApiErrorMessage(null);
+      pushAiTurn(debugMiniTurn.text, debugMiniTurn.inputMode, debugMiniTurn.miniInterface);
       return;
     }
 
-    const aiDecision = decideMockAiResponse(trimmed);
-    pushAiTurn(aiDecision.text, aiDecision.inputMode, aiDecision.miniInterface);
+    setApiErrorMessage(null);
+    setIsGeneratingReply(true);
+    setIsAiMessageCompleted(false);
+    setVisibleSentenceCount(0);
+
+    try {
+      const intakeResponse = await sendMessageToApi(trimmed);
+      const aiText = resolveAiTurnText(intakeResponse);
+      const nextMiniInterface = mapApiFollowUpInterface(intakeResponse.followUpInterface, aiText);
+      pushAiTurn(aiText, nextMiniInterface ? "mini" : "text", nextMiniInterface);
+    } catch (error: unknown) {
+      setApiErrorMessage(toKoreanErrorMessage(error));
+      pushAiTurn(REQUEST_ERROR_FALLBACK, "text", null);
+    } finally {
+      setIsGeneratingReply(false);
+    }
   }, [
+    applyCaseDetail,
     currentMiniOptions,
     draft,
+    ensureCaseId,
+    isRoutingMiniInterface,
     isGeneratingReply,
     pushAiTurn,
     selectedMiniOptionIds,
+    sendMessageToApi,
     shouldShowMiniInterface,
     startGeneratingThenRespond,
+    setApiErrorMessage,
+    onRouteConfirmed,
+    traceId,
   ]);
 
   const handleSentenceComplete = useCallback((sentenceIndex: number) => {
@@ -577,11 +792,14 @@ export function ChatbotConversationScreen({ onBack }: ChatbotConversationScreenP
   const isSendDisabled = isGeneratingReply || (shouldShowMiniInterface ? !hasSelectedMiniOptions : !draft.trim());
   const sendIcon = shouldShowMiniInterface ? "↗" : ">";
   const miniSelectionHint =
-    currentMiniSelectionMode === "multiple" ? "복수 선택 가능" : "단일 선택";
+    currentMiniInterface?.selectionHint ??
+    (currentMiniSelectionMode === "multiple" ? "복수 선택 가능" : "단일 선택");
   const inputPlaceholder = isGeneratingReply
     ? "답변을 준비하는 중입니다..."
     : shouldShowMiniInterface
-      ? currentMiniSelectionMode === "multiple"
+      ? isRoutingMiniInterface
+        ? "위 항목에서 접수 경로를 선택해 주세요."
+        : currentMiniSelectionMode === "multiple"
         ? "위 항목에서 해당되는 내용을 모두 선택해 주세요."
         : "위 항목에서 가장 가까운 내용을 선택해 주세요."
       : "답변 입력 또는 음성으로 말하기";
@@ -676,6 +894,44 @@ export function ChatbotConversationScreen({ onBack }: ChatbotConversationScreenP
           )}
         </View>
 
+        {apiErrorMessage ? (
+          <Text
+            style={[
+              styles.apiErrorText,
+              {
+                left: 28,
+                bottom: 170,
+                width: 337,
+                fontSize: 12,
+                lineHeight: 16,
+              },
+            ]}
+          >
+            {apiErrorMessage}
+          </Text>
+        ) : null}
+
+        {shouldShowRouteRecommendationAction ? (
+          <Pressable
+            onPress={handleRequestRouteRecommendation}
+            style={({ pressed }) => [
+              styles.routeActionCard,
+              {
+                left: 24,
+                bottom: 118,
+                width: 345,
+                borderRadius: 18,
+                opacity: pressed ? 0.88 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.routeActionTitle, { fontSize: 16, lineHeight: 20 }]}>추천 경로 확인하기</Text>
+            <Text style={[styles.routeActionSubtitle, { fontSize: 12, lineHeight: 16 }]}>
+              분류된 민원을 바탕으로 접수 채널을 추천해 드릴게요.
+            </Text>
+          </Pressable>
+        ) : null}
+
         {shouldShowMiniInterface ? (
           <Animated.View
             style={[
@@ -714,6 +970,11 @@ export function ChatbotConversationScreen({ onBack }: ChatbotConversationScreenP
                   >
                     {`${index + 1}번 ${option.label}`}
                   </Text>
+                  {option.description ? (
+                    <Text style={[styles.miniOptionDescription, { fontSize: 12, lineHeight: 15 }]}>
+                      {option.description}
+                    </Text>
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -829,6 +1090,28 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     fontWeight: "500",
   },
+  apiErrorText: {
+    position: "absolute",
+    color: "#dc2626",
+    fontWeight: "500",
+  },
+  routeActionCard: {
+    position: "absolute",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#f8fbff",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  routeActionTitle: {
+    color: "#1d4ed8",
+    fontWeight: "700",
+  },
+  routeActionSubtitle: {
+    color: "#475569",
+    fontWeight: "500",
+    marginTop: 4,
+  },
   inputWrap: {
     position: "absolute",
     borderColor: "#cbd5e1",
@@ -908,5 +1191,10 @@ const styles = StyleSheet.create({
   miniOptionTextSelected: {
     color: "#1d4ed8",
     fontWeight: "700",
+  },
+  miniOptionDescription: {
+    marginTop: 5,
+    color: "#64748b",
+    fontWeight: "500",
   },
 });

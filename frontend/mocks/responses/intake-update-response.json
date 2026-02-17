@@ -11,5 +11,6 @@
     },
     "riskSignalDetected": false
   },
-  "recommendedFollowUpQuestion": null
+  "recommendedFollowUpQuestion": null,
+  "followUpInterface": null
 }

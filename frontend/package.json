@@ -1,0 +1,33 @@
+{
+  "name": "civil-complaint-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run tokens:build && vite",
+    "build": "npm run tokens:build && tsc -b && vite build",
+    "preview": "vite preview",
+    "tokens:build": "style-dictionary build --config design-tokens/style-dictionary.config.js",
+    "tokens:watch": "style-dictionary build --watch --config design-tokens/style-dictionary.config.js",
+    "storybook": "npm run tokens:build && storybook dev -p 6006",
+    "build-storybook": "npm run tokens:build && storybook build"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@storybook/addon-essentials": "^8.5.2",
+    "@storybook/addon-interactions": "^8.5.2",
+    "@storybook/react-vite": "^8.5.2",
+    "@storybook/test": "^8.5.2",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.2",
+    "storybook": "^8.5.2",
+    "style-dictionary": "^4.4.0",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.6"
+  }
+}

@@ -8,6 +8,7 @@ Spring Boot backend scaffold and interface-first contract for Scenario A (층간
 - Figma handoff doc: `docs/figma/figma-api-handoff.md`
 - Spring API scaffold with JPA + Flyway persistence (Case/Evidence/Timeline)
 - Frontend mock request/response payloads: `frontend/mocks/**`
+- Frontend app scaffold (React + Vite + Storybook + design-token pipeline): `frontend/**`
 
 ## Quick start
 1. Start Postgres
@@ -30,6 +31,28 @@ gradle bootRun
 http://localhost:8080/api/v1
 ```
 
+## Frontend quick start
+1. Install dependencies
+```bash
+cd frontend
+npm install
+```
+
+2. Run app
+```bash
+npm run dev
+```
+
+3. Run Storybook
+```bash
+npm run storybook
+```
+
+4. Sync Figma tokens into CSS variables
+```bash
+npm run tokens:build
+```
+
 ## Main endpoints
 - `POST /cases`
 - `GET /cases/{caseId}`
@@ -49,7 +72,10 @@ http://localhost:8080/api/v1
   - `DB_USERNAME=complaint`
   - `DB_PASSWORD=complaint`
   - `JWT_SECRET` (HS256, 32+ chars)
-  - `INSTITUTION_GATEWAY_FAIL_DIRECT_API=false` (set `true` to simulate `INSTITUTION_GATEWAY_ERROR` on `DIRECT_API` submit)
+  - `AI_FOLLOWUP_USE_LLM=false` (기본: 룰 기반 follow-up)
+  - `OPENAI_API_KEY` (선택, `AI_FOLLOWUP_USE_LLM=true`일 때 사용)
+  - `OPENAI_MODEL=gpt-4o-mini` (선택)
+- `INSTITUTION_GATEWAY_FAIL_DIRECT_API=false` (set `true` to simulate `INSTITUTION_GATEWAY_ERROR` on `DIRECT_API` submit)
 - Mock institution submission worker delay:
   - `MOCK_SUBMISSION_DELAY_MS=1500` (default)
 - Tests run on in-memory H2 (PostgreSQL mode) via `src/test/resources/application.yml`.

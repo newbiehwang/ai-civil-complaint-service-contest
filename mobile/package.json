@@ -8,7 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "gen:api-types": "openapi-typescript ../docs/contracts/openapi-civil-complaint.yaml -o ./src/types/api.generated.ts"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~5.9.2"
   }
 }
