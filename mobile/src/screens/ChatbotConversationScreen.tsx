@@ -975,6 +975,7 @@ export function ChatbotConversationScreen({
     !isGeneratingReply &&
     isMiniInterfaceMode &&
     (isOptionListMiniContext || (isListPickerMiniContext && currentMiniOptions.length > 0));
+    (isOptionListMiniContext || (isListPickerMiniContext && currentMiniOptions.length > 0));
   const shouldShowRouteRecommendationAction =
     status === "CLASSIFIED" && isAiMessageCompleted && !isGeneratingReply && !shouldShowMiniInterface;
   const isInputDisabled = isGeneratingReply || shouldShowMiniInterface;
