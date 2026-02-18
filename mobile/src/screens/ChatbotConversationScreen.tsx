@@ -73,11 +73,13 @@ type OptionListAttachment = {
   name: string;
   uri: string;
 };
+type MiniInterfaceType = "ListPicker" | "OptionList";
 
 type MiniInterfaceConfig = {
   prompt: string;
   selectionMode: MiniSelectionMode;
   context: MiniInterfaceContext;
+  miniInterfaceType: MiniInterfaceType;
   selectionHint?: string;
   optionListKind?: OptionListKind;
   options: MiniOption[];
@@ -340,12 +342,13 @@ function mapApiFollowUpInterface(
     prompt,
     selectionMode: followUpInterface.selectionMode === "MULTIPLE" ? "multiple" : "single",
     context: "intake",
+    miniInterfaceType: "ListPicker",
     selectionHint: followUpInterface.selectionMode === "MULTIPLE" ? "복수 선택 가능" : "단일 선택",
     options,
   };
 }
 
-function createMiniInterface(
+function createListPickerInterface(
   prompt: string,
   optionLabels: string[],
   selectionMode: MiniSelectionMode = "single",
@@ -355,6 +358,7 @@ function createMiniInterface(
     prompt,
     selectionMode,
     context,
+    miniInterfaceType: "ListPicker",
     selectionHint: selectionMode === "multiple" ? "복수 선택 가능" : "단일 선택",
     options: optionLabels.map((label, index) => {
       const isOther = label === "기타";
@@ -393,6 +397,7 @@ function mapRoutingRecommendationToMiniInterface(
     prompt: "추천 경로를 준비했어요. 가장 맞는 경로 하나를 선택해 주세요.",
     selectionMode: "single",
     context: "routing",
+    miniInterfaceType: "ListPicker",
     selectionHint: "단일 선택",
     options,
   };
@@ -404,6 +409,7 @@ function createOptionListInterface(optionListKind: OptionListKind = "dateTime"):
       prompt: "필요한 자료 항목만 선택해 주세요.",
       selectionMode: "single",
       context: "optionList",
+      miniInterfaceType: "OptionList",
       optionListKind: "attachment",
       selectionHint: "옵션 선택",
       options: [
@@ -419,6 +425,7 @@ function createOptionListInterface(optionListKind: OptionListKind = "dateTime"):
     prompt: "소음이 발생한 날짜와 시간을 선택해 주세요.",
     selectionMode: "single",
     context: "optionList",
+    miniInterfaceType: "OptionList",
     optionListKind: "dateTime",
     selectionHint: "옵션 선택",
     options: [
@@ -434,6 +441,7 @@ function createMediationMiniInterface(): MiniInterfaceConfig {
     prompt: "다음 진행 방식을 선택해 주세요.",
     selectionMode: "single",
     context: "mediation",
+    miniInterfaceType: "ListPicker",
     selectionHint: "단일 선택",
     options: [
       {
@@ -459,6 +467,7 @@ function createSubmissionMiniInterface(hasFallbackHint = false): MiniInterfaceCo
       : "제출 방식을 선택해 주세요.",
     selectionMode: "single",
     context: "submission",
+    miniInterfaceType: "ListPicker",
     selectionHint: "단일 선택",
     options: [
       {
@@ -486,6 +495,7 @@ function createTimelineMiniInterface(lastEvent?: TimelineEvent): MiniInterfaceCo
     prompt,
     selectionMode: "single",
     context: "timeline",
+    miniInterfaceType: "ListPicker",
     selectionHint: "단일 선택",
     options: [
       {
@@ -509,6 +519,7 @@ function createCompletionMiniInterface(): MiniInterfaceConfig {
     prompt: "민원 처리가 완료됐어요.",
     selectionMode: "single",
     context: "completion",
+    miniInterfaceType: "ListPicker",
     selectionHint: "단일 선택",
     options: [
       {
@@ -529,7 +540,7 @@ function createDebugMiniInterfaceInput(
   }
 
   if (compactUserInput === "2") {
-    const miniInterface = createMiniInterface(
+    const miniInterface = createListPickerInterface(
       "테스트(복수 선택)입니다. 해당되는 시간대를 모두 선택해 주세요.",
       ["아침", "낮", "저녁", "기타"],
       "multiple",
@@ -538,7 +549,7 @@ function createDebugMiniInterfaceInput(
   }
 
   if (compactUserInput === "3") {
-    const miniInterface = createMiniInterface(
+    const miniInterface = createListPickerInterface(
       "테스트(단일 선택)입니다. 가장 불편한 시간대를 하나 선택해 주세요.",
       ["아침", "낮", "저녁", "기타"],
       "single",
@@ -955,13 +966,15 @@ export function ChatbotConversationScreen({
   const currentMiniOptions = currentMiniInterface?.options ?? [];
   const currentMiniSelectionMode = currentMiniInterface?.selectionMode ?? "single";
   const miniContext = currentMiniInterface?.context ?? null;
+  const miniInterfaceType = currentMiniInterface?.miniInterfaceType ?? null;
   const isMiniInterfaceMode = currentAiTurn.inputMode === "mini";
-  const isOptionListMiniContext = miniContext === "optionList";
+  const isOptionListMiniContext = miniInterfaceType === "OptionList";
+  const isListPickerMiniContext = miniInterfaceType === "ListPicker";
   const shouldShowMiniInterface =
     isAiMessageCompleted &&
     !isGeneratingReply &&
     isMiniInterfaceMode &&
-    (isOptionListMiniContext || currentMiniOptions.length > 0);
+    (isOptionListMiniContext || (isListPickerMiniContext && currentMiniOptions.length > 0));
   const shouldShowRouteRecommendationAction =
     status === "CLASSIFIED" && isAiMessageCompleted && !isGeneratingReply && !shouldShowMiniInterface;
   const isInputDisabled = isGeneratingReply || shouldShowMiniInterface;
@@ -2586,13 +2599,13 @@ export function ChatbotConversationScreen({
           <Animated.View
             style={[
               styles.miniInterfaceWrap,
-              miniContext === "optionList" && styles.miniInterfaceWrapEvidence,
+              isOptionListMiniContext && styles.miniInterfaceWrapEvidence,
               {
                 left: horizontalPadding,
                 bottom: miniPanelBottom,
                 width: contentWidth,
                 borderRadius: 24,
-                ...(miniContext === "optionList"
+                ...(isOptionListMiniContext
                   ? {
                       opacity: 1,
                     }
@@ -2603,7 +2616,7 @@ export function ChatbotConversationScreen({
               },
             ]}
           >
-            {miniContext === "optionList" ? (
+            {miniInterfaceType === "OptionList" ? (
               <Animated.View
                 style={{
                   opacity: optionListFadeAnim,
@@ -3039,7 +3052,7 @@ export function ChatbotConversationScreen({
                   </View>
                 ) : null}
               </Animated.View>
-            ) : (
+            ) : miniInterfaceType === "ListPicker" ? (
               <>
                 <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
                   {miniSelectionHint}
@@ -3094,7 +3107,7 @@ export function ChatbotConversationScreen({
                   })}
                 </View>
               </>
-            )}
+            ) : null}
           </Animated.View>
         ) : null}
 
