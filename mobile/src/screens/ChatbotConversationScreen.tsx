@@ -73,7 +73,21 @@ type OptionListAttachment = {
   name: string;
   uri: string;
 };
-type MiniInterfaceType = "ListPicker" | "OptionList";
+type OptionListPurpose = "demoCoreDateTime" | "demoEvidenceAttachment" | null;
+type MiniInterfaceType = "ListPicker" | "OptionList" | "SummaryCard" | "StatusFeed";
+type StatusFeedViewMode = "important" | "all";
+
+type DemoFlowData = {
+  userIssue: string;
+  noiseNow?: string;
+  safety?: string;
+  residence?: string;
+  timeBand?: string;
+  route?: string;
+  startedAtDate?: Date | null;
+  startedAtTime?: OptionListDateTimeSelection | null;
+  revisionNote?: string;
+};
 
 type MiniInterfaceConfig = {
   prompt: string;
@@ -162,6 +176,7 @@ type ApiLikeError = {
 const THINKING_TEXT = "답변을 준비하고 있어요.";
 const REQUEST_ERROR_FALLBACK = "요청 처리 중 문제가 발생했어요. 다시 시도해 주세요.";
 const TIMELINE_COMPLETED_EVENT = "CASE_COMPLETED";
+const ENABLE_SCRIPTED_DEMO_FLOW = true;
 const OPTION_LIST_DATE = "option-list-date";
 const OPTION_LIST_TIME = "option-list-time";
 const OPTION_LIST_SUBMIT = "option-list-submit";
@@ -197,6 +212,40 @@ const TIMELINE_OPTION_REFRESH = "timeline-refresh";
 const TIMELINE_OPTION_RESTART = "timeline-restart";
 
 const COMPLETION_OPTION_RESTART = "completion-restart";
+
+const DEMO_NOISE_NOW_ACTIVE = "demo-noise-now-active";
+const DEMO_NOISE_NOW_RECENT = "demo-noise-now-recent";
+const DEMO_NOISE_NOW_REPEAT = "demo-noise-now-repeat";
+const DEMO_SAFETY_NORMAL = "demo-safety-normal";
+const DEMO_SAFETY_DANGER = "demo-safety-danger";
+const DEMO_SAFETY_UNKNOWN = "demo-safety-unknown";
+const DEMO_RESIDENCE_APARTMENT = "demo-residence-apartment";
+const DEMO_RESIDENCE_VILLA = "demo-residence-villa";
+const DEMO_RESIDENCE_OFFICETEL = "demo-residence-officetel";
+const DEMO_RESIDENCE_OTHER = "demo-residence-other";
+const DEMO_TIME_BAND_EVENING = "demo-time-band-evening";
+const DEMO_TIME_BAND_LATE_NIGHT = "demo-time-band-late-night";
+const DEMO_TIME_BAND_DAWN = "demo-time-band-dawn";
+const DEMO_TIME_BAND_IRREGULAR = "demo-time-band-irregular";
+const DEMO_SUMMARY_EDIT = "demo-summary-edit";
+const DEMO_SUMMARY_NEXT = "demo-summary-next";
+const DEMO_PATH_RECOMMENDED = "demo-path-recommended";
+const DEMO_PATH_OTHER = "demo-path-other";
+const DEMO_PATH_ALT_EPEOPLE = "demo-path-alt-epeople";
+const DEMO_PATH_ALT_MANAGEMENT = "demo-path-alt-management";
+const DEMO_PATH_ALT_DISPUTE = "demo-path-alt-dispute";
+const DEMO_DIARY_GENERATE = "demo-diary-generate";
+const DEMO_DRAFT_SUBMIT = "demo-draft-submit";
+const DEMO_DRAFT_EDIT = "demo-draft-edit";
+const DEMO_DRAFT_CONFIRM_SUBMIT = "demo-draft-confirm-submit";
+const DEMO_DRAFT_CONFIRM_EDIT = "demo-draft-confirm-edit";
+const DEMO_STATUS_UPLOAD = "demo-status-upload";
+const DEMO_STATUS_SUMMARY = "demo-status-summary";
+const DEMO_PATH_RECOMMENDED_REASON_LINES = [
+  "층간소음 조정 절차와 가장 잘 맞아요.",
+  "초기 접수부터 중재 요청까지 빠르게 이어집니다.",
+  "필요 시 이후 민원 제출 단계로 자연스럽게 전환돼요.",
+];
 
 const FLOW_STEPS: FlowStepDefinition[] = [
   { key: "intake", number: 1, label: "접수", doneToast: "1단계 접수 완료" },
@@ -241,6 +290,182 @@ function formatOptionListTime(value: OptionListDateTimeSelection): string {
   const hour = value.hour.toString().padStart(2, "0");
   const minute = value.minute.toString().padStart(2, "0");
   return `${value.meridiem} ${hour}시 ${minute}분`;
+}
+
+function createInitialDemoFlowData(): DemoFlowData {
+  return {
+    userIssue: "",
+    noiseNow: undefined,
+    safety: undefined,
+    residence: undefined,
+    timeBand: undefined,
+    route: undefined,
+    startedAtDate: null,
+    startedAtTime: null,
+    revisionNote: undefined,
+  };
+}
+
+function isDemoOptionId(id: string): boolean {
+  return id.startsWith("demo-");
+}
+
+function createListPickerFromOptions(
+  prompt: string,
+  options: MiniOption[],
+  selectionMode: MiniSelectionMode = "single",
+  context: MiniInterfaceContext = "intake",
+): MiniInterfaceConfig {
+  return {
+    prompt,
+    selectionMode,
+    context,
+    miniInterfaceType: "ListPicker",
+    selectionHint: selectionMode === "multiple" ? "복수 선택 가능" : "단일 선택",
+    options,
+  };
+}
+
+function createDemoNoiseNowMiniInterface(): MiniInterfaceConfig {
+  return createListPickerFromOptions(
+    "지금도 소음이 계속되나요?",
+    [
+      { id: DEMO_NOISE_NOW_ACTIVE, label: "지금 진행 중" },
+      { id: DEMO_NOISE_NOW_RECENT, label: "방금 멈춤" },
+      { id: DEMO_NOISE_NOW_REPEAT, label: "자주 반복" },
+    ],
+  );
+}
+
+function createDemoSafetyMiniInterface(): MiniInterfaceConfig {
+  return createListPickerFromOptions(
+    "비명/폭행/난동처럼 위험 신호가 있나요?",
+    [
+      { id: DEMO_SAFETY_NORMAL, label: "없음(생활소음)" },
+      { id: DEMO_SAFETY_DANGER, label: "있음(위험)" },
+      { id: DEMO_SAFETY_UNKNOWN, label: "잘 모르겠음" },
+    ],
+  );
+}
+
+function createDemoResidenceMiniInterface(): MiniInterfaceConfig {
+  return createListPickerFromOptions(
+    "거주 형태를 선택해 주세요.",
+    [
+      { id: DEMO_RESIDENCE_APARTMENT, label: "아파트" },
+      { id: DEMO_RESIDENCE_VILLA, label: "빌라" },
+      { id: DEMO_RESIDENCE_OFFICETEL, label: "오피스텔" },
+      { id: DEMO_RESIDENCE_OTHER, label: "기타" },
+    ],
+  );
+}
+
+function createDemoTimeBandMiniInterface(): MiniInterfaceConfig {
+  return createListPickerFromOptions(
+    "소음이 주로 발생하는 시간대를 선택해 주세요.",
+    [
+      { id: DEMO_TIME_BAND_EVENING, label: "저녁" },
+      { id: DEMO_TIME_BAND_LATE_NIGHT, label: "심야" },
+      { id: DEMO_TIME_BAND_DAWN, label: "새벽" },
+      { id: DEMO_TIME_BAND_IRREGULAR, label: "불규칙" },
+    ],
+  );
+}
+
+function createDemoSummaryMiniInterface(): MiniInterfaceConfig {
+  return {
+    prompt: "내용이 맞는지 확인해 주세요.",
+    selectionMode: "single",
+    context: "intake",
+    miniInterfaceType: "SummaryCard",
+    selectionHint: "요약 확인",
+    options: [
+      { id: DEMO_SUMMARY_EDIT, label: "수정" },
+      { id: DEMO_SUMMARY_NEXT, label: "다음" },
+    ],
+  };
+}
+
+function createDemoPathChooserMiniInterface(): MiniInterfaceConfig {
+  return createListPickerFromOptions(
+    "추천 경로를 확인했어요. 진행 방식을 선택해 주세요.",
+    [
+      { id: DEMO_PATH_RECOMMENDED, label: "추천 경로로 진행" },
+      { id: DEMO_PATH_OTHER, label: "다른 기관 선택" },
+    ],
+  );
+}
+
+function createDemoPathAlternativeMiniInterface(): MiniInterfaceConfig {
+  return createListPickerFromOptions(
+    "원하시는 기관을 선택해 주세요.",
+    [
+      { id: DEMO_PATH_ALT_EPEOPLE, label: "국민신문고" },
+      { id: DEMO_PATH_ALT_MANAGEMENT, label: "관리사무소 공식 민원" },
+      { id: DEMO_PATH_ALT_DISPUTE, label: "분쟁조정(후순위)" },
+    ],
+  );
+}
+
+function createDemoDiaryBuilderMiniInterface(): MiniInterfaceConfig {
+  return createListPickerFromOptions(
+    "소음일지를 빠르게 생성할까요?",
+    [{ id: DEMO_DIARY_GENERATE, label: "일지 생성" }],
+  );
+}
+
+function createDemoDraftViewerMiniInterface(): MiniInterfaceConfig {
+  return createListPickerFromOptions(
+    "신청서 초안을 작성했어요.",
+    [
+      { id: DEMO_DRAFT_SUBMIT, label: "좋아요, 접수" },
+      { id: DEMO_DRAFT_EDIT, label: "수정 요청" },
+    ],
+  );
+}
+
+function createDemoDraftConfirmMiniInterface(): MiniInterfaceConfig {
+  return createListPickerFromOptions(
+    "수정 내용을 반영했어요. 이대로 접수할까요?",
+    [
+      { id: DEMO_DRAFT_CONFIRM_SUBMIT, label: "좋아요, 접수해주세요" },
+      { id: DEMO_DRAFT_CONFIRM_EDIT, label: "다시 수정" },
+    ],
+  );
+}
+
+function createDemoStatusFeedMiniInterface(): MiniInterfaceConfig {
+  return {
+    prompt: "접수 완료! 진행을 추적하고 있어요.",
+    selectionMode: "single",
+    context: "timeline",
+    miniInterfaceType: "StatusFeed",
+    selectionHint: "단일 선택",
+    options: [
+      { id: DEMO_STATUS_UPLOAD, label: "추가 증거 업로드" },
+      { id: DEMO_STATUS_SUMMARY, label: "케이스 요약 보기" },
+    ],
+  };
+}
+
+function formatDemoDateTimeSummary(
+  date: Date | null | undefined,
+  time: OptionListDateTimeSelection | null | undefined,
+): string {
+  if (!date && !time) {
+    return "선택 안 됨";
+  }
+  if (date && time) {
+    return `${formatOptionListDate(date)} ${formatOptionListTime(time)}`;
+  }
+  if (date) {
+    return formatOptionListDate(date);
+  }
+  return time ? formatOptionListTime(time) : "선택 안 됨";
+}
+
+function buildDemoSummaryText(_data: DemoFlowData): string {
+  return "정리해드릴게요.";
 }
 
 function createCalendarCells(monthStart: Date): Array<Date | null> {
@@ -899,7 +1124,13 @@ export function ChatbotConversationScreen({
   const [completedFlowSteps, setCompletedFlowSteps] = useState<FlowStepKey[]>([]);
   const [isStepTodoOpen, setIsStepTodoOpen] = useState(false);
   const [stepToastMessage, setStepToastMessage] = useState<string | null>(null);
+  const [isDemoFlowStarted, setIsDemoFlowStarted] = useState(false);
+  const [isWaitingDraftRevisionInput, setIsWaitingDraftRevisionInput] = useState(false);
+  const [isPathReasonOpen, setIsPathReasonOpen] = useState(false);
+  const [statusFeedViewMode, setStatusFeedViewMode] = useState<StatusFeedViewMode>("important");
+  const [demoFlowData, setDemoFlowData] = useState<DemoFlowData>(createInitialDemoFlowData());
   const [optionListKind, setOptionListKind] = useState<OptionListKind>("dateTime");
+  const [optionListPurpose, setOptionListPurpose] = useState<OptionListPurpose>(null);
   const [optionListView, setOptionListView] = useState<OptionListView>("overview");
   const [selectedOptionListDate, setSelectedOptionListDate] = useState<Date | null>(null);
   const [selectedOptionListTime, setSelectedOptionListTime] = useState<OptionListDateTimeSelection | null>(null);
@@ -970,14 +1201,24 @@ export function ChatbotConversationScreen({
   const isMiniInterfaceMode = currentAiTurn.inputMode === "mini";
   const isOptionListMiniContext = miniInterfaceType === "OptionList";
   const isListPickerMiniContext = miniInterfaceType === "ListPicker";
+  const isSummaryCardMiniContext = miniInterfaceType === "SummaryCard";
+  const isStatusFeedMiniContext = miniInterfaceType === "StatusFeed";
   const shouldShowMiniInterface =
     isAiMessageCompleted &&
     !isGeneratingReply &&
     isMiniInterfaceMode &&
-    (isOptionListMiniContext || (isListPickerMiniContext && currentMiniOptions.length > 0));
-    (isOptionListMiniContext || (isListPickerMiniContext && currentMiniOptions.length > 0));
+    (
+      isOptionListMiniContext ||
+      (isListPickerMiniContext && currentMiniOptions.length > 0) ||
+      (isSummaryCardMiniContext && currentMiniOptions.length > 0) ||
+      (isStatusFeedMiniContext && currentMiniOptions.length > 0)
+    );
   const shouldShowRouteRecommendationAction =
-    status === "CLASSIFIED" && isAiMessageCompleted && !isGeneratingReply && !shouldShowMiniInterface;
+    !ENABLE_SCRIPTED_DEMO_FLOW &&
+    status === "CLASSIFIED" &&
+    isAiMessageCompleted &&
+    !isGeneratingReply &&
+    !shouldShowMiniInterface;
   const isInputDisabled = isGeneratingReply || shouldShowMiniInterface;
 
   const availableWidth = width;
@@ -1194,7 +1435,12 @@ export function ChatbotConversationScreen({
   );
 
   const startGeneratingThenRespond = useCallback(
-    (text: string, inputMode: ResponseInputMode, delayMs = 3000) => {
+    (
+      text: string,
+      inputMode: ResponseInputMode,
+      miniInterface: MiniInterfaceConfig | null = null,
+      delayMs = 3000,
+    ) => {
       if (replyTimerRef.current) {
         clearTimeout(replyTimerRef.current);
         replyTimerRef.current = null;
@@ -1206,11 +1452,232 @@ export function ChatbotConversationScreen({
 
       replyTimerRef.current = setTimeout(() => {
         setIsGeneratingReply(false);
-        pushAiTurn(text, inputMode, null);
+        pushAiTurn(text, inputMode, miniInterface);
         replyTimerRef.current = null;
       }, delayMs);
     },
     [pushAiTurn],
+  );
+
+  const proceedToDemoEvidenceStep = useCallback(
+    (routeLabel: string) => {
+      setDemoFlowData((previous) => ({
+        ...previous,
+        route: routeLabel,
+      }));
+      markFlowStepCompleted("routing");
+      moveToFlowStep("evidence");
+      setOptionListPurpose("demoEvidenceAttachment");
+      setOptionListKind("attachment");
+      setOptionListView("overview");
+      startGeneratingThenRespond(
+        "증거 체크리스트에서 필요한 항목만 첨부해 주세요.",
+        "mini",
+        createOptionListInterface("attachment"),
+        900,
+      );
+    },
+    [markFlowStepCompleted, moveToFlowStep, startGeneratingThenRespond],
+  );
+
+  const handleDemoMiniSelection = useCallback(
+    (selectedPrimary: MiniOption | undefined) => {
+      if (!selectedPrimary) {
+        return true;
+      }
+
+      switch (selectedPrimary.id) {
+        case DEMO_NOISE_NOW_ACTIVE:
+        case DEMO_NOISE_NOW_RECENT:
+        case DEMO_NOISE_NOW_REPEAT: {
+          setDemoFlowData((previous) => ({
+            ...previous,
+            noiseNow: selectedPrimary.label,
+          }));
+          startGeneratingThenRespond(
+            "좋아요. 먼저 안전 문제가 아닌지 10초만 확인할게요.",
+            "mini",
+            createDemoSafetyMiniInterface(),
+            900,
+          );
+          return true;
+        }
+        case DEMO_SAFETY_NORMAL:
+        case DEMO_SAFETY_DANGER:
+        case DEMO_SAFETY_UNKNOWN: {
+          setDemoFlowData((previous) => ({
+            ...previous,
+            safety: selectedPrimary.label,
+          }));
+          markFlowStepCompleted("classification");
+          startGeneratingThenRespond(
+            "정식 접수를 위해 기본 정보 3가지만 확인할게요.\n거주 형태를 선택해 주세요.",
+            "mini",
+            createDemoResidenceMiniInterface(),
+            900,
+          );
+          return true;
+        }
+        case DEMO_RESIDENCE_APARTMENT:
+        case DEMO_RESIDENCE_VILLA:
+        case DEMO_RESIDENCE_OFFICETEL:
+        case DEMO_RESIDENCE_OTHER: {
+          setDemoFlowData((previous) => ({
+            ...previous,
+            residence: selectedPrimary.label,
+          }));
+          startGeneratingThenRespond(
+            "좋아요. 소음이 주로 발생하는 시간대를 선택해 주세요.",
+            "mini",
+            createDemoTimeBandMiniInterface(),
+            900,
+          );
+          return true;
+        }
+        case DEMO_TIME_BAND_EVENING:
+        case DEMO_TIME_BAND_LATE_NIGHT:
+        case DEMO_TIME_BAND_DAWN:
+        case DEMO_TIME_BAND_IRREGULAR: {
+          setDemoFlowData((previous) => ({
+            ...previous,
+            timeBand: selectedPrimary.label,
+          }));
+          setOptionListPurpose("demoCoreDateTime");
+          setOptionListKind("dateTime");
+          setOptionListView("overview");
+          startGeneratingThenRespond(
+            "마지막으로 시작 시점을 선택해 주세요.",
+            "mini",
+            createOptionListInterface("dateTime"),
+            900,
+          );
+          return true;
+        }
+        case DEMO_SUMMARY_EDIT: {
+          startGeneratingThenRespond(
+            "수정할 정보를 다시 선택해 주세요. 거주 형태부터 진행할게요.",
+            "mini",
+            createDemoResidenceMiniInterface(),
+            800,
+          );
+          return true;
+        }
+        case DEMO_SUMMARY_NEXT: {
+          moveToFlowStep("routing");
+          startGeneratingThenRespond(
+            "추천 경로를 준비했어요. 진행 방식을 선택해 주세요.",
+            "mini",
+            createDemoPathChooserMiniInterface(),
+            900,
+          );
+          return true;
+        }
+        case DEMO_PATH_RECOMMENDED: {
+          proceedToDemoEvidenceStep("이웃사이센터 조정 신청");
+          return true;
+        }
+        case DEMO_PATH_OTHER: {
+          startGeneratingThenRespond(
+            "좋아요. 원하시는 기관을 선택해 주세요.",
+            "mini",
+            createDemoPathAlternativeMiniInterface(),
+            700,
+          );
+          return true;
+        }
+        case DEMO_PATH_ALT_EPEOPLE: {
+          proceedToDemoEvidenceStep("국민신문고");
+          return true;
+        }
+        case DEMO_PATH_ALT_MANAGEMENT: {
+          proceedToDemoEvidenceStep("관리사무소 공식 민원");
+          return true;
+        }
+        case DEMO_PATH_ALT_DISPUTE: {
+          proceedToDemoEvidenceStep("분쟁조정(후순위)");
+          return true;
+        }
+        case DEMO_DIARY_GENERATE: {
+          setOptionListAttachments((previous) => {
+            const alreadyExists = previous.some((item) => item.type === "NOISE_LOG");
+            if (alreadyExists) {
+              return previous;
+            }
+            return [
+              ...previous,
+              {
+                id: `demo-noise-log-${Date.now()}`,
+                type: "NOISE_LOG",
+                name: "자동 생성 소음일지(데모)",
+                uri: `demo://noise-log/${Date.now()}`,
+              },
+            ];
+          });
+          markFlowStepCompleted("evidence");
+          moveToFlowStep("mediation");
+          startGeneratingThenRespond(
+            "신청서 초안을 작성했어요. 확인해 주세요.",
+            "mini",
+            createDemoDraftViewerMiniInterface(),
+            900,
+          );
+          return true;
+        }
+        case DEMO_DRAFT_SUBMIT:
+        case DEMO_DRAFT_CONFIRM_SUBMIT: {
+          markFlowStepCompleted("mediation");
+          markFlowStepCompleted("submission");
+          moveToFlowStep("tracking");
+          startGeneratingThenRespond(
+            "접수 완료! 이제부터 진행 상황을 추적해 드릴게요.",
+            "mini",
+            createDemoStatusFeedMiniInterface(),
+            900,
+          );
+          return true;
+        }
+        case DEMO_DRAFT_EDIT:
+        case DEMO_DRAFT_CONFIRM_EDIT: {
+          setIsWaitingDraftRevisionInput(true);
+          pushAiTurn("수정할 내용을 아래 입력창에 적어주세요.", "text", null);
+          return true;
+        }
+        case DEMO_STATUS_UPLOAD: {
+          moveToFlowStep("evidence");
+          setOptionListPurpose("demoEvidenceAttachment");
+          setOptionListKind("attachment");
+          setOptionListView("overview");
+          startGeneratingThenRespond(
+            "추가 증거를 첨부해 주세요.",
+            "mini",
+            createOptionListInterface("attachment"),
+            700,
+          );
+          return true;
+        }
+        case DEMO_STATUS_SUMMARY: {
+          markFlowStepCompleted("tracking");
+          markFlowStepCompleted("completion");
+          moveToFlowStep("completion");
+          startGeneratingThenRespond(
+            "케이스 요약입니다.\n접수번호 DEMO-24001\n현재 상태: 담당자 확인 중",
+            "mini",
+            createCompletionMiniInterface(),
+            700,
+          );
+          return true;
+        }
+        default:
+          return false;
+      }
+    },
+    [
+      markFlowStepCompleted,
+      moveToFlowStep,
+      proceedToDemoEvidenceStep,
+      pushAiTurn,
+      startGeneratingThenRespond,
+    ],
   );
 
   const handleMiniOptionPress = useCallback(
@@ -1483,28 +1950,64 @@ export function ChatbotConversationScreen({
         "INFO",
       );
       setOptionListView("overview");
+      if (ENABLE_SCRIPTED_DEMO_FLOW && optionListPurpose === "demoCoreDateTime") {
+        const nextDemoData: DemoFlowData = {
+          ...demoFlowData,
+          startedAtDate: selectedOptionListDate,
+          startedAtTime: selectedOptionListTime,
+        };
+        setDemoFlowData(nextDemoData);
+        setOptionListPurpose(null);
+        startGeneratingThenRespond(
+          buildDemoSummaryText(nextDemoData),
+          "mini",
+          createDemoSummaryMiniInterface(),
+          900,
+        );
+        return;
+      }
+
       setOptionListKind("attachment");
-      pushAiTurn(
-        "자료는 선택사항이에요. 필요한 항목만 선택해 주세요.",
+      setOptionListPurpose("demoEvidenceAttachment");
+      pushAiTurn("자료는 선택사항이에요. 필요한 항목만 선택해 주세요.", "mini", createOptionListInterface("attachment"));
+      return;
+    }
+
+    setApiErrorMessage(null);
+    appendDebugLog(
+      `action=option-list-attachment-submit | noiseLog=${optionListNoiseLogAttachments.length} | audioFile=${optionListAudioFileAttachments.length} | videoFile=${optionListVideoFileAttachments.length}`,
+      "INFO",
+    );
+
+    if (ENABLE_SCRIPTED_DEMO_FLOW && optionListPurpose === "demoEvidenceAttachment") {
+      setOptionListPurpose(null);
+      if (optionListNoiseLogAttachments.length === 0) {
+        moveToFlowStep("evidence");
+        startGeneratingThenRespond(
+          "소음일지를 제가 만들어드릴게요. 최소 1건만 입력하면 접수는 가능해요.",
+          "mini",
+          createDemoDiaryBuilderMiniInterface(),
+          900,
+        );
+        return;
+      }
+
+      markFlowStepCompleted("evidence");
+      moveToFlowStep("mediation");
+      startGeneratingThenRespond(
+        "신청서 초안을 작성했어요. 확인해 주세요.",
         "mini",
-        createOptionListInterface("attachment"),
+        createDemoDraftViewerMiniInterface(),
+        900,
       );
       return;
     }
 
-      setApiErrorMessage(null);
-      appendDebugLog(
-        `action=option-list-attachment-submit | noiseLog=${optionListNoiseLogAttachments.length} | audioFile=${optionListAudioFileAttachments.length} | videoFile=${optionListVideoFileAttachments.length}`,
-        "INFO",
-      );
     markFlowStepCompleted("evidence");
     moveToFlowStep("mediation");
-    pushAiTurn(
-      "정보를 확인했어요. 다음 진행 방식을 선택해 주세요.",
-      "mini",
-      createMediationMiniInterface(),
-    );
+    pushAiTurn("정보를 확인했어요. 다음 진행 방식을 선택해 주세요.", "mini", createMediationMiniInterface());
   }, [
+    demoFlowData,
     appendDebugLog,
     isOptionListDateTimeReady,
     markFlowStepCompleted,
@@ -1513,9 +2016,11 @@ export function ChatbotConversationScreen({
     optionListKind,
     optionListNoiseLogAttachments.length,
     optionListVideoFileAttachments.length,
+    optionListPurpose,
     pushAiTurn,
     selectedOptionListDate,
     selectedOptionListTime,
+    startGeneratingThenRespond,
   ]);
 
   const ensureCaseId = useCallback(async () => {
@@ -1620,7 +2125,12 @@ export function ChatbotConversationScreen({
     setIsAiMessageCompleted(false);
     setIsGeneratingReply(false);
     setVisibleSentenceCount(1);
+    setIsDemoFlowStarted(false);
+    setIsWaitingDraftRevisionInput(false);
+    setStatusFeedViewMode("important");
+    setDemoFlowData(createInitialDemoFlowData());
     setOptionListKind("dateTime");
+    setOptionListPurpose(null);
     setOptionListView("overview");
     setSelectedOptionListDate(null);
     setSelectedOptionListTime(null);
@@ -1710,6 +2220,16 @@ export function ChatbotConversationScreen({
       setSelectedMiniOptionIds([]);
       const selectedPrimary = selectedOptions[0];
       const miniContext = currentMiniInterface?.context ?? "intake";
+
+      if (
+        ENABLE_SCRIPTED_DEMO_FLOW &&
+        selectedPrimary &&
+        isDemoOptionId(selectedPrimary.id)
+      ) {
+        setApiErrorMessage(null);
+        handleDemoMiniSelection(selectedPrimary);
+        return;
+      }
 
       if (miniContext === "routing") {
         const selectedRouteOption = selectedPrimary;
@@ -1928,7 +2448,7 @@ export function ChatbotConversationScreen({
 
       if (selectedOptions.some((option) => option.kind === "other")) {
         setApiErrorMessage(null);
-        startGeneratingThenRespond("구체적으로 알려주시겠어요?", "text", 3000);
+        startGeneratingThenRespond("구체적으로 알려주시겠어요?", "text", null, 3000);
         return;
       }
 
@@ -1969,6 +2489,7 @@ export function ChatbotConversationScreen({
         const now = new Date();
         const debugOptionListKind = debugMiniTurn.miniInterface.optionListKind ?? "dateTime";
         setOptionListKind(debugOptionListKind);
+        setOptionListPurpose(null);
         setOptionListView("overview");
         setSelectedOptionListDate(null);
         setSelectedOptionListTime(null);
@@ -1987,6 +2508,45 @@ export function ChatbotConversationScreen({
         );
       }
       pushAiTurn(debugMiniTurn.text, debugMiniTurn.inputMode, debugMiniTurn.miniInterface);
+      return;
+    }
+
+    if (ENABLE_SCRIPTED_DEMO_FLOW) {
+      setApiErrorMessage(null);
+
+      if (isWaitingDraftRevisionInput) {
+        setIsWaitingDraftRevisionInput(false);
+        setDemoFlowData((previous) => ({
+          ...previous,
+          revisionNote: trimmed,
+        }));
+        startGeneratingThenRespond(
+          "반영했습니다. 추가된 문장을 표시했어요.\n이대로 접수할까요?",
+          "mini",
+          createDemoDraftConfirmMiniInterface(),
+          900,
+        );
+        return;
+      }
+
+      if (!isDemoFlowStarted) {
+        setIsDemoFlowStarted(true);
+        setDemoFlowData((previous) => ({
+          ...previous,
+          userIssue: trimmed,
+        }));
+        markFlowStepCompleted("intake");
+        moveToFlowStep("classification");
+        startGeneratingThenRespond(
+          "윗집 소음 때문에 많이 힘드시겠어요.\n층간소음 민원으로 접수해 드릴게요.",
+          "mini",
+          createDemoNoiseNowMiniInterface(),
+          900,
+        );
+        return;
+      }
+
+      startGeneratingThenRespond("현재 단계는 아래 선택지를 눌러 진행해 주세요.", "text", null, 700);
       return;
     }
 
@@ -2015,7 +2575,10 @@ export function ChatbotConversationScreen({
     draft,
     ensureCaseId,
     fetchTimelineState,
+    handleDemoMiniSelection,
+    isDemoFlowStarted,
     isGeneratingReply,
+    isWaitingDraftRevisionInput,
     markFlowStepCompleted,
     miniContext,
     moveToFlowStep,
@@ -2092,6 +2655,11 @@ export function ChatbotConversationScreen({
     currentAiTurn.miniInterface?.context,
     currentAiTurn.miniInterface?.optionListKind,
   ]);
+
+  useEffect(() => {
+    setIsPathReasonOpen(false);
+    setStatusFeedViewMode("important");
+  }, [currentAiTurn.id]);
 
   useEffect(() => {
     appendDebugLog(`chat-screen mounted | traceId=${traceId}`, "INFO");
@@ -2323,7 +2891,60 @@ export function ChatbotConversationScreen({
 
   const hasSelectedMiniOptions = selectedMiniOptionIds.length > 0;
   const isOptionListMiniInterface = shouldShowMiniInterface && isOptionListMiniContext;
+  const demoSummaryNextOption =
+    currentMiniOptions.find((option) => option.id === DEMO_SUMMARY_NEXT) ?? null;
+  const isSummaryCardMiniInterface =
+    isSummaryCardMiniContext &&
+    Boolean(demoSummaryNextOption);
+  const demoStatusUploadOption =
+    currentMiniOptions.find((option) => option.id === DEMO_STATUS_UPLOAD) ?? null;
+  const demoStatusSummaryOption =
+    currentMiniOptions.find((option) => option.id === DEMO_STATUS_SUMMARY) ?? null;
+  const isStatusFeedMiniInterface =
+    isStatusFeedMiniContext &&
+    Boolean(demoStatusUploadOption && demoStatusSummaryOption);
+  const demoPathRecommendedOption =
+    currentMiniOptions.find((option) => option.id === DEMO_PATH_RECOMMENDED) ?? null;
+  const demoPathOtherOption =
+    currentMiniOptions.find((option) => option.id === DEMO_PATH_OTHER) ?? null;
+  const isPathChooserMiniInterface =
+    miniInterfaceType === "ListPicker" &&
+    Boolean(demoPathRecommendedOption && demoPathOtherOption);
+  const isPathRecommendedSelected = Boolean(
+    demoPathRecommendedOption && selectedMiniOptionIds.includes(demoPathRecommendedOption.id),
+  );
+  const isPathOtherSelected = Boolean(
+    demoPathOtherOption && selectedMiniOptionIds.includes(demoPathOtherOption.id),
+  );
+  const isStatusUploadSelected = Boolean(
+    demoStatusUploadOption && selectedMiniOptionIds.includes(demoStatusUploadOption.id),
+  );
+  const isStatusSummarySelected = Boolean(
+    demoStatusSummaryOption && selectedMiniOptionIds.includes(demoStatusSummaryOption.id),
+  );
   const isDateTimeOptionList = optionListKind === "dateTime";
+  const demoSummaryStartedAtText = formatDemoDateTimeSummary(
+    demoFlowData.startedAtDate,
+    demoFlowData.startedAtTime,
+  );
+  const summaryCardRows = [
+    { label: "거주 형태", value: demoFlowData.residence ?? "미입력" },
+    { label: "주 발생 시간", value: demoFlowData.timeBand ?? "미입력" },
+    { label: "시작 시점", value: demoSummaryStartedAtText },
+    { label: "현재 상태", value: demoFlowData.noiseNow ?? "미입력" },
+  ];
+  const statusFeedReceiptLabel = caseId
+    ? `접수번호 ${caseId.slice(0, 8).toUpperCase()}`
+    : "접수번호 DEMO-24001";
+  const statusFeedItems = [
+    { id: "submission-complete", icon: "✅", title: "접수 완료", description: statusFeedReceiptLabel, important: true },
+    { id: "under-review", icon: "⏳", title: "기관 확인 중", description: "담당 부서에서 접수 내용을 검토하고 있어요.", important: false },
+    { id: "assignee-wait", icon: "⏳", title: "담당자 배정", description: "배정이 완료되면 즉시 알림으로 안내해 드려요.", important: false },
+    { id: "more-evidence", icon: "⏳", title: "추가자료 요청 가능", description: "필요하면 소음일지/녹음 보강을 요청할 수 있어요.", important: true },
+  ] as const;
+  const visibleStatusFeedItems = statusFeedViewMode === "important"
+    ? statusFeedItems.filter((item) => item.important)
+    : statusFeedItems;
   const isSendDisabled = isGeneratingReply ||
     (shouldShowMiniInterface ? (isOptionListMiniInterface ? true : !hasSelectedMiniOptions) : !draft.trim());
   const sendIcon = shouldShowMiniInterface ? "↗" : "›";
@@ -3053,60 +3674,291 @@ export function ChatbotConversationScreen({
                   </View>
                 ) : null}
               </Animated.View>
+            ) : miniInterfaceType === "SummaryCard" ? (
+              <View style={styles.summaryCardWrap}>
+                <View style={styles.summaryCardContainer}>
+                  <Text style={styles.summaryCardIntro} allowFontScaling={false}>
+                    요약 확인
+                  </Text>
+
+                  <ScrollView
+                    style={styles.summaryCardRowsScroll}
+                    contentContainerStyle={styles.summaryCardRows}
+                    showsVerticalScrollIndicator
+                    keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled
+                    bounces={false}
+                  >
+                    {summaryCardRows.map((row, index) => (
+                      <View key={row.label} style={styles.summaryCardRow}>
+                        <View style={styles.summaryCardRowContent}>
+                          <View style={styles.summaryCardRowDot} />
+                          <View style={styles.summaryCardRowTextWrap}>
+                            <Text style={styles.summaryCardLabel} allowFontScaling={false}>
+                              {row.label}
+                            </Text>
+                            <Text style={styles.summaryCardValue} allowFontScaling={false}>
+                              {row.value}
+                            </Text>
+                          </View>
+                        </View>
+                        {index < summaryCardRows.length - 1 ? (
+                          <View style={styles.summaryCardDivider} />
+                        ) : null}
+                      </View>
+                    ))}
+                  </ScrollView>
+
+                  <View style={styles.summaryCardActionArea}>
+                    <MiniAnimatedPressable
+                      style={styles.summaryCardPrimaryButton}
+                      onPress={() => {
+                        if (!demoSummaryNextOption) {
+                          return;
+                        }
+                        setApiErrorMessage(null);
+                        handleDemoMiniSelection(demoSummaryNextOption);
+                      }}
+                      disabled={!demoSummaryNextOption}
+                    >
+                      <Text style={styles.summaryCardPrimaryButtonText} allowFontScaling={false}>
+                        계속하기
+                      </Text>
+                    </MiniAnimatedPressable>
+                  </View>
+                </View>
+              </View>
+            ) : miniInterfaceType === "StatusFeed" ? (
+              <>
+                <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
+                  {miniSelectionHint}
+                </Text>
+                {isStatusFeedMiniInterface && demoStatusUploadOption && demoStatusSummaryOption ? (
+                  <View style={styles.statusFeedWrap}>
+                    <View style={styles.statusFeedTimelineCard}>
+                      {visibleStatusFeedItems.map((item, index) => (
+                        <View
+                          key={item.id}
+                          style={[
+                            styles.statusFeedEventRow,
+                            index > 0 && styles.statusFeedEventRowSeparated,
+                          ]}
+                        >
+                          <Text style={styles.statusFeedEventIcon} allowFontScaling={false}>
+                            {item.icon}
+                          </Text>
+                          <View style={styles.statusFeedEventTextWrap}>
+                            <Text style={styles.statusFeedEventTitle} allowFontScaling={false}>
+                              {item.title}
+                            </Text>
+                            <Text style={styles.statusFeedEventDescription} allowFontScaling={false}>
+                              {item.description}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={styles.statusFeedToggleRow}>
+                      <MiniAnimatedPressable
+                        style={[
+                          styles.statusFeedToggleChip,
+                          statusFeedViewMode === "important" && styles.statusFeedToggleChipSelected,
+                        ]}
+                        onPress={() => setStatusFeedViewMode("important")}
+                      >
+                        <Text
+                          style={[
+                            styles.statusFeedToggleChipText,
+                            statusFeedViewMode === "important" && styles.statusFeedToggleChipTextSelected,
+                          ]}
+                          allowFontScaling={false}
+                        >
+                          중요 업데이트만
+                        </Text>
+                      </MiniAnimatedPressable>
+                      <MiniAnimatedPressable
+                        style={[
+                          styles.statusFeedToggleChip,
+                          styles.statusFeedToggleChipSecondary,
+                          statusFeedViewMode === "all" && styles.statusFeedToggleChipSelected,
+                        ]}
+                        onPress={() => setStatusFeedViewMode("all")}
+                      >
+                        <Text
+                          style={[
+                            styles.statusFeedToggleChipText,
+                            statusFeedViewMode === "all" && styles.statusFeedToggleChipTextSelected,
+                          ]}
+                          allowFontScaling={false}
+                        >
+                          단계별 모두
+                        </Text>
+                      </MiniAnimatedPressable>
+                    </View>
+
+                    <MiniAnimatedPressable
+                      style={[
+                        styles.miniTaskCard,
+                        isStatusUploadSelected && styles.miniTaskCardSelected,
+                      ]}
+                      onPress={() => handleMiniOptionPress(demoStatusUploadOption)}
+                    >
+                      <Text
+                        style={[
+                          styles.miniTaskCardTitle,
+                          isStatusUploadSelected && styles.miniTaskCardTitleSelected,
+                          { fontSize: 16, lineHeight: 24 },
+                        ]}
+                        allowFontScaling={false}
+                      >
+                        {demoStatusUploadOption.label}
+                      </Text>
+                    </MiniAnimatedPressable>
+
+                    <MiniAnimatedPressable
+                      style={[
+                        styles.miniTaskCard,
+                        isStatusSummarySelected && styles.miniTaskCardSelected,
+                      ]}
+                      onPress={() => handleMiniOptionPress(demoStatusSummaryOption)}
+                    >
+                      <Text
+                        style={[
+                          styles.miniTaskCardTitle,
+                          isStatusSummarySelected && styles.miniTaskCardTitleSelected,
+                          { fontSize: 16, lineHeight: 24 },
+                        ]}
+                        allowFontScaling={false}
+                      >
+                        {demoStatusSummaryOption.label}
+                      </Text>
+                    </MiniAnimatedPressable>
+                  </View>
+                ) : null}
+              </>
             ) : miniInterfaceType === "ListPicker" ? (
               <>
                 <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
                   {miniSelectionHint}
                 </Text>
-                <View style={styles.miniCardGrid}>
-                  {currentMiniOptions.map((option, index) => {
-                    const isSelected = selectedMiniOptionIds.includes(option.id);
-                    const appearStart = Math.min(0.7, 0.18 + index * 0.12);
-                    const cardOpacity = miniInterfaceRevealAnim.interpolate({
-                      inputRange: [0, appearStart, 1],
-                      outputRange: [0, 0, 1],
-                      extrapolate: "clamp",
-                    });
-                    const cardTranslateY = miniInterfaceRevealAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [12 + index * 4, 0],
-                      extrapolate: "clamp",
-                    });
-                    const cardScale = miniInterfaceRevealAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.985, 1],
-                      extrapolate: "clamp",
-                    });
-                    return (
-                      <Animated.View
-                        key={option.id}
-                        style={{
-                          width: miniCardWidth,
-                          opacity: cardOpacity,
-                          transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
-                        }}
+                {isPathChooserMiniInterface && demoPathRecommendedOption && demoPathOtherOption ? (
+                  <View style={styles.pathChooserWrap}>
+                    <MiniAnimatedPressable
+                      style={[
+                        styles.miniTaskCard,
+                        styles.pathChooserRecommendationCard,
+                        isPathRecommendedSelected && styles.miniTaskCardSelected,
+                      ]}
+                      onPress={() => handleMiniOptionPress(demoPathRecommendedOption)}
+                    >
+                      <View style={styles.pathChooserRecommendationHeader}>
+                        <Text style={styles.pathChooserRecommendationBadge} allowFontScaling={false}>
+                          추천
+                        </Text>
+                        <Text style={styles.pathChooserRecommendationTitle} allowFontScaling={false}>
+                          이웃사이센터 조정 신청
+                        </Text>
+                      </View>
+                      <Text style={styles.pathChooserRecommendationDescription} allowFontScaling={false}>
+                        층간소음 상담/조정 절차에 가장 빠르게 연결돼요.
+                      </Text>
+
+                      <MiniAnimatedPressable
+                        style={styles.pathChooserReasonToggle}
+                        onPress={() => setIsPathReasonOpen((previous) => !previous)}
                       >
-                        <MiniAnimatedPressable
-                          style={[
-                            styles.miniTaskCard,
-                            isSelected && styles.miniTaskCardSelected,
-                          ]}
-                          onPress={() => handleMiniOptionPress(option)}
+                        <Text style={styles.pathChooserReasonToggleText} allowFontScaling={false}>
+                          {isPathReasonOpen ? "추천 이유 접기" : "추천 이유 보기"}
+                        </Text>
+                      </MiniAnimatedPressable>
+
+                      {isPathReasonOpen ? (
+                        <View style={styles.pathChooserReasonList}>
+                          {DEMO_PATH_RECOMMENDED_REASON_LINES.map((line) => (
+                            <View key={line} style={styles.pathChooserReasonItem}>
+                              <Text style={styles.pathChooserReasonBullet} allowFontScaling={false}>
+                                {"•"}
+                              </Text>
+                              <Text style={styles.pathChooserReasonText} allowFontScaling={false}>
+                                {line}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                    </MiniAnimatedPressable>
+
+                    <MiniAnimatedPressable
+                      style={[
+                        styles.miniTaskCard,
+                        isPathOtherSelected && styles.miniTaskCardSelected,
+                      ]}
+                      onPress={() => handleMiniOptionPress(demoPathOtherOption)}
+                    >
+                      <Text
+                        style={[
+                          styles.miniTaskCardTitle,
+                          isPathOtherSelected && styles.miniTaskCardTitleSelected,
+                          { fontSize: 16, lineHeight: 24 },
+                        ]}
+                        allowFontScaling={false}
+                      >
+                        {demoPathOtherOption.label}
+                      </Text>
+                    </MiniAnimatedPressable>
+                  </View>
+                ) : (
+                  <View style={styles.miniCardGrid}>
+                    {currentMiniOptions.map((option, index) => {
+                      const isSelected = selectedMiniOptionIds.includes(option.id);
+                      const appearStart = Math.min(0.7, 0.18 + index * 0.12);
+                      const cardOpacity = miniInterfaceRevealAnim.interpolate({
+                        inputRange: [0, appearStart, 1],
+                        outputRange: [0, 0, 1],
+                        extrapolate: "clamp",
+                      });
+                      const cardTranslateY = miniInterfaceRevealAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [12 + index * 4, 0],
+                        extrapolate: "clamp",
+                      });
+                      const cardScale = miniInterfaceRevealAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.985, 1],
+                        extrapolate: "clamp",
+                      });
+                      return (
+                        <Animated.View
+                          key={option.id}
+                          style={{
+                            width: miniCardWidth,
+                            opacity: cardOpacity,
+                            transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
+                          }}
                         >
-                          <Text
+                          <MiniAnimatedPressable
                             style={[
-                              styles.miniTaskCardTitle,
-                              isSelected && styles.miniTaskCardTitleSelected,
-                              { fontSize: 16, lineHeight: 24 },
+                              styles.miniTaskCard,
+                              isSelected && styles.miniTaskCardSelected,
                             ]}
+                            onPress={() => handleMiniOptionPress(option)}
                           >
-                            {`${index + 1}번 ${option.label}`}
-                          </Text>
-                        </MiniAnimatedPressable>
-                      </Animated.View>
-                    );
-                  })}
-                </View>
+                            <Text
+                              style={[
+                                styles.miniTaskCardTitle,
+                                isSelected && styles.miniTaskCardTitleSelected,
+                                { fontSize: 16, lineHeight: 24 },
+                              ]}
+                            >
+                              {`${index + 1}번 ${option.label}`}
+                            </Text>
+                          </MiniAnimatedPressable>
+                        </Animated.View>
+                      );
+                    })}
+                  </View>
+                )}
               </>
             ) : null}
           </Animated.View>
@@ -3914,6 +4766,262 @@ const styles = StyleSheet.create({
   },
   evidenceActionButtonTextActive: {
     color: "#ffffff",
+  },
+  summaryCardWrap: {
+    marginTop: 6,
+    maxHeight: 420,
+  },
+  summaryCardContainer: {
+    borderRadius: 0,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+  },
+  summaryCardIntro: {
+    color: "#94a3b8",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  summaryCardRowsScroll: {
+    marginTop: 10,
+    maxHeight: 260,
+  },
+  summaryCardRows: {
+    paddingBottom: 4,
+  },
+  summaryCardRow: {
+    paddingVertical: 10,
+  },
+  summaryCardRowContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  summaryCardRowDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#2d5d7b",
+    marginTop: 6,
+  },
+  summaryCardRowTextWrap: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  summaryCardLabel: {
+    color: "#8090a5",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  summaryCardValue: {
+    marginTop: 4,
+    color: "#1f2937",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  summaryCardDivider: {
+    marginTop: 12,
+    marginLeft: 20,
+    height: 1,
+    backgroundColor: "#e6eef5",
+  },
+  summaryCardActionArea: {
+    paddingTop: 8,
+  },
+  summaryCardPrimaryButton: {
+    borderRadius: 12,
+    minHeight: 52,
+    backgroundColor: "#2d5d7c",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  summaryCardPrimaryButtonText: {
+    color: "#ffffff",
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: "700",
+  },
+  statusFeedWrap: {
+    marginTop: 6,
+  },
+  statusFeedTimelineCard: {
+    marginTop: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e6edf3",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  statusFeedEventRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  statusFeedEventRowSeparated: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#eef3f7",
+  },
+  statusFeedEventIcon: {
+    width: 18,
+    color: "#2d5d7b",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  statusFeedEventTextWrap: {
+    marginLeft: 8,
+    flex: 1,
+  },
+  statusFeedEventTitle: {
+    color: "#1f2937",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  statusFeedEventDescription: {
+    marginTop: 2,
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "500",
+  },
+  statusFeedToggleRow: {
+    flexDirection: "row",
+    marginTop: 10,
+  },
+  statusFeedToggleChip: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#dbe7ef",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  statusFeedToggleChipSecondary: {
+    marginLeft: 8,
+  },
+  statusFeedToggleChipSelected: {
+    borderWidth: 2,
+    borderColor: "#2d5d7b",
+    backgroundColor: "#f4f9fc",
+  },
+  statusFeedToggleChipText: {
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  statusFeedToggleChipTextSelected: {
+    color: "#2d5d7b",
+  },
+  pathChooserWrap: {
+    marginTop: 6,
+  },
+  pathChooserRecommendationCard: {
+    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  pathChooserRecommendationHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  pathChooserRecommendationBadge: {
+    color: "#2d5d7b",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+    backgroundColor: "#e8f2f9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginRight: 8,
+  },
+  pathChooserRecommendationTitle: {
+    color: "#0f172a",
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "700",
+    flex: 1,
+  },
+  pathChooserRecommendationDescription: {
+    marginTop: 8,
+    color: "#334155",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  pathChooserReasonToggle: {
+    alignSelf: "flex-start",
+    marginTop: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#dbe7ef",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  pathChooserReasonToggleText: {
+    color: "#2d5d7b",
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+  pathChooserReasonList: {
+    marginTop: 10,
+  },
+  pathChooserReasonItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 6,
+  },
+  pathChooserReasonBullet: {
+    color: "#2d5d7b",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "700",
+    marginRight: 6,
+  },
+  pathChooserReasonText: {
+    flex: 1,
+    color: "#475569",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  pathChooserActionButton: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#dbe3ea",
+    backgroundColor: "#ffffff",
+    minHeight: 52,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
+  pathChooserActionButtonSelected: {
+    borderColor: "#2d5d7b",
+    borderWidth: 2,
+    backgroundColor: "#f4f9fc",
+  },
+  pathChooserActionButtonText: {
+    color: "#1f2937",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  pathChooserActionButtonTextSelected: {
+    color: "#2d5d7b",
   },
   miniCardGrid: {
     marginTop: 0,
