@@ -42,7 +42,7 @@ type MiniSelectionMode = "single" | "multiple";
 type MiniInterfaceContext =
   | "intake"
   | "routing"
-  | "evidence"
+  | "optionList"
   | "mediation"
   | "submission"
   | "timeline"
@@ -58,12 +58,20 @@ type MiniOption = {
   badge?: string;
 };
 
-type EvidenceMiniView = "overview" | "datePicker" | "timePicker";
-type EvidenceMeridiem = "오전" | "오후";
-type EvidenceDateTimeSelection = {
-  meridiem: EvidenceMeridiem;
+type OptionListView = "overview" | "datePicker" | "timePicker";
+type OptionListMeridiem = "오전" | "오후";
+type OptionListDateTimeSelection = {
+  meridiem: OptionListMeridiem;
   hour: number;
   minute: number;
+};
+type OptionListKind = "dateTime" | "attachment";
+type OptionListAttachmentType = "NOISE_LOG" | "AUDIO_FILE" | "VIDEO_FILE";
+type OptionListAttachment = {
+  id: string;
+  type: OptionListAttachmentType;
+  name: string;
+  uri: string;
 };
 
 type MiniInterfaceConfig = {
@@ -71,6 +79,7 @@ type MiniInterfaceConfig = {
   selectionMode: MiniSelectionMode;
   context: MiniInterfaceContext;
   selectionHint?: string;
+  optionListKind?: OptionListKind;
   options: MiniOption[];
 };
 
@@ -124,6 +133,13 @@ type MiniAnimatedPressableProps = {
   pressScale?: number;
 };
 
+type OptionListSelectableRowProps = {
+  selected: boolean;
+  onPress: () => void;
+  children: ReactNode;
+  disabled?: boolean;
+};
+
 type DebugLogLevel = "INFO" | "ERROR";
 
 type DebugLogItem = {
@@ -144,22 +160,29 @@ type ApiLikeError = {
 const THINKING_TEXT = "답변을 준비하고 있어요.";
 const REQUEST_ERROR_FALLBACK = "요청 처리 중 문제가 발생했어요. 다시 시도해 주세요.";
 const TIMELINE_COMPLETED_EVENT = "CASE_COMPLETED";
+const OPTION_LIST_DATE = "option-list-date";
+const OPTION_LIST_TIME = "option-list-time";
+const OPTION_LIST_SUBMIT = "option-list-submit";
+const OPTION_LIST_ATTACHMENT_NOISE_LOG = "option-list-attachment-noise-log";
+const OPTION_LIST_ATTACHMENT_AUDIO_FILE = "option-list-attachment-audio-file";
+const OPTION_LIST_ATTACHMENT_VIDEO_FILE = "option-list-attachment-video-file";
+const OPTION_LIST_ATTACHMENT_SUBMIT = "option-list-attachment-submit";
 const KO_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
-const EVIDENCE_TIME_MERIDIEM_WHEEL: Array<EvidenceMeridiem | null> = [null, "오전", "오후", null];
-const EVIDENCE_TIME_HOURS_BASE = Array.from({ length: 12 }, (_, index) => index + 1);
-const EVIDENCE_TIME_MINUTES_BASE = Array.from({ length: 60 }, (_, index) => index);
-const EVIDENCE_TIME_HOUR_REPEAT = 9;
-const EVIDENCE_TIME_MINUTE_REPEAT = 5;
-const EVIDENCE_WHEEL_ITEM_HEIGHT = 36;
+const OPTION_LIST_TIME_MERIDIEM_WHEEL: Array<OptionListMeridiem | null> = [null, "오전", "오후", null];
+const OPTION_LIST_TIME_HOURS_BASE = Array.from({ length: 12 }, (_, index) => index + 1);
+const OPTION_LIST_TIME_MINUTES_BASE = Array.from({ length: 60 }, (_, index) => index);
+const OPTION_LIST_TIME_HOUR_REPEAT = 9;
+const OPTION_LIST_TIME_MINUTE_REPEAT = 5;
+const OPTION_LIST_WHEEL_ITEM_HEIGHT = 36;
 
-const EVIDENCE_TIME_HOURS_WHEEL = Array.from(
-  { length: EVIDENCE_TIME_HOURS_BASE.length * EVIDENCE_TIME_HOUR_REPEAT },
-  (_, index) => EVIDENCE_TIME_HOURS_BASE[index % EVIDENCE_TIME_HOURS_BASE.length] ?? 1,
+const OPTION_LIST_TIME_HOURS_WHEEL = Array.from(
+  { length: OPTION_LIST_TIME_HOURS_BASE.length * OPTION_LIST_TIME_HOUR_REPEAT },
+  (_, index) => OPTION_LIST_TIME_HOURS_BASE[index % OPTION_LIST_TIME_HOURS_BASE.length] ?? 1,
 );
 
-const EVIDENCE_TIME_MINUTES_WHEEL = Array.from(
-  { length: EVIDENCE_TIME_MINUTES_BASE.length * EVIDENCE_TIME_MINUTE_REPEAT },
-  (_, index) => EVIDENCE_TIME_MINUTES_BASE[index % EVIDENCE_TIME_MINUTES_BASE.length] ?? 0,
+const OPTION_LIST_TIME_MINUTES_WHEEL = Array.from(
+  { length: OPTION_LIST_TIME_MINUTES_BASE.length * OPTION_LIST_TIME_MINUTE_REPEAT },
+  (_, index) => OPTION_LIST_TIME_MINUTES_BASE[index % OPTION_LIST_TIME_MINUTES_BASE.length] ?? 0,
 );
 
 const MEDIATION_OPTION_TRY_FIRST = "mediation-try-first";
@@ -208,11 +231,11 @@ function isSameDate(a: Date, b: Date): boolean {
   );
 }
 
-function formatEvidenceDate(date: Date): string {
+function formatOptionListDate(date: Date): string {
   return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일 (${KO_WEEKDAYS[date.getDay()]})`;
 }
 
-function formatEvidenceTime(value: EvidenceDateTimeSelection): string {
+function formatOptionListTime(value: OptionListDateTimeSelection): string {
   const hour = value.hour.toString().padStart(2, "0");
   const minute = value.minute.toString().padStart(2, "0");
   return `${value.meridiem} ${hour}시 ${minute}분`;
@@ -239,7 +262,7 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function getMeridiemWheelInitialIndex(value: EvidenceMeridiem): number {
+function getMeridiemWheelInitialIndex(value: OptionListMeridiem): number {
   return value === "오전" ? 1 : 2;
 }
 
@@ -375,13 +398,34 @@ function mapRoutingRecommendationToMiniInterface(
   };
 }
 
-function createEvidenceMiniInterface(): MiniInterfaceConfig {
+function createOptionListInterface(optionListKind: OptionListKind = "dateTime"): MiniInterfaceConfig {
+  if (optionListKind === "attachment") {
+    return {
+      prompt: "필요한 자료 항목만 선택해 주세요.",
+      selectionMode: "single",
+      context: "optionList",
+      optionListKind: "attachment",
+      selectionHint: "옵션 선택",
+      options: [
+        { id: OPTION_LIST_ATTACHMENT_NOISE_LOG, label: "소음일지" },
+        { id: OPTION_LIST_ATTACHMENT_AUDIO_FILE, label: "녹음 파일" },
+        { id: OPTION_LIST_ATTACHMENT_VIDEO_FILE, label: "영상 파일" },
+        { id: OPTION_LIST_ATTACHMENT_SUBMIT, label: "선택 완료" },
+      ],
+    };
+  }
+
   return {
-    prompt: "증거 자료를 체크리스트로 확인해 주세요.",
+    prompt: "소음이 발생한 날짜와 시간을 선택해 주세요.",
     selectionMode: "single",
-    context: "evidence",
-    selectionHint: "체크리스트",
-    options: [],
+    context: "optionList",
+    optionListKind: "dateTime",
+    selectionHint: "옵션 선택",
+    options: [
+      { id: OPTION_LIST_DATE, label: "발생 날짜" },
+      { id: OPTION_LIST_TIME, label: "발생 시간" },
+      { id: OPTION_LIST_SUBMIT, label: "정보 확인 및 제출" },
+    ],
   };
 }
 
@@ -507,9 +551,18 @@ function createDebugMiniInterfaceInput(
     compactUserInput === "날짜시간테스트" ||
     compactUserInput === "증거날짜시간"
   ) {
-    const miniInterface = createEvidenceMiniInterface();
+    const miniInterface = createOptionListInterface("dateTime");
     return {
       text: "테스트입니다. 소음이 발생한 날짜와 시간을 선택해 주세요.",
+      inputMode: "mini",
+      miniInterface,
+    };
+  }
+
+  if (compactUserInput === "5" || compactUserInput === "첨부옵션테스트") {
+    const miniInterface = createOptionListInterface("attachment");
+    return {
+      text: "테스트입니다. 자료 옵션을 선택해 주세요.",
       inputMode: "mini",
       miniInterface,
     };
@@ -648,6 +701,61 @@ function MiniAnimatedPressable({
   );
 }
 
+function OptionListSelectableRow({
+  selected,
+  onPress,
+  children,
+  disabled = false,
+}: OptionListSelectableRowProps) {
+  const selectedAnim = useRef(new Animated.Value(selected ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(selectedAnim, {
+      toValue: selected ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [selected, selectedAnim]);
+
+  const animatedStyle = useMemo(
+    () => ({
+      transform: [
+        {
+          scale: selectedAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 1.012],
+          }),
+        },
+        {
+          translateY: selectedAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, -1],
+          }),
+        },
+      ],
+      opacity: selectedAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, 0.995],
+      }),
+    }),
+    [selectedAnim],
+  );
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <MiniAnimatedPressable
+        style={styles.evidenceDateTimeRow}
+        onPress={onPress}
+        disabled={disabled}
+        pressScale={0.985}
+      >
+        {children}
+      </MiniAnimatedPressable>
+    </Animated.View>
+  );
+}
+
 function EvidenceCalendarIcon() {
   return (
     <View style={styles.evidenceIconCalendarBase}>
@@ -666,6 +774,63 @@ function EvidenceClockIcon() {
       <View style={styles.evidenceIconClockDot} />
     </View>
   );
+}
+
+function EvidenceMicIcon() {
+  return (
+    <View style={styles.evidenceIconMicBase}>
+      <View style={styles.evidenceIconMicHead} />
+      <View style={styles.evidenceIconMicStem} />
+      <View style={styles.evidenceIconMicFoot} />
+    </View>
+  );
+}
+
+function EvidenceVideoIcon() {
+  return (
+    <View style={styles.evidenceIconVideoBase}>
+      <View style={styles.evidenceIconVideoLens} />
+      <View style={styles.evidenceIconVideoDot} />
+    </View>
+  );
+}
+
+function getExpoImagePickerModule():
+  | null
+  | {
+      requestMediaLibraryPermissionsAsync: () => Promise<{ granted: boolean }>;
+      launchImageLibraryAsync: (options?: Record<string, unknown>) => Promise<{
+        canceled: boolean;
+        assets?: Array<{ uri: string; fileName?: string | null }>;
+      }>;
+      MediaTypeOptions?: { All?: unknown; Videos?: unknown };
+    } {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require("expo-image-picker");
+  } catch {
+    return null;
+  }
+}
+
+function getExpoDocumentPickerModule():
+  | null
+  | {
+      getDocumentAsync: (options?: {
+        type?: string | string[];
+        multiple?: boolean;
+        copyToCacheDirectory?: boolean;
+      }) => Promise<{
+        canceled?: boolean;
+        assets?: Array<{ uri: string; name?: string }>;
+      }>;
+    } {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require("expo-document-picker");
+  } catch {
+    return null;
+  }
 }
 
 function keyboardEasingToAnimated(easing?: KeyboardEvent["easing"]) {
@@ -723,22 +888,24 @@ export function ChatbotConversationScreen({
   const [completedFlowSteps, setCompletedFlowSteps] = useState<FlowStepKey[]>([]);
   const [isStepTodoOpen, setIsStepTodoOpen] = useState(false);
   const [stepToastMessage, setStepToastMessage] = useState<string | null>(null);
-  const [evidenceMiniView, setEvidenceMiniView] = useState<EvidenceMiniView>("overview");
-  const [selectedEvidenceDate, setSelectedEvidenceDate] = useState<Date | null>(null);
-  const [selectedEvidenceTime, setSelectedEvidenceTime] = useState<EvidenceDateTimeSelection | null>(null);
-  const [datePickerMonth, setDatePickerMonth] = useState<Date>(() => toMonthStart(new Date()));
-  const [draftEvidenceDate, setDraftEvidenceDate] = useState<Date>(() => new Date());
-  const [draftEvidenceTime, setDraftEvidenceTime] = useState<EvidenceDateTimeSelection>({
+  const [optionListKind, setOptionListKind] = useState<OptionListKind>("dateTime");
+  const [optionListView, setOptionListView] = useState<OptionListView>("overview");
+  const [selectedOptionListDate, setSelectedOptionListDate] = useState<Date | null>(null);
+  const [selectedOptionListTime, setSelectedOptionListTime] = useState<OptionListDateTimeSelection | null>(null);
+  const [optionListAttachments, setOptionListAttachments] = useState<OptionListAttachment[]>([]);
+  const [optionListPickerMonth, setOptionListPickerMonth] = useState<Date>(() => toMonthStart(new Date()));
+  const [draftOptionListDate, setDraftOptionListDate] = useState<Date>(() => new Date());
+  const [draftOptionListTime, setDraftOptionListTime] = useState<OptionListDateTimeSelection>({
     meridiem: "오후",
     hour: 2,
     minute: 30,
   });
   const [meridiemWheelIndex, setMeridiemWheelIndex] = useState<number>(getMeridiemWheelInitialIndex("오후"));
   const [hourWheelIndex, setHourWheelIndex] = useState<number>(
-    getCyclicWheelCenterIndex(2, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT),
+    getCyclicWheelCenterIndex(2, OPTION_LIST_TIME_HOURS_BASE, OPTION_LIST_TIME_HOUR_REPEAT),
   );
   const [minuteWheelIndex, setMinuteWheelIndex] = useState<number>(
-    getCyclicWheelCenterIndex(30, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT),
+    getCyclicWheelCenterIndex(30, OPTION_LIST_TIME_MINUTES_BASE, OPTION_LIST_TIME_MINUTE_REPEAT),
   );
   const [debugLogs, setDebugLogs] = useState<DebugLogItem[]>([]);
   const [isDebugLogOpen, setIsDebugLogOpen] = useState(false);
@@ -761,10 +928,10 @@ export function ChatbotConversationScreen({
   const completedFlowStepsRef = useRef<Set<FlowStepKey>>(new Set());
   const createCaseIdempotencyKeyRef = useRef(`mobile-create-case-${Date.now()}`);
   const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const evidenceMeridiemWheelRef = useRef<ScrollView | null>(null);
-  const evidenceHourWheelRef = useRef<ScrollView | null>(null);
-  const evidenceMinuteWheelRef = useRef<ScrollView | null>(null);
-  const evidenceMiniFadeAnim = useRef(new Animated.Value(1)).current;
+  const optionListMeridiemWheelRef = useRef<ScrollView | null>(null);
+  const optionListHourWheelRef = useRef<ScrollView | null>(null);
+  const optionListMinuteWheelRef = useRef<ScrollView | null>(null);
+  const optionListFadeAnim = useRef(new Animated.Value(1)).current;
   const wheelLastHandledOffsetRef = useRef<Record<"meridiem" | "hour" | "minute", number>>({
     meridiem: Number.NaN,
     hour: Number.NaN,
@@ -789,12 +956,12 @@ export function ChatbotConversationScreen({
   const currentMiniSelectionMode = currentMiniInterface?.selectionMode ?? "single";
   const miniContext = currentMiniInterface?.context ?? null;
   const isMiniInterfaceMode = currentAiTurn.inputMode === "mini";
-  const isEvidenceMiniContext = miniContext === "evidence";
+  const isOptionListMiniContext = miniContext === "optionList";
   const shouldShowMiniInterface =
     isAiMessageCompleted &&
     !isGeneratingReply &&
     isMiniInterfaceMode &&
-    (isEvidenceMiniContext || currentMiniOptions.length > 0);
+    (isOptionListMiniContext || currentMiniOptions.length > 0);
   const shouldShowRouteRecommendationAction =
     status === "CLASSIFIED" && isAiMessageCompleted && !isGeneratingReply && !shouldShowMiniInterface;
   const isInputDisabled = isGeneratingReply || shouldShowMiniInterface;
@@ -807,25 +974,49 @@ export function ChatbotConversationScreen({
   const inputBaseBottom = insets.bottom + 16;
   const miniPanelBottom = inputBaseBottom + inputHeight + 24;
   const topInsetOffset = Math.max(insets.top - 20, 0);
-  const evidenceCalendarCells = useMemo(() => createCalendarCells(datePickerMonth), [datePickerMonth]);
-  const evidenceDateLabel = selectedEvidenceDate ? formatEvidenceDate(selectedEvidenceDate) : "선택해 주세요";
-  const evidenceTimeLabel = selectedEvidenceTime ? formatEvidenceTime(selectedEvidenceTime) : "선택해 주세요";
-  const isEvidenceDateTimeReady = Boolean(selectedEvidenceDate && selectedEvidenceTime);
+  const optionListCalendarCells = useMemo(() => createCalendarCells(optionListPickerMonth), [optionListPickerMonth]);
+  const optionListDateLabel = selectedOptionListDate ? formatOptionListDate(selectedOptionListDate) : "선택해 주세요";
+  const optionListTimeLabel = selectedOptionListTime ? formatOptionListTime(selectedOptionListTime) : "선택해 주세요";
+  const optionListNoiseLogAttachments = useMemo(
+    () => optionListAttachments.filter((item) => item.type === "NOISE_LOG"),
+    [optionListAttachments],
+  );
+  const optionListAudioFileAttachments = useMemo(
+    () => optionListAttachments.filter((item) => item.type === "AUDIO_FILE"),
+    [optionListAttachments],
+  );
+  const optionListVideoFileAttachments = useMemo(
+    () => optionListAttachments.filter((item) => item.type === "VIDEO_FILE"),
+    [optionListAttachments],
+  );
+  const optionListNoiseLogLabel =
+    optionListNoiseLogAttachments.length > 0
+      ? `${optionListNoiseLogAttachments.length}개 선택됨`
+      : "선택해 주세요";
+  const optionListAudioFileLabel =
+    optionListAudioFileAttachments.length > 0
+      ? `${optionListAudioFileAttachments.length}개 선택됨`
+      : "선택해 주세요";
+  const optionListVideoFileLabel =
+    optionListVideoFileAttachments.length > 0
+      ? `${optionListVideoFileAttachments.length}개 선택됨`
+      : "선택해 주세요";
+  const isOptionListDateTimeReady = Boolean(selectedOptionListDate && selectedOptionListTime);
 
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
     setIsInputFocused(false);
   }, []);
 
-  const transitionEvidenceMiniView = useCallback(
-    (nextView: EvidenceMiniView, afterSwitch?: () => void) => {
-      if (evidenceMiniView === nextView) {
+  const transitionOptionListView = useCallback(
+    (nextView: OptionListView, afterSwitch?: () => void) => {
+      if (optionListView === nextView) {
         afterSwitch?.();
         return;
       }
 
-      evidenceMiniFadeAnim.stopAnimation();
-      Animated.timing(evidenceMiniFadeAnim, {
+      optionListFadeAnim.stopAnimation();
+      Animated.timing(optionListFadeAnim, {
         toValue: 0,
         duration: 90,
         easing: Easing.out(Easing.cubic),
@@ -835,10 +1026,10 @@ export function ChatbotConversationScreen({
           return;
         }
 
-        setEvidenceMiniView(nextView);
+        setOptionListView(nextView);
         requestAnimationFrame(() => {
           afterSwitch?.();
-          Animated.timing(evidenceMiniFadeAnim, {
+          Animated.timing(optionListFadeAnim, {
             toValue: 1,
             duration: 180,
             easing: Easing.out(Easing.cubic),
@@ -847,7 +1038,7 @@ export function ChatbotConversationScreen({
         });
       });
     },
-    [evidenceMiniFadeAnim, evidenceMiniView],
+    [optionListFadeAnim, optionListView],
   );
 
   const handleBackPressIn = useCallback(() => {
@@ -1032,53 +1223,146 @@ export function ChatbotConversationScreen({
     [currentMiniSelectionMode, isGeneratingReply],
   );
 
-  const handleOpenEvidenceDatePicker = useCallback(() => {
+  const handleOpenOptionListDatePicker = useCallback(() => {
+    if (optionListKind !== "dateTime") {
+      return;
+    }
     setApiErrorMessage(null);
-    const base = selectedEvidenceDate ?? new Date();
-    setDraftEvidenceDate(base);
-    setDatePickerMonth(toMonthStart(base));
-    transitionEvidenceMiniView("datePicker");
-  }, [selectedEvidenceDate, transitionEvidenceMiniView]);
+    const base = selectedOptionListDate ?? new Date();
+    setDraftOptionListDate(base);
+    setOptionListPickerMonth(toMonthStart(base));
+    transitionOptionListView("datePicker");
+  }, [optionListKind, selectedOptionListDate, transitionOptionListView]);
 
-  const handleOpenEvidenceTimePicker = useCallback(() => {
+  const handleOpenOptionListTimePicker = useCallback(() => {
+    if (optionListKind !== "dateTime") {
+      return;
+    }
     setApiErrorMessage(null);
-    const nextDraft = selectedEvidenceTime ?? {
+    const nextDraft = selectedOptionListTime ?? {
       meridiem: "오후" as const,
       hour: 2,
       minute: 30,
     };
-    setDraftEvidenceTime(nextDraft);
+    setDraftOptionListTime(nextDraft);
     const meridiemIndex = getMeridiemWheelInitialIndex(nextDraft.meridiem);
     const hourIndex = getCyclicWheelCenterIndex(
       nextDraft.hour,
-      EVIDENCE_TIME_HOURS_BASE,
-      EVIDENCE_TIME_HOUR_REPEAT,
+      OPTION_LIST_TIME_HOURS_BASE,
+      OPTION_LIST_TIME_HOUR_REPEAT,
     );
     const minuteIndex = getCyclicWheelCenterIndex(
       nextDraft.minute,
-      EVIDENCE_TIME_MINUTES_BASE,
-      EVIDENCE_TIME_MINUTE_REPEAT,
+      OPTION_LIST_TIME_MINUTES_BASE,
+      OPTION_LIST_TIME_MINUTE_REPEAT,
     );
     setMeridiemWheelIndex(meridiemIndex);
     setHourWheelIndex(hourIndex);
     setMinuteWheelIndex(minuteIndex);
-    transitionEvidenceMiniView("timePicker", () => {
-      evidenceMeridiemWheelRef.current?.scrollTo({
-        y: meridiemIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+    transitionOptionListView("timePicker", () => {
+      optionListMeridiemWheelRef.current?.scrollTo({
+        y: meridiemIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT,
         animated: false,
       });
-      evidenceHourWheelRef.current?.scrollTo({
-        y: hourIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+      optionListHourWheelRef.current?.scrollTo({
+        y: hourIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT,
         animated: false,
       });
-      evidenceMinuteWheelRef.current?.scrollTo({
-        y: minuteIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+      optionListMinuteWheelRef.current?.scrollTo({
+        y: minuteIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT,
         animated: false,
       });
     });
-  }, [selectedEvidenceTime, transitionEvidenceMiniView]);
+  }, [optionListKind, selectedOptionListTime, transitionOptionListView]);
 
-  const handleEvidenceTimeWheelScrollEnd = useCallback(
+  const handleOpenOptionListAttachmentPicker = useCallback(
+    async (attachmentType: OptionListAttachmentType) => {
+      if (optionListKind !== "attachment" || isGeneratingReply) {
+        return;
+      }
+
+      setApiErrorMessage(null);
+
+      try {
+        let pickerAssets: Array<{ uri: string; fileName?: string | null; name?: string }> = [];
+
+        if (attachmentType === "VIDEO_FILE") {
+          const imagePicker = getExpoImagePickerModule();
+          if (!imagePicker) {
+            throw new Error("영상 선택 기능을 불러오지 못했어요. 앱을 다시 실행해 주세요.");
+          }
+
+          const permission = await imagePicker.requestMediaLibraryPermissionsAsync();
+          if (!permission.granted) {
+            setApiErrorMessage("갤러리 권한이 필요해요. 권한을 허용한 뒤 다시 시도해 주세요.");
+            return;
+          }
+
+          const pickerResult = await imagePicker.launchImageLibraryAsync({
+            mediaTypes: imagePicker.MediaTypeOptions?.Videos,
+            allowsMultipleSelection: true,
+            quality: 1,
+          });
+
+          if (pickerResult.canceled || !pickerResult.assets?.length) {
+            return;
+          }
+
+          pickerAssets = pickerResult.assets;
+        } else {
+          const documentPicker = getExpoDocumentPickerModule();
+          if (!documentPicker) {
+            throw new Error("파일 선택 기능을 불러오지 못했어요. 앱을 다시 실행해 주세요.");
+          }
+
+          const pickerResult = await documentPicker.getDocumentAsync({
+            type: attachmentType === "AUDIO_FILE" ? ["audio/*"] : ["*/*"],
+            multiple: true,
+            copyToCacheDirectory: false,
+          });
+
+          if (pickerResult.canceled || !pickerResult.assets?.length) {
+            return;
+          }
+
+          pickerAssets = pickerResult.assets;
+        }
+
+        setOptionListAttachments((previous) => {
+          const existingKeys = new Set(previous.map((item) => `${item.type}:${item.uri}`));
+          const next = [...previous];
+
+          for (const asset of pickerAssets) {
+            if (!asset.uri) {
+              continue;
+            }
+            const key = `${attachmentType}:${asset.uri}`;
+            if (existingKeys.has(key)) {
+              continue;
+            }
+            existingKeys.add(key);
+            const fileName =
+              asset.fileName?.trim() ||
+              asset.name?.trim() ||
+              asset.uri.split("/").filter(Boolean).pop() ||
+              "선택한 파일";
+            next.push({
+              id: `${attachmentType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              type: attachmentType,
+              name: fileName,
+              uri: asset.uri,
+            });
+          }
+          return next;
+        });
+      } catch (error: unknown) {
+        applyApiError(error, "option-list-attachment-pick");
+      }
+    },
+    [applyApiError, isGeneratingReply, optionListKind],
+  );
+
+  const handleOptionListTimeWheelScrollEnd = useCallback(
     (
       field: "meridiem" | "hour" | "minute",
       event: NativeSyntheticEvent<NativeScrollEvent>,
@@ -1090,75 +1374,75 @@ export function ChatbotConversationScreen({
       }
       wheelLastHandledOffsetRef.current[field] = offsetY;
 
-      const rawIndex = Math.round(offsetY / EVIDENCE_WHEEL_ITEM_HEIGHT);
+      const rawIndex = Math.round(offsetY / OPTION_LIST_WHEEL_ITEM_HEIGHT);
 
       if (field === "meridiem") {
         const index = clampNumber(rawIndex, 1, 2);
-        const nextValue = EVIDENCE_TIME_MERIDIEM_WHEEL[index];
-        const snappedY = index * EVIDENCE_WHEEL_ITEM_HEIGHT;
+        const nextValue = OPTION_LIST_TIME_MERIDIEM_WHEEL[index];
+        const snappedY = index * OPTION_LIST_WHEEL_ITEM_HEIGHT;
         setMeridiemWheelIndex(index);
         if (nextValue) {
-          setDraftEvidenceTime((previous) =>
+          setDraftOptionListTime((previous) =>
             previous.meridiem === nextValue ? previous : { ...previous, meridiem: nextValue },
           );
         }
         if (Math.abs(offsetY - snappedY) > 0.5) {
           requestAnimationFrame(() => {
-            evidenceMeridiemWheelRef.current?.scrollTo({ y: snappedY, animated: true });
+            optionListMeridiemWheelRef.current?.scrollTo({ y: snappedY, animated: true });
           });
         }
         return;
       }
 
       if (field === "hour") {
-        const boundedIndex = clampNumber(rawIndex, 0, EVIDENCE_TIME_HOURS_WHEEL.length - 1);
-        const nextValue = EVIDENCE_TIME_HOURS_WHEEL[boundedIndex] ?? 1;
+        const boundedIndex = clampNumber(rawIndex, 0, OPTION_LIST_TIME_HOURS_WHEEL.length - 1);
+        const nextValue = OPTION_LIST_TIME_HOURS_WHEEL[boundedIndex] ?? 1;
         const shouldRecenter =
-          boundedIndex < EVIDENCE_TIME_HOURS_BASE.length ||
-          boundedIndex >= EVIDENCE_TIME_HOURS_WHEEL.length - EVIDENCE_TIME_HOURS_BASE.length;
+          boundedIndex < OPTION_LIST_TIME_HOURS_BASE.length ||
+          boundedIndex >= OPTION_LIST_TIME_HOURS_WHEEL.length - OPTION_LIST_TIME_HOURS_BASE.length;
         const recenteredIndex = shouldRecenter
-          ? getCyclicWheelCenterIndex(nextValue, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT)
+          ? getCyclicWheelCenterIndex(nextValue, OPTION_LIST_TIME_HOURS_BASE, OPTION_LIST_TIME_HOUR_REPEAT)
           : boundedIndex;
-        const snappedY = recenteredIndex * EVIDENCE_WHEEL_ITEM_HEIGHT;
+        const snappedY = recenteredIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT;
 
         setHourWheelIndex(recenteredIndex);
-        setDraftEvidenceTime((previous) =>
+        setDraftOptionListTime((previous) =>
           previous.hour === nextValue ? previous : { ...previous, hour: nextValue },
         );
 
         if (Math.abs(offsetY - snappedY) > 0.5) {
           requestAnimationFrame(() => {
-            evidenceHourWheelRef.current?.scrollTo({ y: snappedY, animated: true });
+            optionListHourWheelRef.current?.scrollTo({ y: snappedY, animated: true });
           });
         }
         return;
       }
 
-      const boundedIndex = clampNumber(rawIndex, 0, EVIDENCE_TIME_MINUTES_WHEEL.length - 1);
-      const nextValue = EVIDENCE_TIME_MINUTES_WHEEL[boundedIndex] ?? 0;
+      const boundedIndex = clampNumber(rawIndex, 0, OPTION_LIST_TIME_MINUTES_WHEEL.length - 1);
+      const nextValue = OPTION_LIST_TIME_MINUTES_WHEEL[boundedIndex] ?? 0;
       const shouldRecenter =
-        boundedIndex < EVIDENCE_TIME_MINUTES_BASE.length ||
-        boundedIndex >= EVIDENCE_TIME_MINUTES_WHEEL.length - EVIDENCE_TIME_MINUTES_BASE.length;
+        boundedIndex < OPTION_LIST_TIME_MINUTES_BASE.length ||
+        boundedIndex >= OPTION_LIST_TIME_MINUTES_WHEEL.length - OPTION_LIST_TIME_MINUTES_BASE.length;
       const recenteredIndex = shouldRecenter
-        ? getCyclicWheelCenterIndex(nextValue, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT)
+        ? getCyclicWheelCenterIndex(nextValue, OPTION_LIST_TIME_MINUTES_BASE, OPTION_LIST_TIME_MINUTE_REPEAT)
         : boundedIndex;
-      const snappedY = recenteredIndex * EVIDENCE_WHEEL_ITEM_HEIGHT;
+      const snappedY = recenteredIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT;
 
       setMinuteWheelIndex(recenteredIndex);
-      setDraftEvidenceTime((previous) =>
+      setDraftOptionListTime((previous) =>
         previous.minute === nextValue ? previous : { ...previous, minute: nextValue },
       );
 
       if (Math.abs(offsetY - snappedY) > 0.5) {
         requestAnimationFrame(() => {
-          evidenceMinuteWheelRef.current?.scrollTo({ y: snappedY, animated: true });
+          optionListMinuteWheelRef.current?.scrollTo({ y: snappedY, animated: true });
         });
       }
     },
     [],
   );
 
-  const handleEvidenceTimeWheelScrollEndDrag = useCallback(
+  const handleOptionListTimeWheelScrollEndDrag = useCallback(
     (
       field: "meridiem" | "hour" | "minute",
       event: NativeSyntheticEvent<NativeScrollEvent>,
@@ -1167,22 +1451,38 @@ export function ChatbotConversationScreen({
       if (velocityY > 0.05) {
         return;
       }
-      handleEvidenceTimeWheelScrollEnd(field, event);
+      handleOptionListTimeWheelScrollEnd(field, event);
     },
-    [handleEvidenceTimeWheelScrollEnd],
+    [handleOptionListTimeWheelScrollEnd],
   );
 
-  const handleSubmitEvidenceChecklist = useCallback(() => {
-    if (!isEvidenceDateTimeReady) {
-      setApiErrorMessage("날짜와 시간을 모두 선택해 주세요.");
+  const handleSubmitOptionList = useCallback(() => {
+    if (optionListKind === "dateTime") {
+      if (!isOptionListDateTimeReady) {
+        setApiErrorMessage("날짜와 시간을 모두 선택해 주세요.");
+        return;
+      }
+
+      setApiErrorMessage(null);
+      appendDebugLog(
+        `action=option-list-datetime-submit | date=${selectedOptionListDate ? formatOptionListDate(selectedOptionListDate) : "-"} | time=${selectedOptionListTime ? formatOptionListTime(selectedOptionListTime) : "-"}`,
+        "INFO",
+      );
+      setOptionListView("overview");
+      setOptionListKind("attachment");
+      pushAiTurn(
+        "자료는 선택사항이에요. 필요한 항목만 선택해 주세요.",
+        "mini",
+        createOptionListInterface("attachment"),
+      );
       return;
     }
 
-    setApiErrorMessage(null);
-    appendDebugLog(
-      `action=evidence-checklist-submit | date=${selectedEvidenceDate ? formatEvidenceDate(selectedEvidenceDate) : "-"} | time=${selectedEvidenceTime ? formatEvidenceTime(selectedEvidenceTime) : "-"}`,
-      "INFO",
-    );
+      setApiErrorMessage(null);
+      appendDebugLog(
+        `action=option-list-attachment-submit | noiseLog=${optionListNoiseLogAttachments.length} | audioFile=${optionListAudioFileAttachments.length} | videoFile=${optionListVideoFileAttachments.length}`,
+        "INFO",
+      );
     markFlowStepCompleted("evidence");
     moveToFlowStep("mediation");
     pushAiTurn(
@@ -1192,12 +1492,16 @@ export function ChatbotConversationScreen({
     );
   }, [
     appendDebugLog,
-    isEvidenceDateTimeReady,
+    isOptionListDateTimeReady,
     markFlowStepCompleted,
     moveToFlowStep,
+    optionListAudioFileAttachments.length,
+    optionListKind,
+    optionListNoiseLogAttachments.length,
+    optionListVideoFileAttachments.length,
     pushAiTurn,
-    selectedEvidenceDate,
-    selectedEvidenceTime,
+    selectedOptionListDate,
+    selectedOptionListTime,
   ]);
 
   const ensureCaseId = useCallback(async () => {
@@ -1302,20 +1606,22 @@ export function ChatbotConversationScreen({
     setIsAiMessageCompleted(false);
     setIsGeneratingReply(false);
     setVisibleSentenceCount(1);
-    setEvidenceMiniView("overview");
-    setSelectedEvidenceDate(null);
-    setSelectedEvidenceTime(null);
-    setDatePickerMonth(toMonthStart(new Date()));
-    setDraftEvidenceDate(new Date());
-    setDraftEvidenceTime({
+    setOptionListKind("dateTime");
+    setOptionListView("overview");
+    setSelectedOptionListDate(null);
+    setSelectedOptionListTime(null);
+    setOptionListAttachments([]);
+    setOptionListPickerMonth(toMonthStart(new Date()));
+    setDraftOptionListDate(new Date());
+    setDraftOptionListTime({
       meridiem: "오후",
       hour: 2,
       minute: 30,
     });
     setMeridiemWheelIndex(getMeridiemWheelInitialIndex("오후"));
-    setHourWheelIndex(getCyclicWheelCenterIndex(2, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT));
+    setHourWheelIndex(getCyclicWheelCenterIndex(2, OPTION_LIST_TIME_HOURS_BASE, OPTION_LIST_TIME_HOUR_REPEAT));
     setMinuteWheelIndex(
-      getCyclicWheelCenterIndex(30, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT),
+      getCyclicWheelCenterIndex(30, OPTION_LIST_TIME_MINUTES_BASE, OPTION_LIST_TIME_MINUTE_REPEAT),
     );
     turnSequenceRef.current = 2;
     completedFlowStepsRef.current = new Set();
@@ -1423,13 +1729,15 @@ export function ChatbotConversationScreen({
             confirmedCase.status === "ROUTE_CONFIRMED"
               ? `${selectedRouteOption.label}로 경로를 확정했어요.`
               : "경로를 반영했어요.";
-          setEvidenceMiniView("overview");
-          setSelectedEvidenceDate(null);
-          setSelectedEvidenceTime(null);
+          setOptionListKind("dateTime");
+          setOptionListView("overview");
+          setSelectedOptionListDate(null);
+          setSelectedOptionListTime(null);
+          setOptionListAttachments([]);
           pushAiTurn(
             `${routeConfirmedText}\n날짜와 시간을 선택해 주세요.`,
             "mini",
-            createEvidenceMiniInterface(),
+            createOptionListInterface("dateTime"),
           );
           onRouteConfirmed?.();
         } catch (error: unknown) {
@@ -1441,7 +1749,7 @@ export function ChatbotConversationScreen({
         return;
       }
 
-      if (miniContext === "evidence") {
+      if (miniContext === "optionList") {
         return;
       }
 
@@ -1643,22 +1951,25 @@ export function ChatbotConversationScreen({
     const debugMiniTurn = createDebugMiniInterfaceInput(trimmed.replace(/\s+/g, ""));
     if (debugMiniTurn) {
       setApiErrorMessage(null);
-      if (debugMiniTurn.miniInterface?.context === "evidence") {
+      if (debugMiniTurn.miniInterface?.context === "optionList") {
         const now = new Date();
-        setEvidenceMiniView("overview");
-        setSelectedEvidenceDate(null);
-        setSelectedEvidenceTime(null);
-        setDatePickerMonth(toMonthStart(now));
-        setDraftEvidenceDate(now);
-        setDraftEvidenceTime({
+        const debugOptionListKind = debugMiniTurn.miniInterface.optionListKind ?? "dateTime";
+        setOptionListKind(debugOptionListKind);
+        setOptionListView("overview");
+        setSelectedOptionListDate(null);
+        setSelectedOptionListTime(null);
+        setOptionListAttachments([]);
+        setOptionListPickerMonth(toMonthStart(now));
+        setDraftOptionListDate(now);
+        setDraftOptionListTime({
           meridiem: "오후",
           hour: 2,
           minute: 30,
         });
         setMeridiemWheelIndex(getMeridiemWheelInitialIndex("오후"));
-        setHourWheelIndex(getCyclicWheelCenterIndex(2, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT));
+        setHourWheelIndex(getCyclicWheelCenterIndex(2, OPTION_LIST_TIME_HOURS_BASE, OPTION_LIST_TIME_HOUR_REPEAT));
         setMinuteWheelIndex(
-          getCyclicWheelCenterIndex(30, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT),
+          getCyclicWheelCenterIndex(30, OPTION_LIST_TIME_MINUTES_BASE, OPTION_LIST_TIME_MINUTE_REPEAT),
         );
       }
       pushAiTurn(debugMiniTurn.text, debugMiniTurn.inputMode, debugMiniTurn.miniInterface);
@@ -1731,36 +2042,41 @@ export function ChatbotConversationScreen({
     setDraft("");
     setSelectedMiniOptionIds([]);
     setIsInputFocused(false);
-    if (currentAiTurn.miniInterface?.context === "evidence") {
+    if (currentAiTurn.miniInterface?.context === "optionList") {
+      const nextOptionListKind = currentAiTurn.miniInterface.optionListKind ?? "dateTime";
       const now = new Date();
-      setEvidenceMiniView("overview");
-      setDatePickerMonth(toMonthStart(selectedEvidenceDate ?? now));
-      setDraftEvidenceDate(selectedEvidenceDate ?? now);
-      setDraftEvidenceTime(
-        selectedEvidenceTime ?? {
-          meridiem: "오후",
+      setOptionListKind(nextOptionListKind);
+      setOptionListView("overview");
+      if (nextOptionListKind === "dateTime") {
+        setOptionListPickerMonth(toMonthStart(selectedOptionListDate ?? now));
+        setDraftOptionListDate(selectedOptionListDate ?? now);
+        setDraftOptionListTime(
+          selectedOptionListTime ?? {
+            meridiem: "오후",
+            hour: 2,
+            minute: 30,
+          },
+        );
+        const initialTime = selectedOptionListTime ?? {
+          meridiem: "오후" as const,
           hour: 2,
           minute: 30,
-        },
-      );
-      const initialTime = selectedEvidenceTime ?? {
-        meridiem: "오후" as const,
-        hour: 2,
-        minute: 30,
-      };
-      setMeridiemWheelIndex(getMeridiemWheelInitialIndex(initialTime.meridiem));
-      setHourWheelIndex(
-        getCyclicWheelCenterIndex(initialTime.hour, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT),
-      );
-      setMinuteWheelIndex(
-        getCyclicWheelCenterIndex(initialTime.minute, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT),
-      );
+        };
+        setMeridiemWheelIndex(getMeridiemWheelInitialIndex(initialTime.meridiem));
+        setHourWheelIndex(
+          getCyclicWheelCenterIndex(initialTime.hour, OPTION_LIST_TIME_HOURS_BASE, OPTION_LIST_TIME_HOUR_REPEAT),
+        );
+        setMinuteWheelIndex(
+          getCyclicWheelCenterIndex(initialTime.minute, OPTION_LIST_TIME_MINUTES_BASE, OPTION_LIST_TIME_MINUTE_REPEAT),
+        );
+      }
     }
   }, [
     aiSentences.length,
     currentAiTurn.id,
     currentAiTurn.inputMode,
     currentAiTurn.miniInterface?.context,
+    currentAiTurn.miniInterface?.optionListKind,
   ]);
 
   useEffect(() => {
@@ -1873,47 +2189,47 @@ export function ChatbotConversationScreen({
   }, [miniInterfaceRevealAnim, shouldShowMiniInterface]);
 
   useEffect(() => {
-    if (!shouldShowMiniInterface || miniContext !== "evidence") {
+    if (!shouldShowMiniInterface || miniContext !== "optionList") {
       return;
     }
-    evidenceMiniFadeAnim.setValue(1);
-  }, [evidenceMiniFadeAnim, miniContext, shouldShowMiniInterface]);
+    optionListFadeAnim.setValue(1);
+  }, [optionListFadeAnim, miniContext, shouldShowMiniInterface]);
 
   useEffect(() => {
-    if (evidenceMiniView !== "timePicker") {
+    if (optionListView !== "timePicker" || optionListKind !== "dateTime") {
       return;
     }
-    const targetDraft = draftEvidenceTime;
+    const targetDraft = draftOptionListTime;
     const meridiemIndex = getMeridiemWheelInitialIndex(targetDraft.meridiem);
     const hourIndex = getCyclicWheelCenterIndex(
       targetDraft.hour,
-      EVIDENCE_TIME_HOURS_BASE,
-      EVIDENCE_TIME_HOUR_REPEAT,
+      OPTION_LIST_TIME_HOURS_BASE,
+      OPTION_LIST_TIME_HOUR_REPEAT,
     );
     const minuteIndex = getCyclicWheelCenterIndex(
       targetDraft.minute,
-      EVIDENCE_TIME_MINUTES_BASE,
-      EVIDENCE_TIME_MINUTE_REPEAT,
+      OPTION_LIST_TIME_MINUTES_BASE,
+      OPTION_LIST_TIME_MINUTE_REPEAT,
     );
     setMeridiemWheelIndex(meridiemIndex);
     setHourWheelIndex(hourIndex);
     setMinuteWheelIndex(minuteIndex);
 
     requestAnimationFrame(() => {
-      evidenceMeridiemWheelRef.current?.scrollTo({
-        y: meridiemIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+      optionListMeridiemWheelRef.current?.scrollTo({
+        y: meridiemIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT,
         animated: false,
       });
-      evidenceHourWheelRef.current?.scrollTo({
-        y: hourIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+      optionListHourWheelRef.current?.scrollTo({
+        y: hourIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT,
         animated: false,
       });
-      evidenceMinuteWheelRef.current?.scrollTo({
-        y: minuteIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+      optionListMinuteWheelRef.current?.scrollTo({
+        y: minuteIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT,
         animated: false,
       });
     });
-  }, [evidenceMiniView]);
+  }, [optionListKind, optionListView]);
 
   useEffect(() => {
     const animation = Animated.sequence([
@@ -1992,25 +2308,45 @@ export function ChatbotConversationScreen({
   const miniInterfaceMotionY = Animated.add(inputTranslateY, miniInterfaceTranslateY);
 
   const hasSelectedMiniOptions = selectedMiniOptionIds.length > 0;
-  const isEvidenceMiniInterface = shouldShowMiniInterface && isEvidenceMiniContext;
+  const isOptionListMiniInterface = shouldShowMiniInterface && isOptionListMiniContext;
+  const isDateTimeOptionList = optionListKind === "dateTime";
   const isSendDisabled = isGeneratingReply ||
-    (shouldShowMiniInterface ? (isEvidenceMiniInterface ? true : !hasSelectedMiniOptions) : !draft.trim());
+    (shouldShowMiniInterface ? (isOptionListMiniInterface ? true : !hasSelectedMiniOptions) : !draft.trim());
   const sendIcon = shouldShowMiniInterface ? "↗" : "›";
   const miniSelectionHint =
     currentMiniInterface?.selectionHint ??
     (currentMiniSelectionMode === "multiple" ? "복수 선택 가능" : "단일 선택");
   const miniCardWidth = "100%";
-  const evidenceMonthLabel = `${datePickerMonth.getFullYear()}년 ${datePickerMonth.getMonth() + 1}월`;
-  const evidenceDraftDateLabel = formatEvidenceDate(draftEvidenceDate);
-  const evidenceDraftTimeLabel = formatEvidenceTime(draftEvidenceTime);
-  const evidenceCalendarCellSize = Math.max(34, Math.floor((contentWidth - 40) / 7));
-  const evidenceCalendarGridWidth = evidenceCalendarCellSize * 7;
+  const optionListMonthLabel = `${optionListPickerMonth.getFullYear()}년 ${optionListPickerMonth.getMonth() + 1}월`;
+  const optionListDraftDateLabel = formatOptionListDate(draftOptionListDate);
+  const optionListDraftTimeLabel = formatOptionListTime(draftOptionListTime);
+  const optionListPrimaryLabel =
+    currentMiniOptions[0]?.label ?? (isDateTimeOptionList ? "발생 날짜" : "소음일지");
+  const optionListSecondaryLabel =
+    currentMiniOptions[1]?.label ?? (isDateTimeOptionList ? "발생 시간" : "녹음 파일");
+  const optionListTertiaryLabel = currentMiniOptions[2]?.label ?? "영상 파일";
+  const optionListSubmitLabel =
+    isDateTimeOptionList
+      ? (currentMiniOptions[2]?.label ?? "정보 확인 및 제출")
+      : (currentMiniOptions[3]?.label ?? "선택 완료");
+  const isOptionListSubmitEnabled = isDateTimeOptionList ? isOptionListDateTimeReady : true;
+  const isOptionListPrimarySelected = isDateTimeOptionList
+    ? Boolean(selectedOptionListDate)
+    : optionListNoiseLogAttachments.length > 0;
+  const isOptionListSecondarySelected = isDateTimeOptionList
+    ? Boolean(selectedOptionListTime)
+    : optionListAudioFileAttachments.length > 0;
+  const isOptionListTertiarySelected = optionListVideoFileAttachments.length > 0;
+  const optionListCalendarCellSize = Math.max(34, Math.floor((contentWidth - 40) / 7));
+  const optionListCalendarGridWidth = optionListCalendarCellSize * 7;
   const debugLogsToRender = debugLogs.slice(0, 8);
   const isDebugMode = __DEV__;
   const inputPlaceholder = isGeneratingReply
     ? "답변을 준비하는 중입니다..."
     : shouldShowMiniInterface
-      ? (isEvidenceMiniInterface ? "날짜와 시간을 선택해 주세요." : "항목을 선택해 주세요.")
+      ? (isOptionListMiniInterface
+          ? (isDateTimeOptionList ? "날짜와 시간을 선택해 주세요." : "자료 항목을 선택해 주세요.")
+          : "항목을 선택해 주세요.")
       : "답변 입력 또는 음성으로 말하기";
   const isBackgroundDismissEnabled = isInputFocused && !shouldShowMiniInterface;
   const backButtonScale = backButtonPressAnim.interpolate({
@@ -2250,13 +2586,13 @@ export function ChatbotConversationScreen({
           <Animated.View
             style={[
               styles.miniInterfaceWrap,
-              miniContext === "evidence" && styles.miniInterfaceWrapEvidence,
+              miniContext === "optionList" && styles.miniInterfaceWrapEvidence,
               {
                 left: horizontalPadding,
                 bottom: miniPanelBottom,
                 width: contentWidth,
                 borderRadius: 24,
-                ...(miniContext === "evidence"
+                ...(miniContext === "optionList"
                   ? {
                       opacity: 1,
                     }
@@ -2267,114 +2603,177 @@ export function ChatbotConversationScreen({
               },
             ]}
           >
-            {miniContext === "evidence" ? (
+            {miniContext === "optionList" ? (
               <Animated.View
                 style={{
-                  opacity: evidenceMiniFadeAnim,
+                  opacity: optionListFadeAnim,
                 }}
               >
                 <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]} allowFontScaling={false}>
-                  {evidenceMiniView === "overview"
-                    ? "날짜 및 시간 선택"
-                    : evidenceMiniView === "datePicker"
+                  {optionListView === "overview"
+                    ? (isDateTimeOptionList ? "날짜 및 시간 선택" : "자료 선택")
+                    : optionListView === "datePicker"
                       ? "날짜 선택"
                       : "시간 선택"}
                 </Text>
 
-                {evidenceMiniView === "overview" ? (
+                {optionListView === "overview" ? (
                   <View style={styles.evidenceChecklistBlock}>
-                    <MiniAnimatedPressable
-                      style={styles.evidenceDateTimeRow}
-                      onPress={handleOpenEvidenceDatePicker}
+                    <OptionListSelectableRow
+                      selected={isOptionListPrimarySelected}
+                      onPress={() => {
+                        if (isDateTimeOptionList) {
+                          handleOpenOptionListDatePicker();
+                          return;
+                        }
+                        void handleOpenOptionListAttachmentPicker("NOISE_LOG");
+                      }}
                     >
                       <View style={styles.evidenceDateTimeIconSurface}>
                         <EvidenceCalendarIcon />
                       </View>
                       <View style={styles.evidenceDateTimeTextWrap}>
                         <Text style={styles.evidenceDateTimeLabel} allowFontScaling={false}>
-                          발생 날짜
+                          {optionListPrimaryLabel}
                         </Text>
                         <Text style={styles.evidenceDateTimeValue} allowFontScaling={false}>
-                          {evidenceDateLabel}
+                          {isDateTimeOptionList ? optionListDateLabel : optionListNoiseLogLabel}
                         </Text>
                       </View>
-                    </MiniAnimatedPressable>
-                    {selectedEvidenceDate ? (
+                    </OptionListSelectableRow>
+                    {isOptionListPrimarySelected ? (
                       <MiniAnimatedPressable
                         style={styles.evidenceInlineResetButton}
                         onPress={() => {
-                          setSelectedEvidenceDate(null);
+                          if (isDateTimeOptionList) {
+                            setSelectedOptionListDate(null);
+                          } else {
+                            setOptionListAttachments((previous) =>
+                              previous.filter((item) => item.type !== "NOISE_LOG"),
+                            );
+                          }
                           setApiErrorMessage(null);
                         }}
                       >
                         <Text style={styles.evidenceInlineResetButtonText} allowFontScaling={false}>
-                          날짜 선택 해제
+                          선택 해제
                         </Text>
                       </MiniAnimatedPressable>
                     ) : null}
 
                     <View style={styles.evidenceDateTimeDivider} />
 
-                    <MiniAnimatedPressable
-                      style={styles.evidenceDateTimeRow}
-                      onPress={handleOpenEvidenceTimePicker}
+                    <OptionListSelectableRow
+                      selected={isOptionListSecondarySelected}
+                      onPress={() => {
+                        if (isDateTimeOptionList) {
+                          handleOpenOptionListTimePicker();
+                          return;
+                        }
+                        void handleOpenOptionListAttachmentPicker("AUDIO_FILE");
+                      }}
                     >
                       <View style={styles.evidenceDateTimeIconSurface}>
-                        <EvidenceClockIcon />
+                        {isDateTimeOptionList ? <EvidenceClockIcon /> : <EvidenceMicIcon />}
                       </View>
                       <View style={styles.evidenceDateTimeTextWrap}>
                         <Text style={styles.evidenceDateTimeLabel} allowFontScaling={false}>
-                          발생 시간
+                          {optionListSecondaryLabel}
                         </Text>
                         <Text style={styles.evidenceDateTimeValue} allowFontScaling={false}>
-                          {evidenceTimeLabel}
+                          {isDateTimeOptionList ? optionListTimeLabel : optionListAudioFileLabel}
                         </Text>
                       </View>
-                    </MiniAnimatedPressable>
-                    {selectedEvidenceTime ? (
+                    </OptionListSelectableRow>
+                    {isOptionListSecondarySelected ? (
                       <MiniAnimatedPressable
                         style={styles.evidenceInlineResetButton}
                         onPress={() => {
-                          setSelectedEvidenceTime(null);
+                          if (isDateTimeOptionList) {
+                            setSelectedOptionListTime(null);
+                          } else {
+                            setOptionListAttachments((previous) =>
+                              previous.filter((item) => item.type !== "AUDIO_FILE"),
+                            );
+                          }
                           setApiErrorMessage(null);
                         }}
                       >
                         <Text style={styles.evidenceInlineResetButtonText} allowFontScaling={false}>
-                          시간 선택 해제
+                          선택 해제
                         </Text>
                       </MiniAnimatedPressable>
+                    ) : null}
+
+                    {!isDateTimeOptionList ? (
+                      <>
+                        <View style={styles.evidenceDateTimeDivider} />
+                        <OptionListSelectableRow
+                          selected={isOptionListTertiarySelected}
+                          onPress={() => {
+                            void handleOpenOptionListAttachmentPicker("VIDEO_FILE");
+                          }}
+                        >
+                          <View style={styles.evidenceDateTimeIconSurface}>
+                            <EvidenceVideoIcon />
+                          </View>
+                          <View style={styles.evidenceDateTimeTextWrap}>
+                            <Text style={styles.evidenceDateTimeLabel} allowFontScaling={false}>
+                              {optionListTertiaryLabel}
+                            </Text>
+                            <Text style={styles.evidenceDateTimeValue} allowFontScaling={false}>
+                              {optionListVideoFileLabel}
+                            </Text>
+                          </View>
+                        </OptionListSelectableRow>
+                        {isOptionListTertiarySelected ? (
+                          <MiniAnimatedPressable
+                            style={styles.evidenceInlineResetButton}
+                            onPress={() => {
+                              setOptionListAttachments((previous) =>
+                                previous.filter((item) => item.type !== "VIDEO_FILE"),
+                              );
+                              setApiErrorMessage(null);
+                            }}
+                          >
+                            <Text style={styles.evidenceInlineResetButtonText} allowFontScaling={false}>
+                              선택 해제
+                            </Text>
+                          </MiniAnimatedPressable>
+                        ) : null}
+                      </>
                     ) : null}
 
                     <MiniAnimatedPressable
                       style={[
                         styles.evidenceActionButton,
-                        isEvidenceDateTimeReady
+                        isOptionListSubmitEnabled
                           ? styles.evidenceActionButtonActive
                           : styles.evidenceActionButtonSkip,
                       ]}
-                      onPress={handleSubmitEvidenceChecklist}
-                      disabled={!isEvidenceDateTimeReady}
+                      onPress={handleSubmitOptionList}
+                      disabled={!isOptionListSubmitEnabled}
                     >
                       <Text
                         style={[
                           styles.evidenceActionButtonText,
-                          isEvidenceDateTimeReady
+                          isOptionListSubmitEnabled
                             ? styles.evidenceActionButtonTextActive
                             : styles.evidenceActionButtonTextSkip,
                         ]}
                         allowFontScaling={false}
                       >
-                        정보 확인 및 제출
+                        {optionListSubmitLabel}
                       </Text>
                     </MiniAnimatedPressable>
                   </View>
                 ) : null}
 
-                {evidenceMiniView === "datePicker" ? (
+                {isDateTimeOptionList && optionListView === "datePicker" ? (
                   <View style={styles.evidencePickerPanel}>
                     <MiniAnimatedPressable
                       style={styles.evidencePickerBackButton}
-                      onPress={() => transitionEvidenceMiniView("overview")}
+                      onPress={() => transitionOptionListView("overview")}
                     >
                       <Text style={styles.evidencePickerBackText} allowFontScaling={false}>
                         {"‹ 이전 단계"}
@@ -2384,18 +2783,18 @@ export function ChatbotConversationScreen({
                     <View style={styles.evidencePickerMonthRow}>
                       <MiniAnimatedPressable
                         style={styles.evidenceMonthNavButton}
-                        onPress={() => setDatePickerMonth((previous) => addMonth(previous, -1))}
+                        onPress={() => setOptionListPickerMonth((previous) => addMonth(previous, -1))}
                       >
                         <Text style={styles.evidenceMonthNavText} allowFontScaling={false}>
                           {"‹"}
                         </Text>
                       </MiniAnimatedPressable>
-                      <Text style={styles.evidenceMonthLabel} allowFontScaling={false}>
-                        {evidenceMonthLabel}
+                      <Text style={styles.optionListMonthLabel} allowFontScaling={false}>
+                        {optionListMonthLabel}
                       </Text>
                       <MiniAnimatedPressable
                         style={styles.evidenceMonthNavButton}
-                        onPress={() => setDatePickerMonth((previous) => addMonth(previous, 1))}
+                        onPress={() => setOptionListPickerMonth((previous) => addMonth(previous, 1))}
                       >
                         <Text style={styles.evidenceMonthNavText} allowFontScaling={false}>
                           {"›"}
@@ -2411,8 +2810,8 @@ export function ChatbotConversationScreen({
                       ))}
                     </View>
 
-                    <View style={[styles.evidenceCalendarGrid, { width: evidenceCalendarGridWidth }]}>
-                      {evidenceCalendarCells.map((cellDate, index) => {
+                    <View style={[styles.evidenceCalendarGrid, { width: optionListCalendarGridWidth }]}>
+                      {optionListCalendarCells.map((cellDate, index) => {
                         if (!cellDate) {
                           return (
                             <View
@@ -2420,26 +2819,26 @@ export function ChatbotConversationScreen({
                               style={[
                                 styles.evidenceCalendarCellEmpty,
                                 {
-                                  width: evidenceCalendarCellSize,
-                                  height: evidenceCalendarCellSize,
+                                  width: optionListCalendarCellSize,
+                                  height: optionListCalendarCellSize,
                                 },
                               ]}
                             />
                           );
                         }
 
-                        const isSelected = isSameDate(cellDate, draftEvidenceDate);
+                        const isSelected = isSameDate(cellDate, draftOptionListDate);
                         return (
                           <Pressable
                             key={cellDate.toISOString()}
-                            onPress={() => setDraftEvidenceDate(cellDate)}
+                            onPress={() => setDraftOptionListDate(cellDate)}
                             style={({ pressed }) => [
                               styles.evidenceCalendarCell,
                               isSelected && styles.evidenceCalendarCellSelected,
                               pressed && styles.evidenceCalendarCellPressed,
                               {
-                                width: evidenceCalendarCellSize,
-                                height: evidenceCalendarCellSize,
+                                width: optionListCalendarCellSize,
+                                height: optionListCalendarCellSize,
                               },
                             ]}
                           >
@@ -2462,15 +2861,15 @@ export function ChatbotConversationScreen({
                         선택된 날짜
                       </Text>
                       <Text style={styles.evidencePickerSummaryValue} allowFontScaling={false}>
-                        {evidenceDraftDateLabel}
+                        {optionListDraftDateLabel}
                       </Text>
                     </View>
 
                     <MiniAnimatedPressable
                       style={[styles.evidenceActionButton, styles.evidenceActionButtonActive]}
                       onPress={() => {
-                        setSelectedEvidenceDate(draftEvidenceDate);
-                        transitionEvidenceMiniView("overview");
+                        setSelectedOptionListDate(draftOptionListDate);
+                        transitionOptionListView("overview");
                         setApiErrorMessage(null);
                       }}
                     >
@@ -2484,11 +2883,11 @@ export function ChatbotConversationScreen({
                   </View>
                 ) : null}
 
-                {evidenceMiniView === "timePicker" ? (
+                {isDateTimeOptionList && optionListView === "timePicker" ? (
                   <View style={styles.evidencePickerPanel}>
                     <MiniAnimatedPressable
                       style={styles.evidencePickerBackButton}
-                      onPress={() => transitionEvidenceMiniView("overview")}
+                      onPress={() => transitionOptionListView("overview")}
                     >
                       <Text style={styles.evidencePickerBackText} allowFontScaling={false}>
                         {"‹ 이전 단계"}
@@ -2499,24 +2898,24 @@ export function ChatbotConversationScreen({
                       <View style={styles.evidenceTimeWheelColumn}>
                         <View style={styles.evidenceTimeWheelCenterBar} pointerEvents="none" />
                         <ScrollView
-                          ref={evidenceMeridiemWheelRef}
+                          ref={optionListMeridiemWheelRef}
                           style={styles.evidenceTimeWheelScroll}
                           contentContainerStyle={styles.evidenceTimeWheelContent}
                           scrollEnabled
                           showsVerticalScrollIndicator={false}
                           keyboardShouldPersistTaps="handled"
-                          snapToInterval={EVIDENCE_WHEEL_ITEM_HEIGHT}
+                          snapToInterval={OPTION_LIST_WHEEL_ITEM_HEIGHT}
                           snapToAlignment="start"
                           decelerationRate="normal"
                           nestedScrollEnabled
                           bounces={false}
                           scrollEventThrottle={16}
                           onScrollEndDrag={(event) =>
-                            handleEvidenceTimeWheelScrollEndDrag("meridiem", event)
+                            handleOptionListTimeWheelScrollEndDrag("meridiem", event)
                           }
-                          onMomentumScrollEnd={(event) => handleEvidenceTimeWheelScrollEnd("meridiem", event)}
+                          onMomentumScrollEnd={(event) => handleOptionListTimeWheelScrollEnd("meridiem", event)}
                         >
-                          {EVIDENCE_TIME_MERIDIEM_WHEEL.map((meridiem, index) => {
+                          {OPTION_LIST_TIME_MERIDIEM_WHEEL.map((meridiem, index) => {
                             const isSelected = index === meridiemWheelIndex;
                             return (
                               <View key={`${meridiem}-${index}`} style={styles.evidenceTimeWheelItem}>
@@ -2539,23 +2938,23 @@ export function ChatbotConversationScreen({
                       <View style={styles.evidenceTimeWheelColumn}>
                         <View style={styles.evidenceTimeWheelCenterBar} pointerEvents="none" />
                         <ScrollView
-                          ref={evidenceHourWheelRef}
+                          ref={optionListHourWheelRef}
                           style={styles.evidenceTimeWheelScroll}
                           contentContainerStyle={styles.evidenceTimeWheelContent}
                           scrollEnabled
                           showsVerticalScrollIndicator={false}
                           keyboardShouldPersistTaps="handled"
-                          snapToInterval={EVIDENCE_WHEEL_ITEM_HEIGHT}
+                          snapToInterval={OPTION_LIST_WHEEL_ITEM_HEIGHT}
                           decelerationRate="normal"
                           nestedScrollEnabled
                           bounces={false}
                           scrollEventThrottle={16}
                           onScrollEndDrag={(event) =>
-                            handleEvidenceTimeWheelScrollEndDrag("hour", event)
+                            handleOptionListTimeWheelScrollEndDrag("hour", event)
                           }
-                          onMomentumScrollEnd={(event) => handleEvidenceTimeWheelScrollEnd("hour", event)}
+                          onMomentumScrollEnd={(event) => handleOptionListTimeWheelScrollEnd("hour", event)}
                         >
-                          {EVIDENCE_TIME_HOURS_WHEEL.map((hour, index) => {
+                          {OPTION_LIST_TIME_HOURS_WHEEL.map((hour, index) => {
                             const isSelected = index === hourWheelIndex;
                             return (
                               <View key={`${hour}-${index}`} style={styles.evidenceTimeWheelItem}>
@@ -2577,23 +2976,23 @@ export function ChatbotConversationScreen({
                       <View style={styles.evidenceTimeWheelColumn}>
                         <View style={styles.evidenceTimeWheelCenterBar} pointerEvents="none" />
                         <ScrollView
-                          ref={evidenceMinuteWheelRef}
+                          ref={optionListMinuteWheelRef}
                           style={styles.evidenceTimeWheelScroll}
                           contentContainerStyle={styles.evidenceTimeWheelContent}
                           scrollEnabled
                           showsVerticalScrollIndicator={false}
                           keyboardShouldPersistTaps="handled"
-                          snapToInterval={EVIDENCE_WHEEL_ITEM_HEIGHT}
+                          snapToInterval={OPTION_LIST_WHEEL_ITEM_HEIGHT}
                           decelerationRate="normal"
                           nestedScrollEnabled
                           bounces={false}
                           scrollEventThrottle={16}
                           onScrollEndDrag={(event) =>
-                            handleEvidenceTimeWheelScrollEndDrag("minute", event)
+                            handleOptionListTimeWheelScrollEndDrag("minute", event)
                           }
-                          onMomentumScrollEnd={(event) => handleEvidenceTimeWheelScrollEnd("minute", event)}
+                          onMomentumScrollEnd={(event) => handleOptionListTimeWheelScrollEnd("minute", event)}
                         >
-                          {EVIDENCE_TIME_MINUTES_WHEEL.map((minute, index) => {
+                          {OPTION_LIST_TIME_MINUTES_WHEEL.map((minute, index) => {
                             const isSelected = index === minuteWheelIndex;
                             return (
                               <View key={`${minute}-${index}`} style={styles.evidenceTimeWheelItem}>
@@ -2618,15 +3017,15 @@ export function ChatbotConversationScreen({
                         선택된 시간
                       </Text>
                       <Text style={styles.evidencePickerSummaryValue} allowFontScaling={false}>
-                        {evidenceDraftTimeLabel}
+                        {optionListDraftTimeLabel}
                       </Text>
                     </View>
 
                     <MiniAnimatedPressable
                       style={[styles.evidenceActionButton, styles.evidenceActionButtonActive]}
                       onPress={() => {
-                        setSelectedEvidenceTime(draftEvidenceTime);
-                        transitionEvidenceMiniView("overview");
+                        setSelectedOptionListTime(draftOptionListTime);
+                        transitionOptionListView("overview");
                         setApiErrorMessage(null);
                       }}
                     >
@@ -3172,6 +3571,61 @@ const styles = StyleSheet.create({
     borderRadius: 1.5,
     backgroundColor: "#2d5d7b",
   },
+  evidenceIconMicBase: {
+    width: 18,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "flex-start",
+    position: "relative",
+  },
+  evidenceIconMicHead: {
+    width: 10,
+    height: 13,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: "#2d5d7b",
+  },
+  evidenceIconMicStem: {
+    position: "absolute",
+    bottom: 4,
+    width: 2,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: "#2d5d7b",
+  },
+  evidenceIconMicFoot: {
+    position: "absolute",
+    bottom: 1,
+    width: 9,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "#2d5d7b",
+  },
+  evidenceIconVideoBase: {
+    width: 16,
+    height: 12,
+    borderRadius: 3,
+    borderWidth: 2,
+    borderColor: "#2d5d7b",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  evidenceIconVideoLens: {
+    position: "absolute",
+    right: -5,
+    top: 3,
+    width: 4,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: "#2d5d7b",
+  },
+  evidenceIconVideoDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#2d5d7b",
+  },
   evidenceChecklistItemChecked: {
     borderColor: "#2d5d7b",
     borderWidth: 2,
@@ -3282,7 +3736,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: "600",
   },
-  evidenceMonthLabel: {
+  optionListMonthLabel: {
     color: "#1f2937",
     fontSize: 18,
     lineHeight: 24,
@@ -3371,7 +3825,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "stretch",
     marginHorizontal: 2,
-    height: EVIDENCE_WHEEL_ITEM_HEIGHT * 3,
+    height: OPTION_LIST_WHEEL_ITEM_HEIGHT * 3,
     borderRadius: 10,
     overflow: "hidden",
     backgroundColor: "#ffffff",
@@ -3383,10 +3837,10 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   evidenceTimeWheelContent: {
-    paddingVertical: EVIDENCE_WHEEL_ITEM_HEIGHT,
+    paddingVertical: OPTION_LIST_WHEEL_ITEM_HEIGHT,
   },
   evidenceTimeWheelItem: {
-    height: EVIDENCE_WHEEL_ITEM_HEIGHT,
+    height: OPTION_LIST_WHEEL_ITEM_HEIGHT,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3394,8 +3848,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 4,
     right: 4,
-    top: EVIDENCE_WHEEL_ITEM_HEIGHT,
-    height: EVIDENCE_WHEEL_ITEM_HEIGHT,
+    top: OPTION_LIST_WHEEL_ITEM_HEIGHT,
+    height: OPTION_LIST_WHEEL_ITEM_HEIGHT,
     borderRadius: 8,
     backgroundColor: "rgba(241,245,249,0.35)",
     borderWidth: 1,
