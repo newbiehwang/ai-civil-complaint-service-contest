@@ -74,7 +74,8 @@ type OptionListAttachment = {
   uri: string;
 };
 type OptionListPurpose = "demoCoreDateTime" | "demoEvidenceAttachment" | null;
-type MiniInterfaceType = "ListPicker" | "OptionList" | "SummaryCard";
+type MiniInterfaceType = "ListPicker" | "OptionList" | "SummaryCard" | "StatusFeed";
+type StatusFeedViewMode = "important" | "all";
 
 type DemoFlowData = {
   userIssue: string;
@@ -434,13 +435,17 @@ function createDemoDraftConfirmMiniInterface(): MiniInterfaceConfig {
 }
 
 function createDemoStatusFeedMiniInterface(): MiniInterfaceConfig {
-  return createListPickerFromOptions(
-    "접수 완료! 진행을 추적하고 있어요.",
-    [
+  return {
+    prompt: "접수 완료! 진행을 추적하고 있어요.",
+    selectionMode: "single",
+    context: "timeline",
+    miniInterfaceType: "StatusFeed",
+    selectionHint: "단일 선택",
+    options: [
       { id: DEMO_STATUS_UPLOAD, label: "추가 증거 업로드" },
       { id: DEMO_STATUS_SUMMARY, label: "케이스 요약 보기" },
     ],
-  );
+  };
 }
 
 function formatDemoDateTimeSummary(
@@ -1122,6 +1127,7 @@ export function ChatbotConversationScreen({
   const [isDemoFlowStarted, setIsDemoFlowStarted] = useState(false);
   const [isWaitingDraftRevisionInput, setIsWaitingDraftRevisionInput] = useState(false);
   const [isPathReasonOpen, setIsPathReasonOpen] = useState(false);
+  const [statusFeedViewMode, setStatusFeedViewMode] = useState<StatusFeedViewMode>("important");
   const [demoFlowData, setDemoFlowData] = useState<DemoFlowData>(createInitialDemoFlowData());
   const [optionListKind, setOptionListKind] = useState<OptionListKind>("dateTime");
   const [optionListPurpose, setOptionListPurpose] = useState<OptionListPurpose>(null);
@@ -1196,6 +1202,7 @@ export function ChatbotConversationScreen({
   const isOptionListMiniContext = miniInterfaceType === "OptionList";
   const isListPickerMiniContext = miniInterfaceType === "ListPicker";
   const isSummaryCardMiniContext = miniInterfaceType === "SummaryCard";
+  const isStatusFeedMiniContext = miniInterfaceType === "StatusFeed";
   const shouldShowMiniInterface =
     isAiMessageCompleted &&
     !isGeneratingReply &&
@@ -1203,7 +1210,8 @@ export function ChatbotConversationScreen({
     (
       isOptionListMiniContext ||
       (isListPickerMiniContext && currentMiniOptions.length > 0) ||
-      (isSummaryCardMiniContext && currentMiniOptions.length > 0)
+      (isSummaryCardMiniContext && currentMiniOptions.length > 0) ||
+      (isStatusFeedMiniContext && currentMiniOptions.length > 0)
     );
   const shouldShowRouteRecommendationAction =
     !ENABLE_SCRIPTED_DEMO_FLOW &&
@@ -2119,6 +2127,7 @@ export function ChatbotConversationScreen({
     setVisibleSentenceCount(1);
     setIsDemoFlowStarted(false);
     setIsWaitingDraftRevisionInput(false);
+    setStatusFeedViewMode("important");
     setDemoFlowData(createInitialDemoFlowData());
     setOptionListKind("dateTime");
     setOptionListPurpose(null);
@@ -2649,6 +2658,7 @@ export function ChatbotConversationScreen({
 
   useEffect(() => {
     setIsPathReasonOpen(false);
+    setStatusFeedViewMode("important");
   }, [currentAiTurn.id]);
 
   useEffect(() => {
@@ -2886,6 +2896,13 @@ export function ChatbotConversationScreen({
   const isSummaryCardMiniInterface =
     isSummaryCardMiniContext &&
     Boolean(demoSummaryNextOption);
+  const demoStatusUploadOption =
+    currentMiniOptions.find((option) => option.id === DEMO_STATUS_UPLOAD) ?? null;
+  const demoStatusSummaryOption =
+    currentMiniOptions.find((option) => option.id === DEMO_STATUS_SUMMARY) ?? null;
+  const isStatusFeedMiniInterface =
+    isStatusFeedMiniContext &&
+    Boolean(demoStatusUploadOption && demoStatusSummaryOption);
   const demoPathRecommendedOption =
     currentMiniOptions.find((option) => option.id === DEMO_PATH_RECOMMENDED) ?? null;
   const demoPathOtherOption =
@@ -2899,6 +2916,12 @@ export function ChatbotConversationScreen({
   const isPathOtherSelected = Boolean(
     demoPathOtherOption && selectedMiniOptionIds.includes(demoPathOtherOption.id),
   );
+  const isStatusUploadSelected = Boolean(
+    demoStatusUploadOption && selectedMiniOptionIds.includes(demoStatusUploadOption.id),
+  );
+  const isStatusSummarySelected = Boolean(
+    demoStatusSummaryOption && selectedMiniOptionIds.includes(demoStatusSummaryOption.id),
+  );
   const isDateTimeOptionList = optionListKind === "dateTime";
   const demoSummaryStartedAtText = formatDemoDateTimeSummary(
     demoFlowData.startedAtDate,
@@ -2910,6 +2933,18 @@ export function ChatbotConversationScreen({
     { label: "시작 시점", value: demoSummaryStartedAtText },
     { label: "현재 상태", value: demoFlowData.noiseNow ?? "미입력" },
   ];
+  const statusFeedReceiptLabel = caseId
+    ? `접수번호 ${caseId.slice(0, 8).toUpperCase()}`
+    : "접수번호 DEMO-24001";
+  const statusFeedItems = [
+    { id: "submission-complete", icon: "✅", title: "접수 완료", description: statusFeedReceiptLabel, important: true },
+    { id: "under-review", icon: "⏳", title: "기관 확인 중", description: "담당 부서에서 접수 내용을 검토하고 있어요.", important: false },
+    { id: "assignee-wait", icon: "⏳", title: "담당자 배정", description: "배정이 완료되면 즉시 알림으로 안내해 드려요.", important: false },
+    { id: "more-evidence", icon: "⏳", title: "추가자료 요청 가능", description: "필요하면 소음일지/녹음 보강을 요청할 수 있어요.", important: true },
+  ] as const;
+  const visibleStatusFeedItems = statusFeedViewMode === "important"
+    ? statusFeedItems.filter((item) => item.important)
+    : statusFeedItems;
   const isSendDisabled = isGeneratingReply ||
     (shouldShowMiniInterface ? (isOptionListMiniInterface ? true : !hasSelectedMiniOptions) : !draft.trim());
   const sendIcon = shouldShowMiniInterface ? "↗" : "›";
@@ -3693,6 +3728,115 @@ export function ChatbotConversationScreen({
                   </View>
                 </View>
               </View>
+            ) : miniInterfaceType === "StatusFeed" ? (
+              <>
+                <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
+                  {miniSelectionHint}
+                </Text>
+                {isStatusFeedMiniInterface && demoStatusUploadOption && demoStatusSummaryOption ? (
+                  <View style={styles.statusFeedWrap}>
+                    <View style={styles.statusFeedTimelineCard}>
+                      {visibleStatusFeedItems.map((item, index) => (
+                        <View
+                          key={item.id}
+                          style={[
+                            styles.statusFeedEventRow,
+                            index > 0 && styles.statusFeedEventRowSeparated,
+                          ]}
+                        >
+                          <Text style={styles.statusFeedEventIcon} allowFontScaling={false}>
+                            {item.icon}
+                          </Text>
+                          <View style={styles.statusFeedEventTextWrap}>
+                            <Text style={styles.statusFeedEventTitle} allowFontScaling={false}>
+                              {item.title}
+                            </Text>
+                            <Text style={styles.statusFeedEventDescription} allowFontScaling={false}>
+                              {item.description}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={styles.statusFeedToggleRow}>
+                      <MiniAnimatedPressable
+                        style={[
+                          styles.statusFeedToggleChip,
+                          statusFeedViewMode === "important" && styles.statusFeedToggleChipSelected,
+                        ]}
+                        onPress={() => setStatusFeedViewMode("important")}
+                      >
+                        <Text
+                          style={[
+                            styles.statusFeedToggleChipText,
+                            statusFeedViewMode === "important" && styles.statusFeedToggleChipTextSelected,
+                          ]}
+                          allowFontScaling={false}
+                        >
+                          중요 업데이트만
+                        </Text>
+                      </MiniAnimatedPressable>
+                      <MiniAnimatedPressable
+                        style={[
+                          styles.statusFeedToggleChip,
+                          styles.statusFeedToggleChipSecondary,
+                          statusFeedViewMode === "all" && styles.statusFeedToggleChipSelected,
+                        ]}
+                        onPress={() => setStatusFeedViewMode("all")}
+                      >
+                        <Text
+                          style={[
+                            styles.statusFeedToggleChipText,
+                            statusFeedViewMode === "all" && styles.statusFeedToggleChipTextSelected,
+                          ]}
+                          allowFontScaling={false}
+                        >
+                          단계별 모두
+                        </Text>
+                      </MiniAnimatedPressable>
+                    </View>
+
+                    <MiniAnimatedPressable
+                      style={[
+                        styles.miniTaskCard,
+                        isStatusUploadSelected && styles.miniTaskCardSelected,
+                      ]}
+                      onPress={() => handleMiniOptionPress(demoStatusUploadOption)}
+                    >
+                      <Text
+                        style={[
+                          styles.miniTaskCardTitle,
+                          isStatusUploadSelected && styles.miniTaskCardTitleSelected,
+                          { fontSize: 16, lineHeight: 24 },
+                        ]}
+                        allowFontScaling={false}
+                      >
+                        {demoStatusUploadOption.label}
+                      </Text>
+                    </MiniAnimatedPressable>
+
+                    <MiniAnimatedPressable
+                      style={[
+                        styles.miniTaskCard,
+                        isStatusSummarySelected && styles.miniTaskCardSelected,
+                      ]}
+                      onPress={() => handleMiniOptionPress(demoStatusSummaryOption)}
+                    >
+                      <Text
+                        style={[
+                          styles.miniTaskCardTitle,
+                          isStatusSummarySelected && styles.miniTaskCardTitleSelected,
+                          { fontSize: 16, lineHeight: 24 },
+                        ]}
+                        allowFontScaling={false}
+                      >
+                        {demoStatusSummaryOption.label}
+                      </Text>
+                    </MiniAnimatedPressable>
+                  </View>
+                ) : null}
+              </>
             ) : miniInterfaceType === "ListPicker" ? (
               <>
                 <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
@@ -4700,6 +4844,84 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 28,
     fontWeight: "700",
+  },
+  statusFeedWrap: {
+    marginTop: 6,
+  },
+  statusFeedTimelineCard: {
+    marginTop: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e6edf3",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  statusFeedEventRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  statusFeedEventRowSeparated: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#eef3f7",
+  },
+  statusFeedEventIcon: {
+    width: 18,
+    color: "#2d5d7b",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  statusFeedEventTextWrap: {
+    marginLeft: 8,
+    flex: 1,
+  },
+  statusFeedEventTitle: {
+    color: "#1f2937",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  statusFeedEventDescription: {
+    marginTop: 2,
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "500",
+  },
+  statusFeedToggleRow: {
+    flexDirection: "row",
+    marginTop: 10,
+  },
+  statusFeedToggleChip: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#dbe7ef",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  statusFeedToggleChipSecondary: {
+    marginLeft: 8,
+  },
+  statusFeedToggleChipSelected: {
+    borderWidth: 2,
+    borderColor: "#2d5d7b",
+    backgroundColor: "#f4f9fc",
+  },
+  statusFeedToggleChipText: {
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  statusFeedToggleChipTextSelected: {
+    color: "#2d5d7b",
   },
   pathChooserWrap: {
     marginTop: 6,
