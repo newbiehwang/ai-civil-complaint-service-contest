@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   Animated,
   Easing,
+  Image,
   Pressable,
   StyleProp,
   StyleSheet,
@@ -94,6 +95,7 @@ type LabelProps = {
   weight: number;
   width?: number;
   lineHeight?: number;
+  align?: TextStyle["textAlign"];
 };
 
 type AbsoluteButtonProps = {
@@ -112,6 +114,8 @@ type AbsoluteButtonProps = {
   pressedFill?: string;
   forcePressed?: boolean;
   disabled?: boolean;
+  softShadow?: boolean;
+  smoothPress?: boolean;
 };
 
 function Rect({ x, y, width, height, fill, radius = 0, stroke }: RectProps) {
@@ -144,6 +148,7 @@ function Label({
   weight,
   width,
   lineHeight,
+  align,
 }: LabelProps) {
   return (
     <Text
@@ -158,6 +163,7 @@ function Label({
           fontWeight: `${weight}` as TextStyle["fontWeight"],
           lineHeight: lineHeight ?? Math.round(size * 1.21),
           width,
+          textAlign: align,
         },
       ]}
     >
@@ -182,7 +188,11 @@ function AbsoluteButton({
   pressedFill,
   forcePressed,
   disabled,
+  softShadow = false,
+  smoothPress = false,
 }: AbsoluteButtonProps) {
+  const pressAnim = useRef(new Animated.Value(forcePressed ? 1 : 0)).current;
+  const [isPressedVisual, setIsPressedVisual] = useState(false);
   const textStyle = {
     color: labelColor,
     fontSize: labelSize,
@@ -190,38 +200,120 @@ function AbsoluteButton({
     lineHeight: Math.round(labelSize * 1.21),
   };
 
-  const baseStyle = {
+  const frameStyle = {
     left: x,
     top: y,
     width,
     height,
     borderRadius: radius,
+  };
+
+  const surfaceStyle = {
     borderWidth: 1,
     borderColor: stroke ?? fill,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   };
 
+  useEffect(() => {
+    if (!smoothPress) {
+      return;
+    }
+
+    const animation = Animated.timing(pressAnim, {
+      toValue: forcePressed ? 1 : 0,
+      duration: forcePressed ? 110 : 170,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [forcePressed, pressAnim, smoothPress]);
+
   if (!onPress) {
     return (
-      <View style={[styles.abs, baseStyle, { backgroundColor: fill }]}>
+      <View
+        style={[
+          styles.abs,
+          frameStyle,
+          surfaceStyle,
+          { backgroundColor: fill },
+          softShadow && styles.startMobileCtaShadow,
+        ]}
+      >
         <Text style={textStyle}>{label}</Text>
       </View>
     );
   }
 
+  const animatedPressStyle = smoothPress
+    ? {
+        transform: [
+          {
+            scale: pressAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0.975],
+            }),
+          },
+          {
+            translateY: pressAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 1.6],
+            }),
+          },
+        ],
+      }
+    : null;
+
   return (
-    <Pressable
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
+    <Animated.View
+      style={[
         styles.abs,
-        baseStyle,
-        { backgroundColor: pressed || forcePressed ? pressedFill ?? fill : fill },
+        frameStyle,
+        softShadow && styles.startMobileCtaShadow,
+        softShadow && (isPressedVisual || forcePressed) && styles.startMobileCtaShadowPressed,
+        animatedPressStyle,
       ]}
     >
-      <Text style={textStyle}>{label}</Text>
-    </Pressable>
+      <Pressable
+        disabled={disabled}
+        onPress={onPress}
+        onPressIn={() => {
+          setIsPressedVisual(true);
+          if (!smoothPress) {
+            return;
+          }
+          Animated.timing(pressAnim, {
+            toValue: 1,
+            duration: 110,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start();
+        }}
+        onPressOut={() => {
+          setIsPressedVisual(false);
+          if (!smoothPress) {
+            return;
+          }
+          Animated.timing(pressAnim, {
+            toValue: forcePressed ? 1 : 0,
+            duration: 170,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start();
+        }}
+        style={({ pressed }) => [
+          styles.buttonSurface,
+          surfaceStyle,
+          {
+            borderRadius: radius,
+            backgroundColor: pressed || forcePressed ? pressedFill ?? fill : fill,
+          },
+        ]}
+      >
+        <Text style={textStyle}>{label}</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -351,10 +443,11 @@ function StartFrame1Stage({
         ]}
       >
         <StartMobileCard x={131} y={276} width={128} height={128}>
-          <View style={styles.startCardStack}>
-            <Text style={styles.startGov24Text}>정부24</Text>
-            <Text style={styles.startGov24SubText}>연동</Text>
-          </View>
+          <Image
+            source={require("../assets/korea_gov24.transparent.png")}
+            style={styles.startGov24Logo}
+            resizeMode="contain"
+          />
         </StartMobileCard>
       </Animated.View>
 
@@ -379,6 +472,7 @@ function StartFrame1Stage({
           size={24}
           weight={700}
           lineHeight={39}
+          align="center"
         />
       </Animated.View>
 
@@ -409,6 +503,8 @@ function StartFrame1Stage({
           pressedFill="#244c65"
           forcePressed={buttonPressed}
           disabled={buttonPressed || !isCtaReady}
+          softShadow
+          smoothPress
         />
         <Label
           x={96}
@@ -419,6 +515,7 @@ function StartFrame1Stage({
           size={12}
           weight={500}
           lineHeight={16}
+          align="center"
         />
       </Animated.View>
     </>
@@ -435,16 +532,13 @@ function StartFrame2Stage({
   return (
     <>
       <StartMobileBackdrop />
-      <Label
-        x={118}
-        y={305}
-        width={154}
-        text="정부24 로그인"
-        color={START_MOBILE_ACCENT}
-        size={24}
-        weight={700}
-        lineHeight={32}
-      />
+      <StartMobileCard x={131} y={276} width={128} height={128}>
+        <Image
+          source={require("../assets/korea_gov24.transparent.png")}
+          style={styles.startGov24Logo}
+          resizeMode="contain"
+        />
+      </StartMobileCard>
 
       <Label
         x={71}
@@ -455,6 +549,7 @@ function StartFrame2Stage({
         size={24}
         weight={700}
         lineHeight={39}
+        align="center"
       />
 
       <AbsoluteButton
@@ -473,6 +568,8 @@ function StartFrame2Stage({
         pressedFill="#244c65"
         forcePressed={buttonPressed}
         disabled={buttonPressed}
+        softShadow
+        smoothPress
       />
       <Label
         x={108}
@@ -483,6 +580,7 @@ function StartFrame2Stage({
         size={12}
         weight={500}
         lineHeight={16}
+        align="center"
       />
     </>
   );
@@ -565,6 +663,7 @@ function StartFrame3Stage() {
         size={24}
         weight={700}
         lineHeight={39}
+        align="center"
       />
       <Label
         x={108}
@@ -575,6 +674,7 @@ function StartFrame3Stage() {
         size={12}
         weight={500}
         lineHeight={16}
+        align="center"
       />
     </>
   );
@@ -665,6 +765,7 @@ function StartFrame4Stage({
         size={24}
         weight={700}
         lineHeight={39}
+        align="center"
       />
 
       <AbsoluteButton
@@ -683,6 +784,8 @@ function StartFrame4Stage({
         pressedFill="#244c65"
         forcePressed={buttonPressed}
         disabled={buttonPressed}
+        softShadow
+        smoothPress
       />
       <Label
         x={122}
@@ -693,6 +796,7 @@ function StartFrame4Stage({
         size={12}
         weight={500}
         lineHeight={16}
+        align="center"
       />
     </>
   );
@@ -1481,6 +1585,10 @@ const styles = StyleSheet.create({
   absText: {
     position: "absolute",
   },
+  buttonSurface: {
+    width: "100%",
+    height: "100%",
+  },
   startCardShadow: {
     shadowColor: "#0f172a",
     shadowOpacity: 0.06,
@@ -1488,22 +1596,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 5,
   },
-  startCardStack: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  startGov24Text: {
-    color: START_MOBILE_ACCENT,
-    fontSize: 20,
-    lineHeight: 28,
-    fontWeight: "700",
-  },
-  startGov24SubText: {
-    color: START_MOBILE_CAPTION,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "500",
-    marginTop: 2,
+  startGov24Logo: {
+    width: 102,
+    height: 102,
   },
   startLoginTitle: {
     color: START_MOBILE_ACCENT,
@@ -1511,6 +1606,19 @@ const styles = StyleSheet.create({
     lineHeight: 32,
     fontWeight: "700",
     textAlign: "center",
+  },
+  startMobileCtaShadow: {
+    shadowColor: "#22384a",
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  startMobileCtaShadowPressed: {
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   loadingRingWrap: {
     width: 56,
