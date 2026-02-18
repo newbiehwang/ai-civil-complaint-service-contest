@@ -4,8 +4,11 @@ import {
   Easing,
   Keyboard,
   KeyboardEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
+  ScrollView,
   StyleProp,
   StyleSheet,
   Text,
@@ -53,6 +56,14 @@ type MiniOption = {
   kind?: MiniOptionKind;
   description?: string;
   badge?: string;
+};
+
+type EvidenceMiniView = "overview" | "datePicker" | "timePicker";
+type EvidenceMeridiem = "오전" | "오후";
+type EvidenceDateTimeSelection = {
+  meridiem: EvidenceMeridiem;
+  hour: number;
+  minute: number;
 };
 
 type MiniInterfaceConfig = {
@@ -113,22 +124,6 @@ type MiniAnimatedPressableProps = {
   pressScale?: number;
 };
 
-type LocalEvidenceKind = "AUDIO" | "LOG";
-
-type LocalEvidenceAttachment = {
-  id: string;
-  kind: LocalEvidenceKind;
-  name: string;
-  uri: string;
-  pickedAt: number;
-};
-
-type EvidenceSummary = {
-  audioCount: number;
-  logCount: number;
-  totalCount: number;
-};
-
 type DebugLogLevel = "INFO" | "ERROR";
 
 type DebugLogItem = {
@@ -149,11 +144,23 @@ type ApiLikeError = {
 const THINKING_TEXT = "답변을 준비하고 있어요.";
 const REQUEST_ERROR_FALLBACK = "요청 처리 중 문제가 발생했어요. 다시 시도해 주세요.";
 const TIMELINE_COMPLETED_EVENT = "CASE_COMPLETED";
+const KO_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
+const EVIDENCE_TIME_MERIDIEM_WHEEL: Array<EvidenceMeridiem | null> = [null, "오전", "오후", null];
+const EVIDENCE_TIME_HOURS_BASE = Array.from({ length: 12 }, (_, index) => index + 1);
+const EVIDENCE_TIME_MINUTES_BASE = Array.from({ length: 60 }, (_, index) => index);
+const EVIDENCE_TIME_HOUR_REPEAT = 9;
+const EVIDENCE_TIME_MINUTE_REPEAT = 5;
+const EVIDENCE_WHEEL_ITEM_HEIGHT = 36;
 
-const EVIDENCE_OPTION_ADD_AUDIO = "evidence-add-audio";
-const EVIDENCE_OPTION_ADD_LOG = "evidence-add-log";
-const EVIDENCE_OPTION_REFRESH = "evidence-refresh";
-const EVIDENCE_OPTION_NEXT = "evidence-next";
+const EVIDENCE_TIME_HOURS_WHEEL = Array.from(
+  { length: EVIDENCE_TIME_HOURS_BASE.length * EVIDENCE_TIME_HOUR_REPEAT },
+  (_, index) => EVIDENCE_TIME_HOURS_BASE[index % EVIDENCE_TIME_HOURS_BASE.length] ?? 1,
+);
+
+const EVIDENCE_TIME_MINUTES_WHEEL = Array.from(
+  { length: EVIDENCE_TIME_MINUTES_BASE.length * EVIDENCE_TIME_MINUTE_REPEAT },
+  (_, index) => EVIDENCE_TIME_MINUTES_BASE[index % EVIDENCE_TIME_MINUTES_BASE.length] ?? 0,
+);
 
 const MEDIATION_OPTION_TRY_FIRST = "mediation-try-first";
 const MEDIATION_OPTION_PROCEED_SUBMISSION = "mediation-proceed-submission";
@@ -184,6 +191,66 @@ const STATUS_FALLBACK_TEXT: Partial<Record<CaseStatus, string>> = {
   EVIDENCE_COLLECTING: "증거를 모으면 제출 단계로 넘어가요.",
   FORMAL_SUBMISSION_READY: "제출 준비가 끝났어요. 제출을 진행해요.",
 };
+
+function toMonthStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonth(date: Date, offset: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + offset, 1);
+}
+
+function isSameDate(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function formatEvidenceDate(date: Date): string {
+  return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일 (${KO_WEEKDAYS[date.getDay()]})`;
+}
+
+function formatEvidenceTime(value: EvidenceDateTimeSelection): string {
+  const hour = value.hour.toString().padStart(2, "0");
+  const minute = value.minute.toString().padStart(2, "0");
+  return `${value.meridiem} ${hour}시 ${minute}분`;
+}
+
+function createCalendarCells(monthStart: Date): Array<Date | null> {
+  const startOffset = monthStart.getDay();
+  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+  const cells: Array<Date | null> = [];
+
+  for (let i = 0; i < startOffset; i += 1) {
+    cells.push(null);
+  }
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push(new Date(monthStart.getFullYear(), monthStart.getMonth(), day));
+  }
+  while (cells.length < 42) {
+    cells.push(null);
+  }
+  return cells;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getMeridiemWheelInitialIndex(value: EvidenceMeridiem): number {
+  return value === "오전" ? 1 : 2;
+}
+
+function getCyclicWheelCenterIndex(
+  value: number,
+  values: number[],
+  repeatCount: number,
+): number {
+  const baseIndex = Math.max(0, values.indexOf(value));
+  return Math.floor(repeatCount / 2) * values.length + baseIndex;
+}
 
 function compactAiText(rawText: string): string {
   const normalized = rawText.replace(/\s+/g, " ").trim();
@@ -308,53 +375,13 @@ function mapRoutingRecommendationToMiniInterface(
   };
 }
 
-function summarizeEvidenceAttachments(items: LocalEvidenceAttachment[]): EvidenceSummary {
-  const audioCount = items.filter((item) => item.kind === "AUDIO").length;
-  const logCount = items.filter((item) => item.kind === "LOG").length;
+function createEvidenceMiniInterface(): MiniInterfaceConfig {
   return {
-    audioCount,
-    logCount,
-    totalCount: items.length,
-  };
-}
-
-function createEvidenceMiniInterface(summary: EvidenceSummary): MiniInterfaceConfig {
-  const hasAnyEvidence = summary.totalCount > 0;
-  const prompt = hasAnyEvidence
-    ? `첨부 ${summary.totalCount}건을 확인했어요. 필요하면 더 추가해 주세요.`
-    : "증거 자료는 선택사항이에요. 필요하면 첨부해 주세요.";
-
-  return {
-    prompt,
+    prompt: "증거 자료를 체크리스트로 확인해 주세요.",
     selectionMode: "single",
     context: "evidence",
-    selectionHint: "선택사항",
-    options: [
-      {
-        id: EVIDENCE_OPTION_ADD_AUDIO,
-        label: "녹음 파일 첨부",
-        description: "라이브러리에서 선택",
-        badge: summary.audioCount > 0 ? `첨부 ${summary.audioCount}` : "선택",
-      },
-      {
-        id: EVIDENCE_OPTION_ADD_LOG,
-        label: "소음 일지 첨부",
-        description: "라이브러리에서 선택",
-        badge: summary.logCount > 0 ? `첨부 ${summary.logCount}` : "선택",
-      },
-      {
-        id: EVIDENCE_OPTION_REFRESH,
-        label: "첨부 현황 확인",
-        description: "지금 선택한 항목 보기",
-        badge: hasAnyEvidence ? `${summary.totalCount}건` : "없음",
-      },
-      {
-        id: EVIDENCE_OPTION_NEXT,
-        label: "다음 단계로 이동",
-        description: "증거 없이도 계속 진행 가능",
-        badge: "계속",
-      },
-    ],
+    selectionHint: "체크리스트",
+    options: [],
   };
 }
 
@@ -473,6 +500,19 @@ function createDebugMiniInterfaceInput(
       "single",
     );
     return { text: miniInterface.prompt, inputMode: "mini", miniInterface };
+  }
+
+  if (
+    compactUserInput === "4" ||
+    compactUserInput === "날짜시간테스트" ||
+    compactUserInput === "증거날짜시간"
+  ) {
+    const miniInterface = createEvidenceMiniInterface();
+    return {
+      text: "테스트입니다. 소음이 발생한 날짜와 시간을 선택해 주세요.",
+      inputMode: "mini",
+      miniInterface,
+    };
   }
 
   return null;
@@ -608,22 +648,24 @@ function MiniAnimatedPressable({
   );
 }
 
-function getExpoImagePickerModule():
-  | null
-  | {
-      requestMediaLibraryPermissionsAsync: () => Promise<{ granted: boolean }>;
-      launchImageLibraryAsync: (options?: Record<string, unknown>) => Promise<{
-        canceled: boolean;
-        assets?: Array<{ uri: string; fileName?: string | null }>;
-      }>;
-      MediaTypeOptions?: { All?: unknown };
-    } {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require("expo-image-picker");
-  } catch {
-    return null;
-  }
+function EvidenceCalendarIcon() {
+  return (
+    <View style={styles.evidenceIconCalendarBase}>
+      <View style={styles.evidenceIconCalendarTopLine} />
+      <View style={styles.evidenceIconCalendarRingLeft} />
+      <View style={styles.evidenceIconCalendarRingRight} />
+    </View>
+  );
+}
+
+function EvidenceClockIcon() {
+  return (
+    <View style={styles.evidenceIconClockBase}>
+      <View style={styles.evidenceIconClockHandHour} />
+      <View style={styles.evidenceIconClockHandMinute} />
+      <View style={styles.evidenceIconClockDot} />
+    </View>
+  );
 }
 
 function keyboardEasingToAnimated(easing?: KeyboardEvent["easing"]) {
@@ -681,7 +723,23 @@ export function ChatbotConversationScreen({
   const [completedFlowSteps, setCompletedFlowSteps] = useState<FlowStepKey[]>([]);
   const [isStepTodoOpen, setIsStepTodoOpen] = useState(false);
   const [stepToastMessage, setStepToastMessage] = useState<string | null>(null);
-  const [localEvidenceAttachments, setLocalEvidenceAttachments] = useState<LocalEvidenceAttachment[]>([]);
+  const [evidenceMiniView, setEvidenceMiniView] = useState<EvidenceMiniView>("overview");
+  const [selectedEvidenceDate, setSelectedEvidenceDate] = useState<Date | null>(null);
+  const [selectedEvidenceTime, setSelectedEvidenceTime] = useState<EvidenceDateTimeSelection | null>(null);
+  const [datePickerMonth, setDatePickerMonth] = useState<Date>(() => toMonthStart(new Date()));
+  const [draftEvidenceDate, setDraftEvidenceDate] = useState<Date>(() => new Date());
+  const [draftEvidenceTime, setDraftEvidenceTime] = useState<EvidenceDateTimeSelection>({
+    meridiem: "오후",
+    hour: 2,
+    minute: 30,
+  });
+  const [meridiemWheelIndex, setMeridiemWheelIndex] = useState<number>(getMeridiemWheelInitialIndex("오후"));
+  const [hourWheelIndex, setHourWheelIndex] = useState<number>(
+    getCyclicWheelCenterIndex(2, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT),
+  );
+  const [minuteWheelIndex, setMinuteWheelIndex] = useState<number>(
+    getCyclicWheelCenterIndex(30, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT),
+  );
   const [debugLogs, setDebugLogs] = useState<DebugLogItem[]>([]);
   const [isDebugLogOpen, setIsDebugLogOpen] = useState(false);
   const {
@@ -703,6 +761,15 @@ export function ChatbotConversationScreen({
   const completedFlowStepsRef = useRef<Set<FlowStepKey>>(new Set());
   const createCaseIdempotencyKeyRef = useRef(`mobile-create-case-${Date.now()}`);
   const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const evidenceMeridiemWheelRef = useRef<ScrollView | null>(null);
+  const evidenceHourWheelRef = useRef<ScrollView | null>(null);
+  const evidenceMinuteWheelRef = useRef<ScrollView | null>(null);
+  const evidenceMiniFadeAnim = useRef(new Animated.Value(1)).current;
+  const wheelLastHandledOffsetRef = useRef<Record<"meridiem" | "hour" | "minute", number>>({
+    meridiem: Number.NaN,
+    hour: Number.NaN,
+    minute: Number.NaN,
+  });
   const backButtonPressAnim = useRef(new Animated.Value(0)).current;
   // Keep AI responses rendered sentence-by-sentence so each sentence appears on its own line.
   const aiSentences = useMemo(() => {
@@ -722,8 +789,12 @@ export function ChatbotConversationScreen({
   const currentMiniSelectionMode = currentMiniInterface?.selectionMode ?? "single";
   const miniContext = currentMiniInterface?.context ?? null;
   const isMiniInterfaceMode = currentAiTurn.inputMode === "mini";
+  const isEvidenceMiniContext = miniContext === "evidence";
   const shouldShowMiniInterface =
-    isAiMessageCompleted && !isGeneratingReply && isMiniInterfaceMode && currentMiniOptions.length > 0;
+    isAiMessageCompleted &&
+    !isGeneratingReply &&
+    isMiniInterfaceMode &&
+    (isEvidenceMiniContext || currentMiniOptions.length > 0);
   const shouldShowRouteRecommendationAction =
     status === "CLASSIFIED" && isAiMessageCompleted && !isGeneratingReply && !shouldShowMiniInterface;
   const isInputDisabled = isGeneratingReply || shouldShowMiniInterface;
@@ -736,23 +807,48 @@ export function ChatbotConversationScreen({
   const inputBaseBottom = insets.bottom + 16;
   const miniPanelBottom = inputBaseBottom + inputHeight + 24;
   const topInsetOffset = Math.max(insets.top - 20, 0);
-  const evidenceSummary = useMemo(
-    () => summarizeEvidenceAttachments(localEvidenceAttachments),
-    [localEvidenceAttachments],
-  );
-  const audioEvidenceAttachments = useMemo(
-    () => localEvidenceAttachments.filter((item) => item.kind === "AUDIO"),
-    [localEvidenceAttachments],
-  );
-  const logEvidenceAttachments = useMemo(
-    () => localEvidenceAttachments.filter((item) => item.kind === "LOG"),
-    [localEvidenceAttachments],
-  );
+  const evidenceCalendarCells = useMemo(() => createCalendarCells(datePickerMonth), [datePickerMonth]);
+  const evidenceDateLabel = selectedEvidenceDate ? formatEvidenceDate(selectedEvidenceDate) : "선택해 주세요";
+  const evidenceTimeLabel = selectedEvidenceTime ? formatEvidenceTime(selectedEvidenceTime) : "선택해 주세요";
+  const isEvidenceDateTimeReady = Boolean(selectedEvidenceDate && selectedEvidenceTime);
 
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
     setIsInputFocused(false);
   }, []);
+
+  const transitionEvidenceMiniView = useCallback(
+    (nextView: EvidenceMiniView, afterSwitch?: () => void) => {
+      if (evidenceMiniView === nextView) {
+        afterSwitch?.();
+        return;
+      }
+
+      evidenceMiniFadeAnim.stopAnimation();
+      Animated.timing(evidenceMiniFadeAnim, {
+        toValue: 0,
+        duration: 90,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) {
+          return;
+        }
+
+        setEvidenceMiniView(nextView);
+        requestAnimationFrame(() => {
+          afterSwitch?.();
+          Animated.timing(evidenceMiniFadeAnim, {
+            toValue: 1,
+            duration: 180,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start();
+        });
+      });
+    },
+    [evidenceMiniFadeAnim, evidenceMiniView],
+  );
 
   const handleBackPressIn = useCallback(() => {
     Animated.timing(backButtonPressAnim, {
@@ -936,127 +1032,173 @@ export function ChatbotConversationScreen({
     [currentMiniSelectionMode, isGeneratingReply],
   );
 
-  const handleEvidenceMiniOptionDirect = useCallback(
-    async (option: MiniOption) => {
-      if (isGeneratingReply) {
+  const handleOpenEvidenceDatePicker = useCallback(() => {
+    setApiErrorMessage(null);
+    const base = selectedEvidenceDate ?? new Date();
+    setDraftEvidenceDate(base);
+    setDatePickerMonth(toMonthStart(base));
+    transitionEvidenceMiniView("datePicker");
+  }, [selectedEvidenceDate, transitionEvidenceMiniView]);
+
+  const handleOpenEvidenceTimePicker = useCallback(() => {
+    setApiErrorMessage(null);
+    const nextDraft = selectedEvidenceTime ?? {
+      meridiem: "오후" as const,
+      hour: 2,
+      minute: 30,
+    };
+    setDraftEvidenceTime(nextDraft);
+    const meridiemIndex = getMeridiemWheelInitialIndex(nextDraft.meridiem);
+    const hourIndex = getCyclicWheelCenterIndex(
+      nextDraft.hour,
+      EVIDENCE_TIME_HOURS_BASE,
+      EVIDENCE_TIME_HOUR_REPEAT,
+    );
+    const minuteIndex = getCyclicWheelCenterIndex(
+      nextDraft.minute,
+      EVIDENCE_TIME_MINUTES_BASE,
+      EVIDENCE_TIME_MINUTE_REPEAT,
+    );
+    setMeridiemWheelIndex(meridiemIndex);
+    setHourWheelIndex(hourIndex);
+    setMinuteWheelIndex(minuteIndex);
+    transitionEvidenceMiniView("timePicker", () => {
+      evidenceMeridiemWheelRef.current?.scrollTo({
+        y: meridiemIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+        animated: false,
+      });
+      evidenceHourWheelRef.current?.scrollTo({
+        y: hourIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+        animated: false,
+      });
+      evidenceMinuteWheelRef.current?.scrollTo({
+        y: minuteIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+        animated: false,
+      });
+    });
+  }, [selectedEvidenceTime, transitionEvidenceMiniView]);
+
+  const handleEvidenceTimeWheelScrollEnd = useCallback(
+    (
+      field: "meridiem" | "hour" | "minute",
+      event: NativeSyntheticEvent<NativeScrollEvent>,
+    ) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      const lastHandledOffset = wheelLastHandledOffsetRef.current[field];
+      if (Math.abs(lastHandledOffset - offsetY) < 0.5) {
         return;
       }
+      wheelLastHandledOffsetRef.current[field] = offsetY;
 
-      setSelectedMiniOptionIds([]);
+      const rawIndex = Math.round(offsetY / EVIDENCE_WHEEL_ITEM_HEIGHT);
 
-      if (option.id === EVIDENCE_OPTION_NEXT) {
-        setApiErrorMessage(null);
-        appendDebugLog("action=evidence-next | 증거 첨부 단계 종료", "INFO");
-        markFlowStepCompleted("evidence");
-        moveToFlowStep("mediation");
-        pushAiTurn(
-          "증거는 선택사항이에요. 다음 진행 방식을 선택해 주세요.",
-          "mini",
-          createMediationMiniInterface(),
-        );
-        return;
-      }
-
-      if (option.id === EVIDENCE_OPTION_REFRESH) {
-        setApiErrorMessage(null);
-        return;
-      }
-
-      if (option.id !== EVIDENCE_OPTION_ADD_AUDIO && option.id !== EVIDENCE_OPTION_ADD_LOG) {
-        return;
-      }
-
-      const evidenceKind: LocalEvidenceKind =
-        option.id === EVIDENCE_OPTION_ADD_AUDIO ? "AUDIO" : "LOG";
-
-      Keyboard.dismiss();
-      setIsInputFocused(false);
-      setApiErrorMessage(null);
-
-      try {
-        appendDebugLog(`action=evidence-pick | type=${evidenceKind} | 라이브러리 열기`, "INFO");
-        const imagePicker = getExpoImagePickerModule();
-        if (!imagePicker) {
-          throw new Error("라이브러리 기능을 불러오지 못했어요. 앱을 다시 실행해 주세요.");
+      if (field === "meridiem") {
+        const index = clampNumber(rawIndex, 1, 2);
+        const nextValue = EVIDENCE_TIME_MERIDIEM_WHEEL[index];
+        const snappedY = index * EVIDENCE_WHEEL_ITEM_HEIGHT;
+        setMeridiemWheelIndex(index);
+        if (nextValue) {
+          setDraftEvidenceTime((previous) =>
+            previous.meridiem === nextValue ? previous : { ...previous, meridiem: nextValue },
+          );
         }
-
-        const permission = await imagePicker.requestMediaLibraryPermissionsAsync();
-        if (!permission.granted) {
-          setApiErrorMessage("라이브러리 권한이 필요해요. 권한을 허용한 뒤 다시 시도해 주세요.");
-          appendDebugLog("action=evidence-pick | 권한 거부", "ERROR");
-          return;
-        }
-
-        const pickerResult = await imagePicker.launchImageLibraryAsync({
-          mediaTypes: imagePicker.MediaTypeOptions?.All,
-          allowsMultipleSelection: true,
-          quality: 1,
-        });
-
-        if (pickerResult.canceled || !pickerResult.assets?.length) {
-          setApiErrorMessage(null);
-          appendDebugLog("action=evidence-pick | 사용자가 선택 취소", "INFO");
-          return;
-        }
-
-        const existingAttachmentKeys = new Set(
-          localEvidenceAttachments.map((item) => `${item.kind}:${item.uri}`),
-        );
-        const now = Date.now();
-        const nextAttachments = pickerResult.assets.reduce<LocalEvidenceAttachment[]>((acc, asset, index) => {
-          if (!asset.uri) {
-            return acc;
-          }
-
-          const attachmentKey = `${evidenceKind}:${asset.uri}`;
-          if (existingAttachmentKeys.has(attachmentKey)) {
-            return acc;
-          }
-
-          const pickedName =
-            asset.fileName?.trim() ||
-            asset.uri.split("/").filter(Boolean).pop() ||
-            "선택한 파일";
-          acc.push({
-            id: `local-evidence-${now}-${index}`,
-            kind: evidenceKind,
-            name: pickedName,
-            uri: asset.uri,
-            pickedAt: now + index,
+        if (Math.abs(offsetY - snappedY) > 0.5) {
+          requestAnimationFrame(() => {
+            evidenceMeridiemWheelRef.current?.scrollTo({ y: snappedY, animated: true });
           });
-          return acc;
-        }, []);
-
-        if (nextAttachments.length === 0) {
-          setApiErrorMessage("이미 첨부된 파일이에요. 아래 목록에서 해제할 수 있어요.");
-          appendDebugLog(`action=evidence-pick | 중복 파일 선택`, "ERROR");
-          return;
         }
+        return;
+      }
 
-        setLocalEvidenceAttachments((previous) => [...previous, ...nextAttachments]);
-        setApiErrorMessage(null);
-        appendDebugLog(`action=evidence-pick | 첨부 완료 ${nextAttachments.length}건`, "INFO");
-      } catch (error: unknown) {
-        applyApiError(error, "evidence-pick");
+      if (field === "hour") {
+        const boundedIndex = clampNumber(rawIndex, 0, EVIDENCE_TIME_HOURS_WHEEL.length - 1);
+        const nextValue = EVIDENCE_TIME_HOURS_WHEEL[boundedIndex] ?? 1;
+        const shouldRecenter =
+          boundedIndex < EVIDENCE_TIME_HOURS_BASE.length ||
+          boundedIndex >= EVIDENCE_TIME_HOURS_WHEEL.length - EVIDENCE_TIME_HOURS_BASE.length;
+        const recenteredIndex = shouldRecenter
+          ? getCyclicWheelCenterIndex(nextValue, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT)
+          : boundedIndex;
+        const snappedY = recenteredIndex * EVIDENCE_WHEEL_ITEM_HEIGHT;
+
+        setHourWheelIndex(recenteredIndex);
+        setDraftEvidenceTime((previous) =>
+          previous.hour === nextValue ? previous : { ...previous, hour: nextValue },
+        );
+
+        if (Math.abs(offsetY - snappedY) > 0.5) {
+          requestAnimationFrame(() => {
+            evidenceHourWheelRef.current?.scrollTo({ y: snappedY, animated: true });
+          });
+        }
+        return;
+      }
+
+      const boundedIndex = clampNumber(rawIndex, 0, EVIDENCE_TIME_MINUTES_WHEEL.length - 1);
+      const nextValue = EVIDENCE_TIME_MINUTES_WHEEL[boundedIndex] ?? 0;
+      const shouldRecenter =
+        boundedIndex < EVIDENCE_TIME_MINUTES_BASE.length ||
+        boundedIndex >= EVIDENCE_TIME_MINUTES_WHEEL.length - EVIDENCE_TIME_MINUTES_BASE.length;
+      const recenteredIndex = shouldRecenter
+        ? getCyclicWheelCenterIndex(nextValue, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT)
+        : boundedIndex;
+      const snappedY = recenteredIndex * EVIDENCE_WHEEL_ITEM_HEIGHT;
+
+      setMinuteWheelIndex(recenteredIndex);
+      setDraftEvidenceTime((previous) =>
+        previous.minute === nextValue ? previous : { ...previous, minute: nextValue },
+      );
+
+      if (Math.abs(offsetY - snappedY) > 0.5) {
+        requestAnimationFrame(() => {
+          evidenceMinuteWheelRef.current?.scrollTo({ y: snappedY, animated: true });
+        });
       }
     },
-    [
-      applyApiError,
-      appendDebugLog,
-      isGeneratingReply,
-      localEvidenceAttachments,
-      markFlowStepCompleted,
-      moveToFlowStep,
-      pushAiTurn,
-    ],
+    [],
   );
 
-  const handleRemoveLocalEvidenceAttachment = useCallback((attachmentId: string) => {
-    setLocalEvidenceAttachments((previous) =>
-      previous.filter((attachment) => attachment.id !== attachmentId),
-    );
+  const handleEvidenceTimeWheelScrollEndDrag = useCallback(
+    (
+      field: "meridiem" | "hour" | "minute",
+      event: NativeSyntheticEvent<NativeScrollEvent>,
+    ) => {
+      const velocityY = Math.abs(event.nativeEvent.velocity?.y ?? 0);
+      if (velocityY > 0.05) {
+        return;
+      }
+      handleEvidenceTimeWheelScrollEnd(field, event);
+    },
+    [handleEvidenceTimeWheelScrollEnd],
+  );
+
+  const handleSubmitEvidenceChecklist = useCallback(() => {
+    if (!isEvidenceDateTimeReady) {
+      setApiErrorMessage("날짜와 시간을 모두 선택해 주세요.");
+      return;
+    }
+
     setApiErrorMessage(null);
-  }, []);
+    appendDebugLog(
+      `action=evidence-checklist-submit | date=${selectedEvidenceDate ? formatEvidenceDate(selectedEvidenceDate) : "-"} | time=${selectedEvidenceTime ? formatEvidenceTime(selectedEvidenceTime) : "-"}`,
+      "INFO",
+    );
+    markFlowStepCompleted("evidence");
+    moveToFlowStep("mediation");
+    pushAiTurn(
+      "정보를 확인했어요. 다음 진행 방식을 선택해 주세요.",
+      "mini",
+      createMediationMiniInterface(),
+    );
+  }, [
+    appendDebugLog,
+    isEvidenceDateTimeReady,
+    markFlowStepCompleted,
+    moveToFlowStep,
+    pushAiTurn,
+    selectedEvidenceDate,
+    selectedEvidenceTime,
+  ]);
 
   const ensureCaseId = useCallback(async () => {
     if (caseId) {
@@ -1160,7 +1302,21 @@ export function ChatbotConversationScreen({
     setIsAiMessageCompleted(false);
     setIsGeneratingReply(false);
     setVisibleSentenceCount(1);
-    setLocalEvidenceAttachments([]);
+    setEvidenceMiniView("overview");
+    setSelectedEvidenceDate(null);
+    setSelectedEvidenceTime(null);
+    setDatePickerMonth(toMonthStart(new Date()));
+    setDraftEvidenceDate(new Date());
+    setDraftEvidenceTime({
+      meridiem: "오후",
+      hour: 2,
+      minute: 30,
+    });
+    setMeridiemWheelIndex(getMeridiemWheelInitialIndex("오후"));
+    setHourWheelIndex(getCyclicWheelCenterIndex(2, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT));
+    setMinuteWheelIndex(
+      getCyclicWheelCenterIndex(30, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT),
+    );
     turnSequenceRef.current = 2;
     completedFlowStepsRef.current = new Set();
     setCompletedFlowSteps([]);
@@ -1267,11 +1423,13 @@ export function ChatbotConversationScreen({
             confirmedCase.status === "ROUTE_CONFIRMED"
               ? `${selectedRouteOption.label}로 경로를 확정했어요.`
               : "경로를 반영했어요.";
-          setLocalEvidenceAttachments([]);
+          setEvidenceMiniView("overview");
+          setSelectedEvidenceDate(null);
+          setSelectedEvidenceTime(null);
           pushAiTurn(
-            `${routeConfirmedText}\n필요하면 증거를 첨부해 주세요.`,
+            `${routeConfirmedText}\n날짜와 시간을 선택해 주세요.`,
             "mini",
-            createEvidenceMiniInterface(summarizeEvidenceAttachments([])),
+            createEvidenceMiniInterface(),
           );
           onRouteConfirmed?.();
         } catch (error: unknown) {
@@ -1284,10 +1442,6 @@ export function ChatbotConversationScreen({
       }
 
       if (miniContext === "evidence") {
-        if (!selectedPrimary) {
-          return;
-        }
-        await handleEvidenceMiniOptionDirect(selectedPrimary);
         return;
       }
 
@@ -1489,6 +1643,24 @@ export function ChatbotConversationScreen({
     const debugMiniTurn = createDebugMiniInterfaceInput(trimmed.replace(/\s+/g, ""));
     if (debugMiniTurn) {
       setApiErrorMessage(null);
+      if (debugMiniTurn.miniInterface?.context === "evidence") {
+        const now = new Date();
+        setEvidenceMiniView("overview");
+        setSelectedEvidenceDate(null);
+        setSelectedEvidenceTime(null);
+        setDatePickerMonth(toMonthStart(now));
+        setDraftEvidenceDate(now);
+        setDraftEvidenceTime({
+          meridiem: "오후",
+          hour: 2,
+          minute: 30,
+        });
+        setMeridiemWheelIndex(getMeridiemWheelInitialIndex("오후"));
+        setHourWheelIndex(getCyclicWheelCenterIndex(2, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT));
+        setMinuteWheelIndex(
+          getCyclicWheelCenterIndex(30, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT),
+        );
+      }
       pushAiTurn(debugMiniTurn.text, debugMiniTurn.inputMode, debugMiniTurn.miniInterface);
       return;
     }
@@ -1518,7 +1690,6 @@ export function ChatbotConversationScreen({
     draft,
     ensureCaseId,
     fetchTimelineState,
-    handleEvidenceMiniOptionDirect,
     isGeneratingReply,
     markFlowStepCompleted,
     miniContext,
@@ -1551,12 +1722,46 @@ export function ChatbotConversationScreen({
   );
 
   useEffect(() => {
-    setIsAiMessageCompleted(false);
-    setVisibleSentenceCount(aiSentences.length > 0 ? 1 : 0);
+    const instantMiniReveal =
+      currentAiTurn.inputMode === "mini" &&
+      currentAiTurn.miniInterface?.context !== "intake";
+
+    setIsAiMessageCompleted(instantMiniReveal);
+    setVisibleSentenceCount(aiSentences.length > 0 ? (instantMiniReveal ? aiSentences.length : 1) : 0);
     setDraft("");
     setSelectedMiniOptionIds([]);
     setIsInputFocused(false);
-  }, [aiSentences.length, currentAiTurn.id]);
+    if (currentAiTurn.miniInterface?.context === "evidence") {
+      const now = new Date();
+      setEvidenceMiniView("overview");
+      setDatePickerMonth(toMonthStart(selectedEvidenceDate ?? now));
+      setDraftEvidenceDate(selectedEvidenceDate ?? now);
+      setDraftEvidenceTime(
+        selectedEvidenceTime ?? {
+          meridiem: "오후",
+          hour: 2,
+          minute: 30,
+        },
+      );
+      const initialTime = selectedEvidenceTime ?? {
+        meridiem: "오후" as const,
+        hour: 2,
+        minute: 30,
+      };
+      setMeridiemWheelIndex(getMeridiemWheelInitialIndex(initialTime.meridiem));
+      setHourWheelIndex(
+        getCyclicWheelCenterIndex(initialTime.hour, EVIDENCE_TIME_HOURS_BASE, EVIDENCE_TIME_HOUR_REPEAT),
+      );
+      setMinuteWheelIndex(
+        getCyclicWheelCenterIndex(initialTime.minute, EVIDENCE_TIME_MINUTES_BASE, EVIDENCE_TIME_MINUTE_REPEAT),
+      );
+    }
+  }, [
+    aiSentences.length,
+    currentAiTurn.id,
+    currentAiTurn.inputMode,
+    currentAiTurn.miniInterface?.context,
+  ]);
 
   useEffect(() => {
     appendDebugLog(`chat-screen mounted | traceId=${traceId}`, "INFO");
@@ -1668,6 +1873,49 @@ export function ChatbotConversationScreen({
   }, [miniInterfaceRevealAnim, shouldShowMiniInterface]);
 
   useEffect(() => {
+    if (!shouldShowMiniInterface || miniContext !== "evidence") {
+      return;
+    }
+    evidenceMiniFadeAnim.setValue(1);
+  }, [evidenceMiniFadeAnim, miniContext, shouldShowMiniInterface]);
+
+  useEffect(() => {
+    if (evidenceMiniView !== "timePicker") {
+      return;
+    }
+    const targetDraft = draftEvidenceTime;
+    const meridiemIndex = getMeridiemWheelInitialIndex(targetDraft.meridiem);
+    const hourIndex = getCyclicWheelCenterIndex(
+      targetDraft.hour,
+      EVIDENCE_TIME_HOURS_BASE,
+      EVIDENCE_TIME_HOUR_REPEAT,
+    );
+    const minuteIndex = getCyclicWheelCenterIndex(
+      targetDraft.minute,
+      EVIDENCE_TIME_MINUTES_BASE,
+      EVIDENCE_TIME_MINUTE_REPEAT,
+    );
+    setMeridiemWheelIndex(meridiemIndex);
+    setHourWheelIndex(hourIndex);
+    setMinuteWheelIndex(minuteIndex);
+
+    requestAnimationFrame(() => {
+      evidenceMeridiemWheelRef.current?.scrollTo({
+        y: meridiemIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+        animated: false,
+      });
+      evidenceHourWheelRef.current?.scrollTo({
+        y: hourIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+        animated: false,
+      });
+      evidenceMinuteWheelRef.current?.scrollTo({
+        y: minuteIndex * EVIDENCE_WHEEL_ITEM_HEIGHT,
+        animated: false,
+      });
+    });
+  }, [evidenceMiniView]);
+
+  useEffect(() => {
     const animation = Animated.sequence([
       Animated.timing(stepSubtitleAnim, {
         toValue: 0.25,
@@ -1744,7 +1992,7 @@ export function ChatbotConversationScreen({
   const miniInterfaceMotionY = Animated.add(inputTranslateY, miniInterfaceTranslateY);
 
   const hasSelectedMiniOptions = selectedMiniOptionIds.length > 0;
-  const isEvidenceMiniInterface = shouldShowMiniInterface && miniContext === "evidence";
+  const isEvidenceMiniInterface = shouldShowMiniInterface && isEvidenceMiniContext;
   const isSendDisabled = isGeneratingReply ||
     (shouldShowMiniInterface ? (isEvidenceMiniInterface ? true : !hasSelectedMiniOptions) : !draft.trim());
   const sendIcon = shouldShowMiniInterface ? "↗" : "›";
@@ -1752,20 +2000,19 @@ export function ChatbotConversationScreen({
     currentMiniInterface?.selectionHint ??
     (currentMiniSelectionMode === "multiple" ? "복수 선택 가능" : "단일 선택");
   const miniCardWidth = "100%";
-  const hasAudioAttachment = evidenceSummary.audioCount > 0;
-  const hasLogAttachment = evidenceSummary.logCount > 0;
-  const evidenceActionLabel = evidenceSummary.totalCount > 0 ? "선택 완료" : "건너뛰기";
-  const evidenceStatusText =
-    evidenceSummary.totalCount > 0
-      ? `첨부 ${evidenceSummary.totalCount}건 · 파일 탭으로 해제 가능`
-      : "아직 첨부한 파일이 없어요.";
+  const evidenceMonthLabel = `${datePickerMonth.getFullYear()}년 ${datePickerMonth.getMonth() + 1}월`;
+  const evidenceDraftDateLabel = formatEvidenceDate(draftEvidenceDate);
+  const evidenceDraftTimeLabel = formatEvidenceTime(draftEvidenceTime);
+  const evidenceCalendarCellSize = Math.max(34, Math.floor((contentWidth - 40) / 7));
+  const evidenceCalendarGridWidth = evidenceCalendarCellSize * 7;
   const debugLogsToRender = debugLogs.slice(0, 8);
   const isDebugMode = __DEV__;
   const inputPlaceholder = isGeneratingReply
     ? "답변을 준비하는 중입니다..."
     : shouldShowMiniInterface
-      ? (isEvidenceMiniInterface ? "카드를 눌러 첨부하거나 다음 단계로 이동하세요." : "항목을 선택해 주세요.")
+      ? (isEvidenceMiniInterface ? "날짜와 시간을 선택해 주세요." : "항목을 선택해 주세요.")
       : "답변 입력 또는 음성으로 말하기";
+  const isBackgroundDismissEnabled = isInputFocused && !shouldShowMiniInterface;
   const backButtonScale = backButtonPressAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 0.97],
@@ -1788,7 +2035,7 @@ export function ChatbotConversationScreen({
   });
 
   return (
-    <Pressable style={styles.safeArea} onPress={dismissKeyboard}>
+    <View style={styles.safeArea}>
       <Animated.View
         style={[
           styles.frame,
@@ -1798,6 +2045,15 @@ export function ChatbotConversationScreen({
           },
         ]}
       >
+        {isBackgroundDismissEnabled ? (
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={dismissKeyboard}
+            accessibilityRole="button"
+            accessibilityLabel="키보드 닫기"
+          />
+        ) : null}
+
         <Animated.View
           style={[
             styles.backButton,
@@ -1994,161 +2250,396 @@ export function ChatbotConversationScreen({
           <Animated.View
             style={[
               styles.miniInterfaceWrap,
+              miniContext === "evidence" && styles.miniInterfaceWrapEvidence,
               {
                 left: horizontalPadding,
                 bottom: miniPanelBottom,
                 width: contentWidth,
                 borderRadius: 24,
-                opacity: miniInterfaceRevealAnim,
-                transform: [{ translateY: miniInterfaceMotionY }],
+                ...(miniContext === "evidence"
+                  ? {
+                      opacity: 1,
+                    }
+                  : {
+                      opacity: miniInterfaceRevealAnim,
+                      transform: [{ translateY: miniInterfaceMotionY }],
+                    }),
               },
             ]}
           >
             {miniContext === "evidence" ? (
-              <>
-                <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
-                  {miniSelectionHint}
+              <Animated.View
+                style={{
+                  opacity: evidenceMiniFadeAnim,
+                }}
+              >
+                <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]} allowFontScaling={false}>
+                  {evidenceMiniView === "overview"
+                    ? "날짜 및 시간 선택"
+                    : evidenceMiniView === "datePicker"
+                      ? "날짜 선택"
+                      : "시간 선택"}
                 </Text>
-                <Text style={styles.evidenceStatusText}>{evidenceStatusText}</Text>
 
-                <View style={styles.evidenceChecklistBlock}>
-                  <MiniAnimatedPressable
-                    style={[
-                      styles.evidenceChecklistItem,
-                      hasAudioAttachment && styles.evidenceChecklistItemChecked,
-                    ]}
-                    onPress={() =>
-                      void handleEvidenceMiniOptionDirect({
-                        id: EVIDENCE_OPTION_ADD_AUDIO,
-                        label: "녹음 파일 첨부",
-                      })
-                    }
-                  >
-                    <View style={[styles.evidenceCheckCircle, hasAudioAttachment && styles.evidenceCheckCircleChecked]}>
-                      <Text style={[styles.evidenceCheckText, hasAudioAttachment && styles.evidenceCheckTextChecked]}>
-                        {hasAudioAttachment ? "✓" : ""}
-                      </Text>
-                    </View>
-                    <View style={styles.evidenceChecklistLabelWrap}>
+                {evidenceMiniView === "overview" ? (
+                  <View style={styles.evidenceChecklistBlock}>
+                    <MiniAnimatedPressable
+                      style={styles.evidenceDateTimeRow}
+                      onPress={handleOpenEvidenceDatePicker}
+                    >
+                      <View style={styles.evidenceDateTimeIconSurface}>
+                        <EvidenceCalendarIcon />
+                      </View>
+                      <View style={styles.evidenceDateTimeTextWrap}>
+                        <Text style={styles.evidenceDateTimeLabel} allowFontScaling={false}>
+                          발생 날짜
+                        </Text>
+                        <Text style={styles.evidenceDateTimeValue} allowFontScaling={false}>
+                          {evidenceDateLabel}
+                        </Text>
+                      </View>
+                    </MiniAnimatedPressable>
+                    {selectedEvidenceDate ? (
+                      <MiniAnimatedPressable
+                        style={styles.evidenceInlineResetButton}
+                        onPress={() => {
+                          setSelectedEvidenceDate(null);
+                          setApiErrorMessage(null);
+                        }}
+                      >
+                        <Text style={styles.evidenceInlineResetButtonText} allowFontScaling={false}>
+                          날짜 선택 해제
+                        </Text>
+                      </MiniAnimatedPressable>
+                    ) : null}
+
+                    <View style={styles.evidenceDateTimeDivider} />
+
+                    <MiniAnimatedPressable
+                      style={styles.evidenceDateTimeRow}
+                      onPress={handleOpenEvidenceTimePicker}
+                    >
+                      <View style={styles.evidenceDateTimeIconSurface}>
+                        <EvidenceClockIcon />
+                      </View>
+                      <View style={styles.evidenceDateTimeTextWrap}>
+                        <Text style={styles.evidenceDateTimeLabel} allowFontScaling={false}>
+                          발생 시간
+                        </Text>
+                        <Text style={styles.evidenceDateTimeValue} allowFontScaling={false}>
+                          {evidenceTimeLabel}
+                        </Text>
+                      </View>
+                    </MiniAnimatedPressable>
+                    {selectedEvidenceTime ? (
+                      <MiniAnimatedPressable
+                        style={styles.evidenceInlineResetButton}
+                        onPress={() => {
+                          setSelectedEvidenceTime(null);
+                          setApiErrorMessage(null);
+                        }}
+                      >
+                        <Text style={styles.evidenceInlineResetButtonText} allowFontScaling={false}>
+                          시간 선택 해제
+                        </Text>
+                      </MiniAnimatedPressable>
+                    ) : null}
+
+                    <MiniAnimatedPressable
+                      style={[
+                        styles.evidenceActionButton,
+                        isEvidenceDateTimeReady
+                          ? styles.evidenceActionButtonActive
+                          : styles.evidenceActionButtonSkip,
+                      ]}
+                      onPress={handleSubmitEvidenceChecklist}
+                      disabled={!isEvidenceDateTimeReady}
+                    >
                       <Text
                         style={[
-                          styles.evidenceChecklistTitle,
-                          hasAudioAttachment && styles.evidenceChecklistTitleChecked,
+                          styles.evidenceActionButtonText,
+                          isEvidenceDateTimeReady
+                            ? styles.evidenceActionButtonTextActive
+                            : styles.evidenceActionButtonTextSkip,
                         ]}
+                        allowFontScaling={false}
                       >
-                        녹음 파일 첨부
+                        정보 확인 및 제출
                       </Text>
-                      <Text
-                        style={[
-                          styles.evidenceChecklistSubtitle,
-                          hasAudioAttachment && styles.evidenceChecklistSubtitleChecked,
-                        ]}
-                      >
-                        {hasAudioAttachment ? `${evidenceSummary.audioCount}건 첨부됨` : "누르면 라이브러리 열기"}
-                      </Text>
-                    </View>
-                  </MiniAnimatedPressable>
+                    </MiniAnimatedPressable>
+                  </View>
+                ) : null}
 
-                  {audioEvidenceAttachments.length > 0 ? (
-                    <View style={styles.evidenceAttachmentList}>
-                      {audioEvidenceAttachments.map((attachment) => (
-                        <MiniAnimatedPressable
-                          key={attachment.id}
-                          style={styles.evidenceAttachmentItem}
-                          onPress={() => handleRemoveLocalEvidenceAttachment(attachment.id)}
-                        >
-                          <Text style={styles.evidenceAttachmentName} numberOfLines={1}>
-                            {attachment.name}
-                          </Text>
-                          <Text style={styles.evidenceAttachmentRemove}>선택 해제</Text>
-                        </MiniAnimatedPressable>
+                {evidenceMiniView === "datePicker" ? (
+                  <View style={styles.evidencePickerPanel}>
+                    <MiniAnimatedPressable
+                      style={styles.evidencePickerBackButton}
+                      onPress={() => transitionEvidenceMiniView("overview")}
+                    >
+                      <Text style={styles.evidencePickerBackText} allowFontScaling={false}>
+                        {"‹ 이전 단계"}
+                      </Text>
+                    </MiniAnimatedPressable>
+
+                    <View style={styles.evidencePickerMonthRow}>
+                      <MiniAnimatedPressable
+                        style={styles.evidenceMonthNavButton}
+                        onPress={() => setDatePickerMonth((previous) => addMonth(previous, -1))}
+                      >
+                        <Text style={styles.evidenceMonthNavText} allowFontScaling={false}>
+                          {"‹"}
+                        </Text>
+                      </MiniAnimatedPressable>
+                      <Text style={styles.evidenceMonthLabel} allowFontScaling={false}>
+                        {evidenceMonthLabel}
+                      </Text>
+                      <MiniAnimatedPressable
+                        style={styles.evidenceMonthNavButton}
+                        onPress={() => setDatePickerMonth((previous) => addMonth(previous, 1))}
+                      >
+                        <Text style={styles.evidenceMonthNavText} allowFontScaling={false}>
+                          {"›"}
+                        </Text>
+                      </MiniAnimatedPressable>
+                    </View>
+
+                    <View style={styles.evidenceWeekdayRow}>
+                      {KO_WEEKDAYS.map((weekday) => (
+                        <Text key={weekday} style={styles.evidenceWeekdayText} allowFontScaling={false}>
+                          {weekday}
+                        </Text>
                       ))}
                     </View>
-                  ) : null}
-                </View>
 
-                <View style={styles.evidenceChecklistBlock}>
-                  <MiniAnimatedPressable
-                    style={[
-                      styles.evidenceChecklistItem,
-                      hasLogAttachment && styles.evidenceChecklistItemChecked,
-                    ]}
-                    onPress={() =>
-                      void handleEvidenceMiniOptionDirect({
-                        id: EVIDENCE_OPTION_ADD_LOG,
-                        label: "소음 일지 첨부",
-                      })
-                    }
-                  >
-                    <View style={[styles.evidenceCheckCircle, hasLogAttachment && styles.evidenceCheckCircleChecked]}>
-                      <Text style={[styles.evidenceCheckText, hasLogAttachment && styles.evidenceCheckTextChecked]}>
-                        {hasLogAttachment ? "✓" : ""}
+                    <View style={[styles.evidenceCalendarGrid, { width: evidenceCalendarGridWidth }]}>
+                      {evidenceCalendarCells.map((cellDate, index) => {
+                        if (!cellDate) {
+                          return (
+                            <View
+                              key={`empty-${index}`}
+                              style={[
+                                styles.evidenceCalendarCellEmpty,
+                                {
+                                  width: evidenceCalendarCellSize,
+                                  height: evidenceCalendarCellSize,
+                                },
+                              ]}
+                            />
+                          );
+                        }
+
+                        const isSelected = isSameDate(cellDate, draftEvidenceDate);
+                        return (
+                          <Pressable
+                            key={cellDate.toISOString()}
+                            onPress={() => setDraftEvidenceDate(cellDate)}
+                            style={({ pressed }) => [
+                              styles.evidenceCalendarCell,
+                              isSelected && styles.evidenceCalendarCellSelected,
+                              pressed && styles.evidenceCalendarCellPressed,
+                              {
+                                width: evidenceCalendarCellSize,
+                                height: evidenceCalendarCellSize,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.evidenceCalendarCellText,
+                                isSelected && styles.evidenceCalendarCellTextSelected,
+                              ]}
+                              allowFontScaling={false}
+                            >
+                              {cellDate.getDate()}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    <View style={styles.evidencePickerSummary}>
+                      <Text style={styles.evidencePickerSummaryLabel} allowFontScaling={false}>
+                        선택된 날짜
+                      </Text>
+                      <Text style={styles.evidencePickerSummaryValue} allowFontScaling={false}>
+                        {evidenceDraftDateLabel}
                       </Text>
                     </View>
-                    <View style={styles.evidenceChecklistLabelWrap}>
-                      <Text
-                        style={[
-                          styles.evidenceChecklistTitle,
-                          hasLogAttachment && styles.evidenceChecklistTitleChecked,
-                        ]}
-                      >
-                        소음 일지 첨부
-                      </Text>
-                      <Text
-                        style={[
-                          styles.evidenceChecklistSubtitle,
-                          hasLogAttachment && styles.evidenceChecklistSubtitleChecked,
-                        ]}
-                      >
-                        {hasLogAttachment ? `${evidenceSummary.logCount}건 첨부됨` : "누르면 라이브러리 열기"}
-                      </Text>
-                    </View>
-                  </MiniAnimatedPressable>
 
-                  {logEvidenceAttachments.length > 0 ? (
-                    <View style={styles.evidenceAttachmentList}>
-                      {logEvidenceAttachments.map((attachment) => (
-                        <MiniAnimatedPressable
-                          key={attachment.id}
-                          style={styles.evidenceAttachmentItem}
-                          onPress={() => handleRemoveLocalEvidenceAttachment(attachment.id)}
+                    <MiniAnimatedPressable
+                      style={[styles.evidenceActionButton, styles.evidenceActionButtonActive]}
+                      onPress={() => {
+                        setSelectedEvidenceDate(draftEvidenceDate);
+                        transitionEvidenceMiniView("overview");
+                        setApiErrorMessage(null);
+                      }}
+                    >
+                      <Text
+                        style={[styles.evidenceActionButtonText, styles.evidenceActionButtonTextActive]}
+                        allowFontScaling={false}
+                      >
+                        날짜 선택 완료
+                      </Text>
+                    </MiniAnimatedPressable>
+                  </View>
+                ) : null}
+
+                {evidenceMiniView === "timePicker" ? (
+                  <View style={styles.evidencePickerPanel}>
+                    <MiniAnimatedPressable
+                      style={styles.evidencePickerBackButton}
+                      onPress={() => transitionEvidenceMiniView("overview")}
+                    >
+                      <Text style={styles.evidencePickerBackText} allowFontScaling={false}>
+                        {"‹ 이전 단계"}
+                      </Text>
+                    </MiniAnimatedPressable>
+
+                    <View style={styles.evidenceTimeWheelRow}>
+                      <View style={styles.evidenceTimeWheelColumn}>
+                        <View style={styles.evidenceTimeWheelCenterBar} pointerEvents="none" />
+                        <ScrollView
+                          ref={evidenceMeridiemWheelRef}
+                          style={styles.evidenceTimeWheelScroll}
+                          contentContainerStyle={styles.evidenceTimeWheelContent}
+                          scrollEnabled
+                          showsVerticalScrollIndicator={false}
+                          keyboardShouldPersistTaps="handled"
+                          snapToInterval={EVIDENCE_WHEEL_ITEM_HEIGHT}
+                          snapToAlignment="start"
+                          decelerationRate="normal"
+                          nestedScrollEnabled
+                          bounces={false}
+                          scrollEventThrottle={16}
+                          onScrollEndDrag={(event) =>
+                            handleEvidenceTimeWheelScrollEndDrag("meridiem", event)
+                          }
+                          onMomentumScrollEnd={(event) => handleEvidenceTimeWheelScrollEnd("meridiem", event)}
                         >
-                          <Text style={styles.evidenceAttachmentName} numberOfLines={1}>
-                            {attachment.name}
-                          </Text>
-                          <Text style={styles.evidenceAttachmentRemove}>선택 해제</Text>
-                        </MiniAnimatedPressable>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
+                          {EVIDENCE_TIME_MERIDIEM_WHEEL.map((meridiem, index) => {
+                            const isSelected = index === meridiemWheelIndex;
+                            return (
+                              <View key={`${meridiem}-${index}`} style={styles.evidenceTimeWheelItem}>
+                                <Text
+                                  style={[
+                                    styles.evidenceTimeWheelDimText,
+                                    !meridiem && styles.evidenceTimeWheelSpacerText,
+                                    isSelected && styles.evidenceTimeWheelActiveText,
+                                  ]}
+                                  allowFontScaling={false}
+                                >
+                                  {meridiem ?? ""}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
 
-                <MiniAnimatedPressable
-                  style={[
-                    styles.evidenceActionButton,
-                    evidenceSummary.totalCount > 0
-                      ? styles.evidenceActionButtonActive
-                      : styles.evidenceActionButtonSkip,
-                  ]}
-                  onPress={() =>
-                    void handleEvidenceMiniOptionDirect({
-                      id: EVIDENCE_OPTION_NEXT,
-                      label: evidenceActionLabel,
-                    })
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.evidenceActionButtonText,
-                      evidenceSummary.totalCount > 0
-                        ? styles.evidenceActionButtonTextActive
-                        : styles.evidenceActionButtonTextSkip,
-                    ]}
-                  >
-                    {evidenceActionLabel}
-                  </Text>
-                </MiniAnimatedPressable>
-              </>
+                      <View style={styles.evidenceTimeWheelColumn}>
+                        <View style={styles.evidenceTimeWheelCenterBar} pointerEvents="none" />
+                        <ScrollView
+                          ref={evidenceHourWheelRef}
+                          style={styles.evidenceTimeWheelScroll}
+                          contentContainerStyle={styles.evidenceTimeWheelContent}
+                          scrollEnabled
+                          showsVerticalScrollIndicator={false}
+                          keyboardShouldPersistTaps="handled"
+                          snapToInterval={EVIDENCE_WHEEL_ITEM_HEIGHT}
+                          decelerationRate="normal"
+                          nestedScrollEnabled
+                          bounces={false}
+                          scrollEventThrottle={16}
+                          onScrollEndDrag={(event) =>
+                            handleEvidenceTimeWheelScrollEndDrag("hour", event)
+                          }
+                          onMomentumScrollEnd={(event) => handleEvidenceTimeWheelScrollEnd("hour", event)}
+                        >
+                          {EVIDENCE_TIME_HOURS_WHEEL.map((hour, index) => {
+                            const isSelected = index === hourWheelIndex;
+                            return (
+                              <View key={`${hour}-${index}`} style={styles.evidenceTimeWheelItem}>
+                                <Text
+                                  style={[
+                                    styles.evidenceTimeWheelDimText,
+                                    isSelected && styles.evidenceTimeWheelActiveText,
+                                  ]}
+                                  allowFontScaling={false}
+                                >
+                                  {hour.toString().padStart(2, "0")}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+
+                      <View style={styles.evidenceTimeWheelColumn}>
+                        <View style={styles.evidenceTimeWheelCenterBar} pointerEvents="none" />
+                        <ScrollView
+                          ref={evidenceMinuteWheelRef}
+                          style={styles.evidenceTimeWheelScroll}
+                          contentContainerStyle={styles.evidenceTimeWheelContent}
+                          scrollEnabled
+                          showsVerticalScrollIndicator={false}
+                          keyboardShouldPersistTaps="handled"
+                          snapToInterval={EVIDENCE_WHEEL_ITEM_HEIGHT}
+                          decelerationRate="normal"
+                          nestedScrollEnabled
+                          bounces={false}
+                          scrollEventThrottle={16}
+                          onScrollEndDrag={(event) =>
+                            handleEvidenceTimeWheelScrollEndDrag("minute", event)
+                          }
+                          onMomentumScrollEnd={(event) => handleEvidenceTimeWheelScrollEnd("minute", event)}
+                        >
+                          {EVIDENCE_TIME_MINUTES_WHEEL.map((minute, index) => {
+                            const isSelected = index === minuteWheelIndex;
+                            return (
+                              <View key={`${minute}-${index}`} style={styles.evidenceTimeWheelItem}>
+                                <Text
+                                  style={[
+                                    styles.evidenceTimeWheelDimText,
+                                    isSelected && styles.evidenceTimeWheelActiveText,
+                                  ]}
+                                  allowFontScaling={false}
+                                >
+                                  {minute.toString().padStart(2, "0")}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+                    </View>
+
+                    <View style={styles.evidencePickerSummary}>
+                      <Text style={styles.evidencePickerSummaryLabel} allowFontScaling={false}>
+                        선택된 시간
+                      </Text>
+                      <Text style={styles.evidencePickerSummaryValue} allowFontScaling={false}>
+                        {evidenceDraftTimeLabel}
+                      </Text>
+                    </View>
+
+                    <MiniAnimatedPressable
+                      style={[styles.evidenceActionButton, styles.evidenceActionButtonActive]}
+                      onPress={() => {
+                        setSelectedEvidenceTime(draftEvidenceTime);
+                        transitionEvidenceMiniView("overview");
+                        setApiErrorMessage(null);
+                      }}
+                    >
+                      <Text
+                        style={[styles.evidenceActionButtonText, styles.evidenceActionButtonTextActive]}
+                        allowFontScaling={false}
+                      >
+                        시간 선택 완료
+                      </Text>
+                    </MiniAnimatedPressable>
+                  </View>
+                ) : null}
+              </Animated.View>
             ) : (
               <>
                 <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
@@ -2275,7 +2766,7 @@ export function ChatbotConversationScreen({
           </Pressable>
         </Animated.View>
       </Animated.View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -2549,16 +3040,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
   },
+  miniInterfaceWrapEvidence: {
+    borderColor: "rgba(45,93,123,0.1)",
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
   miniSelectionHint: {
     color: "#9ca3af",
-    fontWeight: "500",
-    marginBottom: 8,
-    marginLeft: 2,
-  },
-  evidenceStatusText: {
-    color: "#9ca3af",
-    fontSize: 12,
-    lineHeight: 16,
     fontWeight: "500",
     marginBottom: 8,
     marginLeft: 2,
@@ -2575,7 +3065,112 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   evidenceChecklistBlock: {
-    marginTop: 2,
+    marginTop: 4,
+  },
+  evidenceDateTimeRow: {
+    borderRadius: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 54,
+  },
+  evidenceDateTimeIconSurface: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(45,93,123,0.05)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  evidenceDateTimeTextWrap: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  evidenceDateTimeLabel: {
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "500",
+    letterSpacing: 0.6,
+  },
+  evidenceDateTimeValue: {
+    marginTop: 4,
+    color: "#0f172a",
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "700",
+  },
+  evidenceDateTimeDivider: {
+    marginTop: 8,
+    marginBottom: 8,
+    height: 1,
+    backgroundColor: "#f1f5f9",
+  },
+  evidenceIconCalendarBase: {
+    width: 16,
+    height: 18,
+    borderRadius: 3,
+    borderWidth: 2,
+    borderColor: "#2d5d7b",
+  },
+  evidenceIconCalendarTopLine: {
+    position: "absolute",
+    top: 4,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: "#2d5d7b",
+  },
+  evidenceIconCalendarRingLeft: {
+    position: "absolute",
+    top: -3,
+    left: 3,
+    width: 2,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: "#2d5d7b",
+  },
+  evidenceIconCalendarRingRight: {
+    position: "absolute",
+    top: -3,
+    right: 3,
+    width: 2,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: "#2d5d7b",
+  },
+  evidenceIconClockBase: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: "#2d5d7b",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  evidenceIconClockHandHour: {
+    position: "absolute",
+    top: 4,
+    width: 2,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: "#2d5d7b",
+  },
+  evidenceIconClockHandMinute: {
+    position: "absolute",
+    top: 8,
+    right: 4,
+    width: 5,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "#2d5d7b",
+    transform: [{ rotate: "35deg" }],
+  },
+  evidenceIconClockDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: "#2d5d7b",
   },
   evidenceChecklistItemChecked: {
     borderColor: "#2d5d7b",
@@ -2597,7 +3192,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#2d5d7b",
   },
   evidenceCheckText: {
-    color: "#ffffff",
+    color: "#94a3b8",
     fontSize: 12,
     lineHeight: 12,
     fontWeight: "700",
@@ -2630,42 +3225,203 @@ const styles = StyleSheet.create({
     color: "#2d5d7b",
     fontWeight: "600",
   },
-  evidenceAttachmentList: {
-    marginTop: 6,
-    marginLeft: 8,
-    marginRight: 8,
+  evidenceInlineResetButton: {
+    alignSelf: "flex-end",
+    marginTop: 0,
+    marginBottom: 2,
+    borderRadius: 999,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    paddingHorizontal: 2,
+    paddingVertical: 2,
   },
-  evidenceAttachmentItem: {
-    minHeight: 34,
-    borderRadius: 10,
+  evidenceInlineResetButtonText: {
+    color: "#7c8a98",
+    fontSize: 12,
+    lineHeight: 14,
+    fontWeight: "500",
+  },
+  evidencePickerPanel: {
+    marginTop: 4,
+  },
+  evidencePickerBackButton: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#ffffff",
+    borderColor: "#edf2f7",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 10,
+  },
+  evidencePickerBackText: {
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 14,
+    fontWeight: "700",
+  },
+  evidencePickerMonthRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 10,
-    marginTop: 6,
+    marginBottom: 12,
   },
-  evidenceAttachmentName: {
+  evidenceMonthNavButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#edf2f7",
+  },
+  evidenceMonthNavText: {
+    color: "#94a3b8",
+    fontSize: 20,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  evidenceMonthLabel: {
+    color: "#1f2937",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+  },
+  evidenceWeekdayRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  evidenceWeekdayText: {
+    width: "14.285%",
+    textAlign: "center",
+    color: "#9ca3af",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  evidenceCalendarGrid: {
+    alignSelf: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  evidenceCalendarCell: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    marginTop: 4,
+  },
+  evidenceCalendarCellEmpty: {
+    marginTop: 4,
+  },
+  evidenceCalendarCellSelected: {
+    backgroundColor: "#2d5d7b",
+    shadowColor: "#2d5d7b",
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  evidenceCalendarCellPressed: {
+    opacity: 0.85,
+  },
+  evidenceCalendarCellText: {
+    color: "#64748b",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  evidenceCalendarCellTextSelected: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  evidencePickerSummary: {
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+    paddingTop: 14,
+    alignItems: "center",
+  },
+  evidencePickerSummaryLabel: {
+    color: "#9ca3af",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+  evidencePickerSummaryValue: {
+    marginTop: 4,
+    color: "#1f2937",
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  evidenceTimeWheelRow: {
+    marginTop: 2,
+    flexDirection: "row",
+    alignItems: "stretch",
+    justifyContent: "space-between",
+    borderRadius: 12,
+    backgroundColor: "#f8fafc",
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  evidenceTimeWheelColumn: {
     flex: 1,
-    color: "#475569",
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "500",
-    marginRight: 10,
+    alignItems: "stretch",
+    marginHorizontal: 2,
+    height: EVIDENCE_WHEEL_ITEM_HEIGHT * 3,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#edf2f7",
   },
-  evidenceAttachmentRemove: {
+  evidenceTimeWheelScroll: {
+    flex: 1,
+    zIndex: 1,
+  },
+  evidenceTimeWheelContent: {
+    paddingVertical: EVIDENCE_WHEEL_ITEM_HEIGHT,
+  },
+  evidenceTimeWheelItem: {
+    height: EVIDENCE_WHEEL_ITEM_HEIGHT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  evidenceTimeWheelCenterBar: {
+    position: "absolute",
+    left: 4,
+    right: 4,
+    top: EVIDENCE_WHEEL_ITEM_HEIGHT,
+    height: EVIDENCE_WHEEL_ITEM_HEIGHT,
+    borderRadius: 8,
+    backgroundColor: "rgba(241,245,249,0.35)",
+    borderWidth: 1,
+    borderColor: "#dbe4eb",
+    zIndex: 0,
+  },
+  evidenceTimeWheelDimText: {
+    color: "#9ca3af",
+    fontSize: 16,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  evidenceTimeWheelSpacerText: {
+    opacity: 0,
+  },
+  evidenceTimeWheelActiveText: {
     color: "#2d5d7b",
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 20,
+    lineHeight: 24,
     fontWeight: "700",
   },
   evidenceActionButton: {
-    marginTop: 12,
-    borderRadius: 14,
+    marginTop: 16,
+    borderRadius: 16,
     borderWidth: 1,
-    minHeight: 46,
+    minHeight: 52,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2681,8 +3437,8 @@ const styles = StyleSheet.create({
     opacity: 0.84,
   },
   evidenceActionButtonText: {
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 16,
+    lineHeight: 24,
     fontWeight: "700",
   },
   evidenceActionButtonTextSkip: {
