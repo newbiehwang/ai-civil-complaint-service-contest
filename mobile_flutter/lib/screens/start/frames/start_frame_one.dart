@@ -19,59 +19,90 @@ class StartFrameOne extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StartFrameLayout(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Spacer(flex: 2),
-          Center(
-            child: Image.asset(
-              'assets/korea_gov24.transparent.png',
-              width: 128,
-              height: 168,
-              fit: BoxFit.contain,
-            ),
-          ),
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 420),
-            opacity: showTitle ? 1 : 0,
-            child: const Text(
-              '신속한 처리, 정부 24',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 24,
-                height: 1.62,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1F2937),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const designWidth = 390.0;
+          const designHeight = 884.0;
+          final w = constraints.maxWidth;
+          final h = constraints.maxHeight;
+          double sx(double x) => x * (w / designWidth);
+          double sy(double y) => y * (h / designHeight);
+
+          final logoWidth = sx(128);
+          final logoHeight = sx(168);
+          final titleWidth = sx(210.88);
+          final buttonWidth = sx(310);
+          final buttonHeight = sx(60);
+
+          return Stack(
+            children: [
+              Positioned(
+                left: (w - logoWidth) / 2,
+                top: sy(276.5),
+                width: logoWidth,
+                height: logoHeight,
+                child: Image.asset(
+                  'assets/korea_gov24.transparent.png',
+                  fit: BoxFit.contain,
+                ),
               ),
-            ),
-          ),
-          const Spacer(flex: 2),
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 380),
-            opacity: showButton ? 1 : 0,
-            child: AnimatedSlide(
-              duration: const Duration(milliseconds: 380),
-              offset: showButton ? Offset.zero : const Offset(0, 0.03),
-              curve: Curves.easeOutCubic,
-              child: StartPrimaryButton(
-                label: '시작하기',
-                onPressed: onStart,
+              Positioned(
+                left: (w - titleWidth) / 2,
+                top: sy(458.5),
+                width: titleWidth,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 420),
+                  opacity: showTitle ? 1 : 0,
+                  child: const Text(
+                    '신속한 처리, 정부 24',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      height: 39 / 24,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            '평균 2분 · 언제든 중단 후 이어하기 가능',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 12,
-              height: 1.33,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const Spacer(flex: 1),
-        ],
+              Positioned(
+                left: (w - buttonWidth) / 2,
+                top: sy(677.695),
+                width: buttonWidth,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 380),
+                  opacity: showButton ? 1 : 0,
+                  child: AnimatedSlide(
+                    duration: const Duration(milliseconds: 380),
+                    offset: showButton ? Offset.zero : const Offset(0, 0.03),
+                    curve: Curves.easeOutCubic,
+                    child: StartPrimaryButton(
+                      label: '시작하기',
+                      onPressed: onStart,
+                      width: buttonWidth,
+                      height: buttonHeight,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                top: sy(753.695),
+                child: const Text(
+                  '평균 2분 · 언제든 중단 후 이어하기 가능',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                    height: 16 / 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
