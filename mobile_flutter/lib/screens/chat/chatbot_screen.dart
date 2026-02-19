@@ -593,22 +593,19 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                       duration: const Duration(milliseconds: 280),
                       switchInCurve: Curves.easeOutCubic,
                       switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) {
-                        final slide = Tween<Offset>(
-                          begin: const Offset(0, 0.05),
-                          end: Offset.zero,
-                        ).animate(
-                          CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeOutCubic,
-                          ),
+                      layoutBuilder: (currentChild, previousChildren) {
+                        return Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            ...previousChildren,
+                            if (currentChild != null) currentChild,
+                          ],
                         );
+                      },
+                      transitionBuilder: (child, animation) {
                         return FadeTransition(
                           opacity: animation,
-                          child: SlideTransition(
-                            position: slide,
-                            child: child,
-                          ),
+                          child: child,
                         );
                       },
                       child: _shouldShowMiniInterface
@@ -974,7 +971,7 @@ class _MiniInterfaceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxHeight: 460),
+      constraints: const BoxConstraints(maxHeight: 520),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: AppColors.border),
@@ -1393,8 +1390,9 @@ class _MiniDatePickerWidget extends StatelessWidget {
                   '${month.year}년 ${month.month}월',
                   style: const TextStyle(
                     color: AppColors.textMain,
-                    fontSize: 19,
+                    fontSize: 20,
                     fontWeight: FontWeight.w700,
+                    fontFamilyFallback: _kKrFontFallback,
                   ),
                 ),
               ),
@@ -1415,24 +1413,25 @@ class _MiniDatePickerWidget extends StatelessWidget {
                     weekday,
                     style: const TextStyle(
                       color: AppColors.textMuted,
-                      fontSize: 11,
+                      fontSize: 11.5,
                       fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
                     ),
                   ),
                 ),
               ),
           ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: days.length,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
-            crossAxisSpacing: 3,
-            mainAxisSpacing: 3,
-            mainAxisExtent: 27,
+            crossAxisSpacing: 4,
+            mainAxisSpacing: 4,
+            mainAxisExtent: 30,
           ),
           itemBuilder: (context, index) {
             final day = days[index];
@@ -1448,8 +1447,8 @@ class _MiniDatePickerWidget extends StatelessWidget {
               child: Center(
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 120),
-                  width: 24,
-                  height: 24,
+                  width: 27,
+                  height: 27,
                   decoration: BoxDecoration(
                     color: selected ? AppColors.primary : Colors.transparent,
                     shape: BoxShape.circle,
@@ -1463,8 +1462,9 @@ class _MiniDatePickerWidget extends StatelessWidget {
                           : inMonth
                               ? AppColors.textMain
                               : const Color(0xFFCBD5E1),
-                      fontSize: 12,
+                      fontSize: 12.5,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      fontFamilyFallback: _kKrFontFallback,
                     ),
                   ),
                 ),
@@ -1473,34 +1473,11 @@ class _MiniDatePickerWidget extends StatelessWidget {
           },
         ),
         const SizedBox(height: 6),
-        const Divider(height: 1, color: AppColors.border),
-        const SizedBox(height: 6),
-        const Center(
-          child: Text(
-            '선택된 날짜',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Center(
-          child: Text(
-            selectedDateLabel,
-            style: const TextStyle(
-              color: AppColors.textMain,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        _PrimaryButton(
-          label: '날짜 선택 완료',
+        _PickerBottomSection(
+          summaryLabel: '선택된 날짜',
+          summaryValue: selectedDateLabel,
+          actionLabel: '날짜 선택 완료',
           onPressed: selectedDate == null ? null : onConfirm,
-          compact: true,
         ),
       ],
     );
@@ -1714,34 +1691,11 @@ class _MiniTimePickerWidgetState extends State<_MiniTimePickerWidget> {
           ),
         ),
         const SizedBox(height: 8),
-        const Divider(height: 1, color: AppColors.border),
-        const SizedBox(height: 6),
-        const Center(
-          child: Text(
-            '선택된 시간',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Center(
-          child: Text(
-            widget.selectedTimeLabel,
-            style: const TextStyle(
-              color: AppColors.textMain,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        _PrimaryButton(
-          label: '시간 선택 완료',
+        _PickerBottomSection(
+          summaryLabel: '선택된 시간',
+          summaryValue: widget.selectedTimeLabel,
+          actionLabel: '시간 선택 완료',
           onPressed: widget.onConfirm,
-          compact: true,
         ),
       ],
     );
@@ -1831,11 +1785,11 @@ class _MiniBackButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
       onPressed: onTap,
-      icon: const Icon(Icons.chevron_left_rounded, size: 18),
+      icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
       label: const Text('이전 단계'),
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(0, 34),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.fromLTRB(8, 6, 12, 6),
         side: const BorderSide(color: AppColors.border),
         foregroundColor: AppColors.textMuted,
         textStyle: const TextStyle(
@@ -1901,6 +1855,75 @@ class _MiniWheelPicker extends StatelessWidget {
       childDelegate: ListWheelChildBuilderDelegate(
         builder: (context, index) => itemBuilder(index),
       ),
+    );
+  }
+}
+
+class _PickerBottomSection extends StatelessWidget {
+  const _PickerBottomSection({
+    required this.summaryLabel,
+    required this.summaryValue,
+    required this.actionLabel,
+    required this.onPressed,
+  });
+
+  final String summaryLabel;
+  final String summaryValue;
+  final String actionLabel;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Divider(height: 1, color: AppColors.border),
+        const SizedBox(height: 11),
+        Text(
+          summaryLabel,
+          style: const TextStyle(
+            color: Color(0xFF8FA1B6),
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            fontFamilyFallback: _kKrFontFallback,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          summaryValue,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: AppColors.textMain,
+            fontSize: 17,
+            height: 1.3,
+            fontWeight: FontWeight.w800,
+            fontFamilyFallback: _kKrFontFallback,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 58,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              elevation: 0,
+              foregroundColor: Colors.white,
+              backgroundColor: onPressed == null
+                  ? const Color(0xFFE6EBF0)
+                  : AppColors.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                fontFamilyFallback: _kKrFontFallback,
+              ),
+            ),
+            onPressed: onPressed,
+            child: Text(actionLabel),
+          ),
+        ),
+      ],
     );
   }
 }
