@@ -43,6 +43,7 @@ type MiniInterfaceContext =
   | "intake"
   | "routing"
   | "optionList"
+  | "evidence"
   | "mediation"
   | "submission"
   | "timeline"
@@ -74,7 +75,14 @@ type OptionListAttachment = {
   uri: string;
 };
 type OptionListPurpose = "demoCoreDateTime" | "demoEvidenceAttachment" | null;
-type MiniInterfaceType = "ListPicker" | "OptionList" | "SummaryCard" | "StatusFeed";
+type MiniInterfaceType =
+  | "ListPicker"
+  | "OptionList"
+  | "SummaryCard"
+  | "StatusFeed"
+  | "NoiseDiaryBuilder"
+  | "DraftViewer"
+  | "DraftConfirm";
 type StatusFeedViewMode = "important" | "all";
 
 type DemoFlowData = {
@@ -239,6 +247,9 @@ const DEMO_DRAFT_SUBMIT = "demo-draft-submit";
 const DEMO_DRAFT_EDIT = "demo-draft-edit";
 const DEMO_DRAFT_CONFIRM_SUBMIT = "demo-draft-confirm-submit";
 const DEMO_DRAFT_CONFIRM_EDIT = "demo-draft-confirm-edit";
+const DEMO_DIARY_DURATION_OPTIONS = ["10분 미만", "10~30분", "30분 이상", "모름"] as const;
+const DEMO_DIARY_TYPE_OPTIONS = ["쿵쿵", "음악", "가구 끄는 소리", "기타"] as const;
+const DEMO_DIARY_IMPACT_OPTIONS = ["수면 방해", "업무 방해", "불안", "기타"] as const;
 const DEMO_STATUS_UPLOAD = "demo-status-upload";
 const DEMO_STATUS_SUMMARY = "demo-status-summary";
 const DEMO_PATH_RECOMMENDED_REASON_LINES = [
@@ -408,30 +419,42 @@ function createDemoPathAlternativeMiniInterface(): MiniInterfaceConfig {
 }
 
 function createDemoDiaryBuilderMiniInterface(): MiniInterfaceConfig {
-  return createListPickerFromOptions(
-    "소음일지를 빠르게 생성할까요?",
-    [{ id: DEMO_DIARY_GENERATE, label: "일지 생성" }],
-  );
+  return {
+    prompt: "소음일지를 작성해 주세요.",
+    selectionMode: "single",
+    context: "evidence",
+    miniInterfaceType: "NoiseDiaryBuilder",
+    selectionHint: "필수 입력",
+    options: [{ id: DEMO_DIARY_GENERATE, label: "일지 생성" }],
+  };
 }
 
 function createDemoDraftViewerMiniInterface(): MiniInterfaceConfig {
-  return createListPickerFromOptions(
-    "신청서 초안을 작성했어요.",
-    [
+  return {
+    prompt: "신청서 초안을 작성했어요.",
+    selectionMode: "single",
+    context: "mediation",
+    miniInterfaceType: "DraftViewer",
+    selectionHint: "단일 선택",
+    options: [
       { id: DEMO_DRAFT_SUBMIT, label: "좋아요, 접수" },
       { id: DEMO_DRAFT_EDIT, label: "수정 요청" },
     ],
-  );
+  };
 }
 
 function createDemoDraftConfirmMiniInterface(): MiniInterfaceConfig {
-  return createListPickerFromOptions(
-    "수정 내용을 반영했어요. 이대로 접수할까요?",
-    [
+  return {
+    prompt: "수정 내용을 반영했어요. 이대로 접수할까요?",
+    selectionMode: "single",
+    context: "mediation",
+    miniInterfaceType: "DraftConfirm",
+    selectionHint: "단일 선택",
+    options: [
       { id: DEMO_DRAFT_CONFIRM_SUBMIT, label: "좋아요, 접수해주세요" },
       { id: DEMO_DRAFT_CONFIRM_EDIT, label: "다시 수정" },
     ],
-  );
+  };
 }
 
 function createDemoStatusFeedMiniInterface(): MiniInterfaceConfig {
@@ -466,6 +489,42 @@ function formatDemoDateTimeSummary(
 
 function buildDemoSummaryText(_data: DemoFlowData): string {
   return "정리해드릴게요.";
+}
+
+function buildDemoDraftPreview(
+  data: DemoFlowData,
+  diarySummary: string | null,
+  hasEvidenceAttachment: boolean,
+): string[] {
+  const lines = [
+    "제목: 층간소음 민원 접수 초안",
+    `거주 형태: ${data.residence ?? "미입력"}`,
+    `주 발생 시간: ${data.timeBand ?? "미입력"}`,
+    `시작 시점: ${formatDemoDateTimeSummary(data.startedAtDate, data.startedAtTime)}`,
+    `현재 상태: ${data.noiseNow ?? "미입력"}`,
+    `증거 첨부: ${hasEvidenceAttachment ? "있음" : "없음(선택사항)"}`,
+  ];
+
+  if (diarySummary) {
+    lines.push(`소음일지: ${diarySummary}`);
+  }
+
+  return lines;
+}
+
+function buildDemoDraftConfirm(
+  data: DemoFlowData,
+  diarySummary: string | null,
+  hasEvidenceAttachment: boolean,
+): { lines: string[]; highlightedLineIndexes: number[] } {
+  const lines = buildDemoDraftPreview(data, diarySummary, hasEvidenceAttachment);
+  const highlightedLineIndexes: number[] = [];
+  const revisionLine = data.revisionNote?.trim();
+  if (revisionLine) {
+    lines.push(`추가 반영: ${revisionLine}`);
+    highlightedLineIndexes.push(lines.length - 1);
+  }
+  return { lines, highlightedLineIndexes };
 }
 
 function createCalendarCells(monthStart: Date): Array<Date | null> {
@@ -1149,6 +1208,18 @@ export function ChatbotConversationScreen({
   const [minuteWheelIndex, setMinuteWheelIndex] = useState<number>(
     getCyclicWheelCenterIndex(30, OPTION_LIST_TIME_MINUTES_BASE, OPTION_LIST_TIME_MINUTE_REPEAT),
   );
+  const [noiseDiaryView, setNoiseDiaryView] = useState<"form" | "datePicker" | "timePicker">("form");
+  const [noiseDiaryDraftDate, setNoiseDiaryDraftDate] = useState<Date>(() => new Date());
+  const [noiseDiaryDraftTime, setNoiseDiaryDraftTime] = useState<OptionListDateTimeSelection>({
+    meridiem: "오후",
+    hour: 2,
+    minute: 30,
+  });
+  const [noiseDiaryDuration, setNoiseDiaryDuration] = useState<string | null>(null);
+  const [noiseDiaryType, setNoiseDiaryType] = useState<string | null>(null);
+  const [noiseDiaryImpact, setNoiseDiaryImpact] = useState<string | null>(null);
+  const [hasNoiseDiaryDateSelection, setHasNoiseDiaryDateSelection] = useState(false);
+  const [hasNoiseDiaryTimeSelection, setHasNoiseDiaryTimeSelection] = useState(false);
   const [debugLogs, setDebugLogs] = useState<DebugLogItem[]>([]);
   const [isDebugLogOpen, setIsDebugLogOpen] = useState(false);
   const {
@@ -1203,6 +1274,9 @@ export function ChatbotConversationScreen({
   const isListPickerMiniContext = miniInterfaceType === "ListPicker";
   const isSummaryCardMiniContext = miniInterfaceType === "SummaryCard";
   const isStatusFeedMiniContext = miniInterfaceType === "StatusFeed";
+  const isNoiseDiaryBuilderMiniContext = miniInterfaceType === "NoiseDiaryBuilder";
+  const isDraftViewerMiniContext = miniInterfaceType === "DraftViewer";
+  const isDraftConfirmMiniContext = miniInterfaceType === "DraftConfirm";
   const shouldShowMiniInterface =
     isAiMessageCompleted &&
     !isGeneratingReply &&
@@ -1211,7 +1285,10 @@ export function ChatbotConversationScreen({
       isOptionListMiniContext ||
       (isListPickerMiniContext && currentMiniOptions.length > 0) ||
       (isSummaryCardMiniContext && currentMiniOptions.length > 0) ||
-      (isStatusFeedMiniContext && currentMiniOptions.length > 0)
+      (isStatusFeedMiniContext && currentMiniOptions.length > 0) ||
+      (isNoiseDiaryBuilderMiniContext && currentMiniOptions.length > 0) ||
+      (isDraftViewerMiniContext && currentMiniOptions.length > 0) ||
+      (isDraftConfirmMiniContext && currentMiniOptions.length > 0)
     );
   const shouldShowRouteRecommendationAction =
     !ENABLE_SCRIPTED_DEMO_FLOW &&
@@ -1257,6 +1334,17 @@ export function ChatbotConversationScreen({
       ? `${optionListVideoFileAttachments.length}개 선택됨`
       : "선택해 주세요";
   const isOptionListDateTimeReady = Boolean(selectedOptionListDate && selectedOptionListTime);
+  const noiseDiaryDateLabel = hasNoiseDiaryDateSelection ? formatOptionListDate(noiseDiaryDraftDate) : "선택해 주세요";
+  const noiseDiaryTimeLabel = hasNoiseDiaryTimeSelection ? formatOptionListTime(noiseDiaryDraftTime) : "선택해 주세요";
+  const isNoiseDiaryReady =
+    hasNoiseDiaryDateSelection &&
+    hasNoiseDiaryTimeSelection &&
+    Boolean(noiseDiaryDuration) &&
+    Boolean(noiseDiaryType) &&
+    Boolean(noiseDiaryImpact);
+  const noiseDiarySummaryText = isNoiseDiaryReady
+    ? `${noiseDiaryDateLabel} ${noiseDiaryTimeLabel} · ${noiseDiaryDuration} · ${noiseDiaryType} · ${noiseDiaryImpact}`
+    : null;
 
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
@@ -1480,6 +1568,22 @@ export function ChatbotConversationScreen({
     [markFlowStepCompleted, moveToFlowStep, startGeneratingThenRespond],
   );
 
+  const resetNoiseDiaryBuilder = useCallback(() => {
+    const now = new Date();
+    setNoiseDiaryView("form");
+    setNoiseDiaryDraftDate(now);
+    setNoiseDiaryDraftTime({
+      meridiem: "오후",
+      hour: 2,
+      minute: 30,
+    });
+    setNoiseDiaryDuration(null);
+    setNoiseDiaryType(null);
+    setNoiseDiaryImpact(null);
+    setHasNoiseDiaryDateSelection(false);
+    setHasNoiseDiaryTimeSelection(false);
+  }, []);
+
   const handleDemoMiniSelection = useCallback(
     (selectedPrimary: MiniOption | undefined) => {
       if (!selectedPrimary) {
@@ -1598,6 +1702,12 @@ export function ChatbotConversationScreen({
           return true;
         }
         case DEMO_DIARY_GENERATE: {
+          if (!isNoiseDiaryReady) {
+            setApiErrorMessage("발생 날짜/시간, 지속시간, 유형, 영향을 모두 선택해 주세요.");
+            return true;
+          }
+          setApiErrorMessage(null);
+          const diarySummary = `${noiseDiaryDateLabel} ${noiseDiaryTimeLabel} · ${noiseDiaryDuration} · ${noiseDiaryType} · ${noiseDiaryImpact}`;
           setOptionListAttachments((previous) => {
             const alreadyExists = previous.some((item) => item.type === "NOISE_LOG");
             if (alreadyExists) {
@@ -1608,7 +1718,7 @@ export function ChatbotConversationScreen({
               {
                 id: `demo-noise-log-${Date.now()}`,
                 type: "NOISE_LOG",
-                name: "자동 생성 소음일지(데모)",
+                name: `자동 생성 소음일지(데모) · ${diarySummary}`,
                 uri: `demo://noise-log/${Date.now()}`,
               },
             ];
@@ -1672,8 +1782,14 @@ export function ChatbotConversationScreen({
       }
     },
     [
+      isNoiseDiaryReady,
       markFlowStepCompleted,
       moveToFlowStep,
+      noiseDiaryDateLabel,
+      noiseDiaryDuration,
+      noiseDiaryImpact,
+      noiseDiaryTimeLabel,
+      noiseDiaryType,
       proceedToDemoEvidenceStep,
       pushAiTurn,
       startGeneratingThenRespond,
@@ -1715,6 +1831,13 @@ export function ChatbotConversationScreen({
     transitionOptionListView("datePicker");
   }, [optionListKind, selectedOptionListDate, transitionOptionListView]);
 
+  const handleOpenNoiseDiaryDatePicker = useCallback(() => {
+    setApiErrorMessage(null);
+    setDraftOptionListDate(noiseDiaryDraftDate);
+    setOptionListPickerMonth(toMonthStart(noiseDiaryDraftDate));
+    setNoiseDiaryView("datePicker");
+  }, [noiseDiaryDraftDate]);
+
   const handleOpenOptionListTimePicker = useCallback(() => {
     if (optionListKind !== "dateTime") {
       return;
@@ -1755,6 +1878,41 @@ export function ChatbotConversationScreen({
       });
     });
   }, [optionListKind, selectedOptionListTime, transitionOptionListView]);
+
+  const handleOpenNoiseDiaryTimePicker = useCallback(() => {
+    setApiErrorMessage(null);
+    const nextDraft = noiseDiaryDraftTime;
+    setDraftOptionListTime(nextDraft);
+    const meridiemIndex = getMeridiemWheelInitialIndex(nextDraft.meridiem);
+    const hourIndex = getCyclicWheelCenterIndex(
+      nextDraft.hour,
+      OPTION_LIST_TIME_HOURS_BASE,
+      OPTION_LIST_TIME_HOUR_REPEAT,
+    );
+    const minuteIndex = getCyclicWheelCenterIndex(
+      nextDraft.minute,
+      OPTION_LIST_TIME_MINUTES_BASE,
+      OPTION_LIST_TIME_MINUTE_REPEAT,
+    );
+    setMeridiemWheelIndex(meridiemIndex);
+    setHourWheelIndex(hourIndex);
+    setMinuteWheelIndex(minuteIndex);
+    setNoiseDiaryView("timePicker");
+    requestAnimationFrame(() => {
+      optionListMeridiemWheelRef.current?.scrollTo({
+        y: meridiemIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT,
+        animated: false,
+      });
+      optionListHourWheelRef.current?.scrollTo({
+        y: hourIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT,
+        animated: false,
+      });
+      optionListMinuteWheelRef.current?.scrollTo({
+        y: minuteIndex * OPTION_LIST_WHEEL_ITEM_HEIGHT,
+        animated: false,
+      });
+    });
+  }, [noiseDiaryDraftTime]);
 
   const handleOpenOptionListAttachmentPicker = useCallback(
     async (attachmentType: OptionListAttachmentType) => {
@@ -1982,6 +2140,7 @@ export function ChatbotConversationScreen({
     if (ENABLE_SCRIPTED_DEMO_FLOW && optionListPurpose === "demoEvidenceAttachment") {
       setOptionListPurpose(null);
       if (optionListNoiseLogAttachments.length === 0) {
+        resetNoiseDiaryBuilder();
         moveToFlowStep("evidence");
         startGeneratingThenRespond(
           "소음일지를 제가 만들어드릴게요. 최소 1건만 입력하면 접수는 가능해요.",
@@ -2018,6 +2177,7 @@ export function ChatbotConversationScreen({
     optionListVideoFileAttachments.length,
     optionListPurpose,
     pushAiTurn,
+    resetNoiseDiaryBuilder,
     selectedOptionListDate,
     selectedOptionListTime,
     startGeneratingThenRespond,
@@ -2147,6 +2307,7 @@ export function ChatbotConversationScreen({
     setMinuteWheelIndex(
       getCyclicWheelCenterIndex(30, OPTION_LIST_TIME_MINUTES_BASE, OPTION_LIST_TIME_MINUTE_REPEAT),
     );
+    resetNoiseDiaryBuilder();
     turnSequenceRef.current = 2;
     completedFlowStepsRef.current = new Set();
     setCompletedFlowSteps([]);
@@ -2162,7 +2323,7 @@ export function ChatbotConversationScreen({
 
     resetCase();
     setCurrentAiTurn(INITIAL_AI_TURN);
-  }, [onRestartFlow, resetCase, stepToastAnim]);
+  }, [onRestartFlow, resetCase, resetNoiseDiaryBuilder, stepToastAnim]);
 
   const handleRequestRouteRecommendation = useCallback(async () => {
     if (isGeneratingReply) {
@@ -2903,6 +3064,27 @@ export function ChatbotConversationScreen({
   const isStatusFeedMiniInterface =
     isStatusFeedMiniContext &&
     Boolean(demoStatusUploadOption && demoStatusSummaryOption);
+  const demoDiaryGenerateOption =
+    currentMiniOptions.find((option) => option.id === DEMO_DIARY_GENERATE) ?? null;
+  const isNoiseDiaryBuilderMiniInterface =
+    isNoiseDiaryBuilderMiniContext &&
+    Boolean(demoDiaryGenerateOption);
+  const demoDraftSubmitOption =
+    currentMiniOptions.find((option) => option.id === DEMO_DRAFT_SUBMIT) ?? null;
+  const demoDraftEditOption =
+    currentMiniOptions.find((option) => option.id === DEMO_DRAFT_EDIT) ?? null;
+  const isDraftViewerMiniInterface =
+    isDraftViewerMiniContext &&
+    Boolean(demoDraftSubmitOption && demoDraftEditOption);
+  const demoDraftConfirmSubmitOption =
+    currentMiniOptions.find((option) => option.id === DEMO_DRAFT_CONFIRM_SUBMIT) ?? null;
+  const demoDraftConfirmEditOption =
+    currentMiniOptions.find((option) => option.id === DEMO_DRAFT_CONFIRM_EDIT) ?? null;
+  const isDraftConfirmMiniInterface =
+    isDraftConfirmMiniContext &&
+    Boolean(demoDraftConfirmSubmitOption && demoDraftConfirmEditOption);
+  const isScrollableDetailMiniInterface =
+    isNoiseDiaryBuilderMiniContext || isDraftViewerMiniContext || isDraftConfirmMiniContext;
   const demoPathRecommendedOption =
     currentMiniOptions.find((option) => option.id === DEMO_PATH_RECOMMENDED) ?? null;
   const demoPathOtherOption =
@@ -2932,6 +3114,23 @@ export function ChatbotConversationScreen({
     { label: "주 발생 시간", value: demoFlowData.timeBand ?? "미입력" },
     { label: "시작 시점", value: demoSummaryStartedAtText },
     { label: "현재 상태", value: demoFlowData.noiseNow ?? "미입력" },
+  ];
+  const draftPreviewLines = buildDemoDraftPreview(
+    demoFlowData,
+    noiseDiarySummaryText,
+    optionListAttachments.length > 0,
+  );
+  const draftConfirmData = buildDemoDraftConfirm(
+    demoFlowData,
+    noiseDiarySummaryText,
+    optionListAttachments.length > 0,
+  );
+  const draftViewerGuidePoints = [
+    "사실 중심으로 작성되어 기관 검토에 바로 사용할 수 있어요.",
+    "날짜/시간/소음 유형이 포함되어 처리 누락을 줄일 수 있어요.",
+    demoFlowData.revisionNote?.trim()
+      ? `최근 반영 요청: ${demoFlowData.revisionNote.trim()}`
+      : "필요하면 수정 요청으로 문장을 바로 보완할 수 있어요.",
   ];
   const statusFeedReceiptLabel = caseId
     ? `접수번호 ${caseId.slice(0, 8).toUpperCase()}`
@@ -2974,8 +3173,12 @@ export function ChatbotConversationScreen({
   const isOptionListTertiarySelected = optionListVideoFileAttachments.length > 0;
   const optionListCalendarCellSize = Math.max(34, Math.floor((contentWidth - 40) / 7));
   const optionListCalendarGridWidth = optionListCalendarCellSize * 7;
+  const noiseDiaryCalendarCellSize = Math.max(26, Math.floor((contentWidth - 84) / 7));
+  const noiseDiaryCalendarGridWidth = noiseDiaryCalendarCellSize * 7;
   const debugLogsToRender = debugLogs.slice(0, 8);
   const isDebugMode = __DEV__;
+  const detailMiniMaxHeight = Math.max(280, Math.min(560, Math.floor(availableHeight * 0.62)));
+  const noiseDiaryChipWidth = Math.max(128, Math.floor((contentWidth - 40 - 8) / 2));
   const inputPlaceholder = isGeneratingReply
     ? "답변을 준비하는 중입니다..."
     : shouldShowMiniInterface
@@ -3227,6 +3430,11 @@ export function ChatbotConversationScreen({
                 bottom: miniPanelBottom,
                 width: contentWidth,
                 borderRadius: 24,
+                ...(isScrollableDetailMiniInterface
+                  ? {
+                      maxHeight: detailMiniMaxHeight,
+                    }
+                  : null),
                 ...(isOptionListMiniContext
                   ? {
                       opacity: 1,
@@ -3728,6 +3936,632 @@ export function ChatbotConversationScreen({
                   </View>
                 </View>
               </View>
+            ) : miniInterfaceType === "NoiseDiaryBuilder" ? (
+              <>
+                <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]} allowFontScaling={false}>
+                  소음일지를 작성해 주세요.
+                </Text>
+                {isNoiseDiaryBuilderMiniInterface && demoDiaryGenerateOption ? (
+                  <View style={styles.noiseDiaryWrap}>
+                    <ScrollView
+                      style={styles.detailMiniScroll}
+                      contentContainerStyle={styles.detailMiniScrollContent}
+                      showsVerticalScrollIndicator
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="handled"
+                      bounces={false}
+                    >
+                    {noiseDiaryView === "form" ? (
+                      <>
+                        <View style={styles.noiseDiaryDateTimeGroup}>
+                          <OptionListSelectableRow
+                            selected={hasNoiseDiaryDateSelection}
+                            onPress={handleOpenNoiseDiaryDatePicker}
+                          >
+                            <View style={styles.evidenceDateTimeIconSurface}>
+                              <EvidenceCalendarIcon />
+                            </View>
+                            <View style={styles.evidenceDateTimeTextWrap}>
+                              <Text style={styles.evidenceDateTimeLabel} allowFontScaling={false}>
+                                발생 날짜
+                              </Text>
+                              <Text style={styles.evidenceDateTimeValue} allowFontScaling={false}>
+                                {noiseDiaryDateLabel}
+                              </Text>
+                            </View>
+                          </OptionListSelectableRow>
+                          {hasNoiseDiaryDateSelection ? (
+                            <MiniAnimatedPressable
+                              style={styles.evidenceInlineResetButton}
+                              onPress={() => {
+                                setHasNoiseDiaryDateSelection(false);
+                                setApiErrorMessage(null);
+                              }}
+                            >
+                              <Text style={styles.evidenceInlineResetButtonText} allowFontScaling={false}>
+                                선택 해제
+                              </Text>
+                            </MiniAnimatedPressable>
+                          ) : null}
+
+                          <View style={styles.evidenceDateTimeDivider} />
+
+                          <OptionListSelectableRow
+                            selected={hasNoiseDiaryTimeSelection}
+                            onPress={handleOpenNoiseDiaryTimePicker}
+                          >
+                            <View style={styles.evidenceDateTimeIconSurface}>
+                              <EvidenceClockIcon />
+                            </View>
+                            <View style={styles.evidenceDateTimeTextWrap}>
+                              <Text style={styles.evidenceDateTimeLabel} allowFontScaling={false}>
+                                발생 시간
+                              </Text>
+                              <Text style={styles.evidenceDateTimeValue} allowFontScaling={false}>
+                                {noiseDiaryTimeLabel}
+                              </Text>
+                            </View>
+                          </OptionListSelectableRow>
+                          {hasNoiseDiaryTimeSelection ? (
+                            <MiniAnimatedPressable
+                              style={styles.evidenceInlineResetButton}
+                              onPress={() => {
+                                setHasNoiseDiaryTimeSelection(false);
+                                setApiErrorMessage(null);
+                              }}
+                            >
+                              <Text style={styles.evidenceInlineResetButtonText} allowFontScaling={false}>
+                                선택 해제
+                              </Text>
+                            </MiniAnimatedPressable>
+                          ) : null}
+                        </View>
+
+                        <View style={styles.noiseDiaryChoiceGroup}>
+                          <Text style={styles.noiseDiaryChoiceGroupTitle} allowFontScaling={false}>
+                            지속시간
+                          </Text>
+                          <View style={styles.noiseDiaryChoiceGrid}>
+                            {DEMO_DIARY_DURATION_OPTIONS.map((item) => {
+                              const selected = noiseDiaryDuration === item;
+                              return (
+                                <View key={item} style={styles.noiseDiaryChoiceItemWrap}>
+                                  <MiniAnimatedPressable
+                                    style={[
+                                      styles.noiseDiaryChoiceChip,
+                                      { width: noiseDiaryChipWidth },
+                                      selected && styles.noiseDiaryChoiceChipSelected,
+                                    ]}
+                                    onPress={() => setNoiseDiaryDuration(item)}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.noiseDiaryChoiceChipText,
+                                        selected && styles.noiseDiaryChoiceChipTextSelected,
+                                      ]}
+                                      numberOfLines={2}
+                                      allowFontScaling={false}
+                                    >
+                                      {item}
+                                    </Text>
+                                  </MiniAnimatedPressable>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        </View>
+
+                        <View style={styles.noiseDiaryChoiceGroup}>
+                          <Text style={styles.noiseDiaryChoiceGroupTitle} allowFontScaling={false}>
+                            유형
+                          </Text>
+                          <View style={styles.noiseDiaryChoiceGrid}>
+                            {DEMO_DIARY_TYPE_OPTIONS.map((item) => {
+                              const selected = noiseDiaryType === item;
+                              return (
+                                <View key={item} style={styles.noiseDiaryChoiceItemWrap}>
+                                  <MiniAnimatedPressable
+                                    style={[
+                                      styles.noiseDiaryChoiceChip,
+                                      { width: noiseDiaryChipWidth },
+                                      selected && styles.noiseDiaryChoiceChipSelected,
+                                    ]}
+                                    onPress={() => setNoiseDiaryType(item)}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.noiseDiaryChoiceChipText,
+                                        selected && styles.noiseDiaryChoiceChipTextSelected,
+                                      ]}
+                                      numberOfLines={2}
+                                      allowFontScaling={false}
+                                    >
+                                      {item}
+                                    </Text>
+                                  </MiniAnimatedPressable>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        </View>
+
+                        <View style={styles.noiseDiaryChoiceGroup}>
+                          <Text style={styles.noiseDiaryChoiceGroupTitle} allowFontScaling={false}>
+                            영향
+                          </Text>
+                          <View style={styles.noiseDiaryChoiceGrid}>
+                            {DEMO_DIARY_IMPACT_OPTIONS.map((item) => {
+                              const selected = noiseDiaryImpact === item;
+                              return (
+                                <View key={item} style={styles.noiseDiaryChoiceItemWrap}>
+                                  <MiniAnimatedPressable
+                                    style={[
+                                      styles.noiseDiaryChoiceChip,
+                                      { width: noiseDiaryChipWidth },
+                                      selected && styles.noiseDiaryChoiceChipSelected,
+                                    ]}
+                                    onPress={() => setNoiseDiaryImpact(item)}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.noiseDiaryChoiceChipText,
+                                        selected && styles.noiseDiaryChoiceChipTextSelected,
+                                      ]}
+                                      numberOfLines={2}
+                                      allowFontScaling={false}
+                                    >
+                                      {item}
+                                    </Text>
+                                  </MiniAnimatedPressable>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        </View>
+
+                        <MiniAnimatedPressable
+                          style={[
+                            styles.evidenceActionButton,
+                            isNoiseDiaryReady
+                              ? styles.evidenceActionButtonActive
+                              : styles.evidenceActionButtonSkip,
+                          ]}
+                          onPress={() => handleDemoMiniSelection(demoDiaryGenerateOption)}
+                          disabled={!isNoiseDiaryReady}
+                        >
+                          <Text
+                            style={[
+                              styles.evidenceActionButtonText,
+                              isNoiseDiaryReady
+                                ? styles.evidenceActionButtonTextActive
+                                : styles.evidenceActionButtonTextSkip,
+                            ]}
+                            allowFontScaling={false}
+                          >
+                            일지 생성
+                          </Text>
+                        </MiniAnimatedPressable>
+                      </>
+                    ) : null}
+
+                    {noiseDiaryView === "datePicker" ? (
+                      <View style={[styles.evidencePickerPanel, styles.noiseDiaryPickerPanel]}>
+                        <MiniAnimatedPressable
+                          style={[styles.evidencePickerBackButton, styles.noiseDiaryPickerBackButton]}
+                          onPress={() => setNoiseDiaryView("form")}
+                        >
+                          <Text style={[styles.evidencePickerBackText, styles.noiseDiaryPickerBackText]} allowFontScaling={false}>
+                            {"‹ 이전 단계"}
+                          </Text>
+                        </MiniAnimatedPressable>
+
+                        <View style={styles.evidencePickerMonthRow}>
+                          <MiniAnimatedPressable
+                            style={styles.evidenceMonthNavButton}
+                            onPress={() => setOptionListPickerMonth((previous) => addMonth(previous, -1))}
+                          >
+                            <Text style={styles.evidenceMonthNavText} allowFontScaling={false}>
+                              {"‹"}
+                            </Text>
+                          </MiniAnimatedPressable>
+                          <Text style={styles.optionListMonthLabel} allowFontScaling={false}>
+                            {optionListMonthLabel}
+                          </Text>
+                          <MiniAnimatedPressable
+                            style={styles.evidenceMonthNavButton}
+                            onPress={() => setOptionListPickerMonth((previous) => addMonth(previous, 1))}
+                          >
+                            <Text style={styles.evidenceMonthNavText} allowFontScaling={false}>
+                              {"›"}
+                            </Text>
+                          </MiniAnimatedPressable>
+                        </View>
+
+                        <View style={[styles.evidenceWeekdayRow, styles.noiseDiaryWeekdayRow]}>
+                          {KO_WEEKDAYS.map((weekday) => (
+                            <Text
+                              key={weekday}
+                              style={[styles.evidenceWeekdayText, styles.noiseDiaryWeekdayText]}
+                              allowFontScaling={false}
+                            >
+                              {weekday}
+                            </Text>
+                          ))}
+                        </View>
+
+                        <View style={[styles.evidenceCalendarGrid, { width: noiseDiaryCalendarGridWidth }]}>
+                          {optionListCalendarCells.map((cellDate, index) => {
+                            if (!cellDate) {
+                              return (
+                                <View
+                                  key={`noise-diary-empty-${index}`}
+                                  style={[
+                                    styles.evidenceCalendarCellEmpty,
+                                    {
+                                      width: noiseDiaryCalendarCellSize,
+                                      height: noiseDiaryCalendarCellSize,
+                                    },
+                                  ]}
+                                />
+                              );
+                            }
+
+                            const isSelected = isSameDate(cellDate, draftOptionListDate);
+                            return (
+                              <Pressable
+                                key={`noise-diary-${cellDate.toISOString()}`}
+                                onPress={() => setDraftOptionListDate(cellDate)}
+                                style={({ pressed }) => [
+                                  styles.evidenceCalendarCell,
+                                  isSelected && styles.evidenceCalendarCellSelected,
+                                  pressed && styles.evidenceCalendarCellPressed,
+                                  {
+                                    width: noiseDiaryCalendarCellSize,
+                                    height: noiseDiaryCalendarCellSize,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.evidenceCalendarCellText,
+                                    isSelected && styles.evidenceCalendarCellTextSelected,
+                                  ]}
+                                  allowFontScaling={false}
+                                >
+                                  {cellDate.getDate()}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+
+                        <View style={styles.evidencePickerSummary}>
+                          <Text style={styles.evidencePickerSummaryLabel} allowFontScaling={false}>
+                            선택된 날짜
+                          </Text>
+                          <Text style={styles.evidencePickerSummaryValue} allowFontScaling={false}>
+                            {optionListDraftDateLabel}
+                          </Text>
+                        </View>
+
+                        <MiniAnimatedPressable
+                          style={[styles.evidenceActionButton, styles.evidenceActionButtonActive]}
+                          onPress={() => {
+                            setNoiseDiaryDraftDate(draftOptionListDate);
+                            setHasNoiseDiaryDateSelection(true);
+                            setNoiseDiaryView("form");
+                            setApiErrorMessage(null);
+                          }}
+                        >
+                          <Text
+                            style={[styles.evidenceActionButtonText, styles.evidenceActionButtonTextActive]}
+                            allowFontScaling={false}
+                          >
+                            날짜 선택 완료
+                          </Text>
+                        </MiniAnimatedPressable>
+                      </View>
+                    ) : null}
+
+                    {noiseDiaryView === "timePicker" ? (
+                      <View style={[styles.evidencePickerPanel, styles.noiseDiaryPickerPanel]}>
+                        <MiniAnimatedPressable
+                          style={[styles.evidencePickerBackButton, styles.noiseDiaryPickerBackButton]}
+                          onPress={() => setNoiseDiaryView("form")}
+                        >
+                          <Text style={[styles.evidencePickerBackText, styles.noiseDiaryPickerBackText]} allowFontScaling={false}>
+                            {"‹ 이전 단계"}
+                          </Text>
+                        </MiniAnimatedPressable>
+
+                        <View style={[styles.evidenceTimeWheelRow, styles.noiseDiaryTimeWheelRow]}>
+                          <View style={styles.evidenceTimeWheelColumn}>
+                            <View style={styles.evidenceTimeWheelCenterBar} pointerEvents="none" />
+                            <ScrollView
+                              ref={optionListMeridiemWheelRef}
+                              style={styles.evidenceTimeWheelScroll}
+                              contentContainerStyle={styles.evidenceTimeWheelContent}
+                              scrollEnabled
+                              showsVerticalScrollIndicator={false}
+                              keyboardShouldPersistTaps="handled"
+                              snapToInterval={OPTION_LIST_WHEEL_ITEM_HEIGHT}
+                              snapToAlignment="start"
+                              decelerationRate="normal"
+                              nestedScrollEnabled
+                              bounces={false}
+                              scrollEventThrottle={16}
+                              onScrollEndDrag={(event) =>
+                                handleOptionListTimeWheelScrollEndDrag("meridiem", event)
+                              }
+                              onMomentumScrollEnd={(event) => handleOptionListTimeWheelScrollEnd("meridiem", event)}
+                            >
+                              {OPTION_LIST_TIME_MERIDIEM_WHEEL.map((meridiem, index) => {
+                                const isSelected = index === meridiemWheelIndex;
+                                return (
+                                  <View key={`noise-diary-${meridiem}-${index}`} style={styles.evidenceTimeWheelItem}>
+                                    <Text
+                                      style={[
+                                        styles.evidenceTimeWheelDimText,
+                                        !meridiem && styles.evidenceTimeWheelSpacerText,
+                                        isSelected && styles.evidenceTimeWheelActiveText,
+                                      ]}
+                                      allowFontScaling={false}
+                                    >
+                                      {meridiem ?? ""}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </ScrollView>
+                          </View>
+
+                          <View style={styles.evidenceTimeWheelColumn}>
+                            <View style={styles.evidenceTimeWheelCenterBar} pointerEvents="none" />
+                            <ScrollView
+                              ref={optionListHourWheelRef}
+                              style={styles.evidenceTimeWheelScroll}
+                              contentContainerStyle={styles.evidenceTimeWheelContent}
+                              scrollEnabled
+                              showsVerticalScrollIndicator={false}
+                              keyboardShouldPersistTaps="handled"
+                              snapToInterval={OPTION_LIST_WHEEL_ITEM_HEIGHT}
+                              decelerationRate="normal"
+                              nestedScrollEnabled
+                              bounces={false}
+                              scrollEventThrottle={16}
+                              onScrollEndDrag={(event) =>
+                                handleOptionListTimeWheelScrollEndDrag("hour", event)
+                              }
+                              onMomentumScrollEnd={(event) => handleOptionListTimeWheelScrollEnd("hour", event)}
+                            >
+                              {OPTION_LIST_TIME_HOURS_WHEEL.map((hour, index) => {
+                                const isSelected = index === hourWheelIndex;
+                                return (
+                                  <View key={`noise-diary-hour-${hour}-${index}`} style={styles.evidenceTimeWheelItem}>
+                                    <Text
+                                      style={[
+                                        styles.evidenceTimeWheelDimText,
+                                        isSelected && styles.evidenceTimeWheelActiveText,
+                                      ]}
+                                      allowFontScaling={false}
+                                    >
+                                      {hour.toString().padStart(2, "0")}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </ScrollView>
+                          </View>
+
+                          <View style={styles.evidenceTimeWheelColumn}>
+                            <View style={styles.evidenceTimeWheelCenterBar} pointerEvents="none" />
+                            <ScrollView
+                              ref={optionListMinuteWheelRef}
+                              style={styles.evidenceTimeWheelScroll}
+                              contentContainerStyle={styles.evidenceTimeWheelContent}
+                              scrollEnabled
+                              showsVerticalScrollIndicator={false}
+                              keyboardShouldPersistTaps="handled"
+                              snapToInterval={OPTION_LIST_WHEEL_ITEM_HEIGHT}
+                              decelerationRate="normal"
+                              nestedScrollEnabled
+                              bounces={false}
+                              scrollEventThrottle={16}
+                              onScrollEndDrag={(event) =>
+                                handleOptionListTimeWheelScrollEndDrag("minute", event)
+                              }
+                              onMomentumScrollEnd={(event) => handleOptionListTimeWheelScrollEnd("minute", event)}
+                            >
+                              {OPTION_LIST_TIME_MINUTES_WHEEL.map((minute, index) => {
+                                const isSelected = index === minuteWheelIndex;
+                                return (
+                                  <View
+                                    key={`noise-diary-minute-${minute}-${index}`}
+                                    style={styles.evidenceTimeWheelItem}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.evidenceTimeWheelDimText,
+                                        isSelected && styles.evidenceTimeWheelActiveText,
+                                      ]}
+                                      allowFontScaling={false}
+                                    >
+                                      {minute.toString().padStart(2, "0")}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </ScrollView>
+                          </View>
+                        </View>
+
+                        <View style={styles.evidencePickerSummary}>
+                          <Text style={styles.evidencePickerSummaryLabel} allowFontScaling={false}>
+                            선택된 시간
+                          </Text>
+                          <Text style={styles.evidencePickerSummaryValue} allowFontScaling={false}>
+                            {optionListDraftTimeLabel}
+                          </Text>
+                        </View>
+
+                        <MiniAnimatedPressable
+                          style={[styles.evidenceActionButton, styles.evidenceActionButtonActive]}
+                          onPress={() => {
+                            setNoiseDiaryDraftTime(draftOptionListTime);
+                            setHasNoiseDiaryTimeSelection(true);
+                            setNoiseDiaryView("form");
+                            setApiErrorMessage(null);
+                          }}
+                        >
+                          <Text
+                            style={[styles.evidenceActionButtonText, styles.evidenceActionButtonTextActive]}
+                            allowFontScaling={false}
+                          >
+                            시간 선택 완료
+                          </Text>
+                        </MiniAnimatedPressable>
+                      </View>
+                    ) : null}
+                    </ScrollView>
+                  </View>
+                ) : null}
+              </>
+            ) : miniInterfaceType === "DraftViewer" ? (
+              <>
+                <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]} allowFontScaling={false}>
+                  {miniSelectionHint}
+                </Text>
+                {isDraftViewerMiniInterface && demoDraftSubmitOption && demoDraftEditOption ? (
+                  <View style={styles.draftMiniWrap}>
+                    <ScrollView
+                      style={styles.detailMiniScroll}
+                      contentContainerStyle={styles.detailMiniScrollContent}
+                      showsVerticalScrollIndicator
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="handled"
+                      bounces={false}
+                    >
+                    <Text style={styles.draftMiniTitle} allowFontScaling={false}>
+                      신청서 초안
+                    </Text>
+                    <View style={styles.draftMiniDocumentCard}>
+                      {draftPreviewLines.map((line, index) => (
+                        <Text
+                          key={`draft-preview-${index}`}
+                          style={styles.draftMiniDocumentLine}
+                          allowFontScaling={false}
+                        >
+                          {line}
+                        </Text>
+                      ))}
+                    </View>
+
+                    <View style={styles.draftMiniGuideCard}>
+                      <Text style={styles.draftMiniGuideTitle} allowFontScaling={false}>
+                        수정 포인트
+                      </Text>
+                      {draftViewerGuidePoints.map((point) => (
+                        <View key={point} style={styles.draftMiniGuideRow}>
+                          <Text style={styles.draftMiniGuideBullet} allowFontScaling={false}>
+                            {"•"}
+                          </Text>
+                          <Text style={styles.draftMiniGuideText} allowFontScaling={false}>
+                            {point}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <MiniAnimatedPressable
+                      style={[styles.evidenceActionButton, styles.evidenceActionButtonActive]}
+                      onPress={() => handleDemoMiniSelection(demoDraftSubmitOption)}
+                    >
+                      <Text
+                        style={[styles.evidenceActionButtonText, styles.evidenceActionButtonTextActive]}
+                        allowFontScaling={false}
+                      >
+                        좋아요, 접수
+                      </Text>
+                    </MiniAnimatedPressable>
+
+                    <MiniAnimatedPressable
+                      style={[styles.evidenceActionButton, styles.evidenceActionButtonSkip]}
+                      onPress={() => handleDemoMiniSelection(demoDraftEditOption)}
+                    >
+                      <Text
+                        style={[styles.evidenceActionButtonText, styles.evidenceActionButtonTextSkip]}
+                        allowFontScaling={false}
+                      >
+                        수정 요청
+                      </Text>
+                    </MiniAnimatedPressable>
+                    </ScrollView>
+                  </View>
+                ) : null}
+              </>
+            ) : miniInterfaceType === "DraftConfirm" ? (
+              <>
+                <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]} allowFontScaling={false}>
+                  {miniSelectionHint}
+                </Text>
+                {isDraftConfirmMiniInterface && demoDraftConfirmSubmitOption && demoDraftConfirmEditOption ? (
+                  <View style={styles.draftMiniWrap}>
+                    <ScrollView
+                      style={styles.detailMiniScroll}
+                      contentContainerStyle={styles.detailMiniScrollContent}
+                      showsVerticalScrollIndicator
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="handled"
+                      bounces={false}
+                    >
+                    <Text style={styles.draftMiniTitle} allowFontScaling={false}>
+                      수정 반영 확인
+                    </Text>
+                    <View style={styles.draftMiniDocumentCard}>
+                      {draftConfirmData.lines.map((line, index) => {
+                        const isHighlighted = draftConfirmData.highlightedLineIndexes.includes(index);
+                        return (
+                          <Text
+                            key={`draft-confirm-${line}-${index}`}
+                            style={[
+                              styles.draftMiniDocumentLine,
+                              isHighlighted && styles.draftMiniDocumentLineHighlighted,
+                            ]}
+                            allowFontScaling={false}
+                          >
+                            {line}
+                          </Text>
+                        );
+                      })}
+                    </View>
+
+                    <MiniAnimatedPressable
+                      style={[styles.evidenceActionButton, styles.evidenceActionButtonActive]}
+                      onPress={() => handleDemoMiniSelection(demoDraftConfirmSubmitOption)}
+                    >
+                      <Text
+                        style={[styles.evidenceActionButtonText, styles.evidenceActionButtonTextActive]}
+                        allowFontScaling={false}
+                      >
+                        좋아요, 접수해주세요
+                      </Text>
+                    </MiniAnimatedPressable>
+
+                    <MiniAnimatedPressable
+                      style={[styles.evidenceActionButton, styles.evidenceActionButtonSkip]}
+                      onPress={() => handleDemoMiniSelection(demoDraftConfirmEditOption)}
+                    >
+                      <Text
+                        style={[styles.evidenceActionButtonText, styles.evidenceActionButtonTextSkip]}
+                        allowFontScaling={false}
+                      >
+                        다시 수정
+                      </Text>
+                    </MiniAnimatedPressable>
+                    </ScrollView>
+                  </View>
+                ) : null}
+              </>
             ) : miniInterfaceType === "StatusFeed" ? (
               <>
                 <Text style={[styles.miniSelectionHint, { fontSize: 12, lineHeight: 15 }]}>
@@ -4766,6 +5600,201 @@ const styles = StyleSheet.create({
   },
   evidenceActionButtonTextActive: {
     color: "#ffffff",
+  },
+  noiseDiaryWrap: {
+    marginTop: 6,
+  },
+  detailMiniScroll: {
+    maxHeight: "100%",
+  },
+  detailMiniScrollContent: {
+    paddingBottom: 2,
+  },
+  noiseDiaryPickerPanel: {
+    marginTop: 0,
+    paddingHorizontal: 2,
+  },
+  noiseDiaryPickerBackButton: {
+    marginBottom: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  noiseDiaryPickerBackText: {
+    fontSize: 11,
+    lineHeight: 13,
+  },
+  noiseDiaryWeekdayRow: {
+    marginBottom: 6,
+  },
+  noiseDiaryWeekdayText: {
+    fontSize: 11,
+  },
+  noiseDiaryTimeWheelRow: {
+    marginTop: 0,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+  },
+  noiseDiaryDateTimeGroup: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e9eef3",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  noiseDiaryDateTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  noiseDiaryDateTimeInfo: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  noiseDiaryFieldLabel: {
+    color: "#8090a5",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  noiseDiaryFieldValue: {
+    marginTop: 4,
+    color: "#1f2937",
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  noiseDiarySelectButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d6e3ed",
+    backgroundColor: "#f8fbff",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  noiseDiarySelectButtonText: {
+    color: "#2d5d7b",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  noiseDiaryFieldDivider: {
+    marginVertical: 10,
+    height: 1,
+    backgroundColor: "#eef3f8",
+  },
+  noiseDiaryChoiceGroup: {
+    marginTop: 12,
+  },
+  noiseDiaryChoiceGroupTitle: {
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  noiseDiaryChoiceGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  noiseDiaryChoiceItemWrap: {
+    marginBottom: 8,
+  },
+  noiseDiaryChoiceChip: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e6edf3",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    minHeight: 46,
+  },
+  noiseDiaryChoiceChipSelected: {
+    borderColor: "#2d5d7b",
+    borderWidth: 2,
+    backgroundColor: "#f4f9fc",
+  },
+  noiseDiaryChoiceChipText: {
+    color: "#334155",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  noiseDiaryChoiceChipTextSelected: {
+    color: "#2d5d7b",
+  },
+  draftMiniWrap: {
+    marginTop: 6,
+  },
+  draftMiniTitle: {
+    color: "#1f2937",
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: "700",
+  },
+  draftMiniDocumentCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e5edf4",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  draftMiniDocumentLine: {
+    color: "#334155",
+    fontSize: 13,
+    lineHeight: 20,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  draftMiniDocumentLineHighlighted: {
+    color: "#1d4ed8",
+    backgroundColor: "#eff6ff",
+    borderRadius: 8,
+    overflow: "hidden",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontWeight: "700",
+  },
+  draftMiniGuideCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e8eef3",
+    backgroundColor: "#f8fbff",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  draftMiniGuideTitle: {
+    color: "#2d5d7b",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  draftMiniGuideRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 4,
+  },
+  draftMiniGuideBullet: {
+    color: "#2d5d7b",
+    fontSize: 11,
+    lineHeight: 18,
+    fontWeight: "700",
+    marginRight: 6,
+  },
+  draftMiniGuideText: {
+    flex: 1,
+    color: "#475569",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "500",
   },
   summaryCardWrap: {
     marginTop: 6,
