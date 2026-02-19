@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../theme/app_colors.dart';
 enum MiniInterfaceType {
@@ -140,6 +142,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String? _noiseDiaryType;
   String? _noiseDiaryImpact;
   final Set<String> _evidenceAttachmentIds = <String>{};
+  final Map<String, String> _evidenceAttachmentNames = <String, String>{};
+  final ImagePicker _imagePicker = ImagePicker();
+  bool _isPickingEvidence = false;
   _PickerOwner _pickerOwner = _PickerOwner.incident;
   DateTime _pickerMonth = DateTime.now();
   DateTime? _pickerDateSelection;
@@ -201,6 +206,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _selectedOptionIds.clear();
       if (step == DemoStep.evidence) {
         _evidenceAttachmentIds.clear();
+        _evidenceAttachmentNames.clear();
       }
     });
   }
@@ -238,8 +244,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _openDatePicker(_PickerOwner owner) {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final selected = owner == _PickerOwner.noiseDiary ? _noiseDiaryDate : _incidentDate;
-    final seed = selected ?? now;
+    final seed = (selected != null && selected.isAfter(today)) ? today : (selected ?? now);
     setState(() {
       _pickerOwner = owner;
       _pickerMonth = DateTime(seed.year, seed.month, 1);
@@ -265,7 +272,64 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _movePickerMonth(int delta) {
     setState(() {
-      _pickerMonth = DateTime(_pickerMonth.year, _pickerMonth.month + delta, 1);
+      final now = DateTime.now();
+      final currentMonth = DateTime(now.year, now.month, 1);
+      var target = DateTime(_pickerMonth.year, _pickerMonth.month + delta, 1);
+      if (target.isAfter(currentMonth)) {
+        target = currentMonth;
+      }
+      _pickerMonth = target;
+      if (_pickerDateSelection != null) {
+        final safeDay = _pickerDateSelection!.day.clamp(
+          1,
+          DateUtils.getDaysInMonth(target.year, target.month),
+        );
+        final safeDate = DateTime(target.year, target.month, safeDay);
+        final today = DateTime(now.year, now.month, now.day);
+        _pickerDateSelection = safeDate.isAfter(today) ? today : safeDate;
+      }
+    });
+  }
+
+  void _setPickerYear(int year) {
+    setState(() {
+      final now = DateTime.now();
+      final currentMonth = DateTime(now.year, now.month, 1);
+      var target = DateTime(year, _pickerMonth.month, 1);
+      if (target.isAfter(currentMonth)) {
+        target = currentMonth;
+      }
+      _pickerMonth = target;
+      if (_pickerDateSelection != null) {
+        final safeDay = _pickerDateSelection!.day.clamp(
+          1,
+          DateUtils.getDaysInMonth(target.year, target.month),
+        );
+        final safeDate = DateTime(target.year, target.month, safeDay);
+        final today = DateTime(now.year, now.month, now.day);
+        _pickerDateSelection = safeDate.isAfter(today) ? today : safeDate;
+      }
+    });
+  }
+
+  void _setPickerMonthValue(int month) {
+    setState(() {
+      final now = DateTime.now();
+      final currentMonth = DateTime(now.year, now.month, 1);
+      var target = DateTime(_pickerMonth.year, month, 1);
+      if (target.isAfter(currentMonth)) {
+        target = currentMonth;
+      }
+      _pickerMonth = target;
+      if (_pickerDateSelection != null) {
+        final safeDay = _pickerDateSelection!.day.clamp(
+          1,
+          DateUtils.getDaysInMonth(target.year, target.month),
+        );
+        final safeDate = DateTime(target.year, target.month, safeDay);
+        final today = DateTime(now.year, now.month, now.day);
+        _pickerDateSelection = safeDate.isAfter(today) ? today : safeDate;
+      }
     });
   }
 
@@ -286,12 +350,15 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   void _confirmDatePicker() {
     final selected = _pickerDateSelection;
     if (selected == null) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final safeSelected = selected.isAfter(today) ? today : selected;
     setState(() {
       if (_pickerOwner == _PickerOwner.noiseDiary) {
-        _noiseDiaryDate = selected;
+        _noiseDiaryDate = safeSelected;
         _miniType = MiniInterfaceType.noiseDiaryBuilder;
       } else {
-        _incidentDate = selected;
+        _incidentDate = safeSelected;
         _miniType = MiniInterfaceType.optionList;
       }
     });
@@ -356,14 +423,70 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     );
   }
 
-  void _toggleEvidenceAttachment(String id) {
-    setState(() {
-      if (_evidenceAttachmentIds.contains(id)) {
+  Future<void> _toggleEvidenceAttachment(String id) async {
+    if (_isPickingEvidence) return;
+
+    if (_evidenceAttachmentIds.contains(id)) {
+      setState(() {
         _evidenceAttachmentIds.remove(id);
-      } else {
-        _evidenceAttachmentIds.add(id);
-      }
+        _evidenceAttachmentNames.remove(id);
+      });
+      return;
+    }
+
+    setState(() {
+      _isPickingEvidence = true;
     });
+
+    try {
+      String? selectedFileName;
+
+      if (id == 'evidence-audio') {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.audio,
+          allowMultiple: false,
+          withData: false,
+        );
+        if (result != null && result.files.isNotEmpty) {
+          selectedFileName = result.files.first.name;
+        }
+      } else if (id == 'evidence-video') {
+        final picked = await _imagePicker.pickVideo(
+          source: ImageSource.gallery,
+        );
+        if (picked != null) {
+          selectedFileName = _extractFileName(picked.path);
+        }
+      }
+
+      if (!mounted) return;
+      if (selectedFileName == null || selectedFileName.trim().isEmpty) return;
+
+      setState(() {
+        _evidenceAttachmentIds.add(id);
+        _evidenceAttachmentNames[id] = selectedFileName!;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('첨부 파일을 불러오지 못했어요. 다시 시도해 주세요.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingEvidence = false;
+        });
+      }
+    }
+  }
+
+  String _extractFileName(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final index = normalized.lastIndexOf('/');
+    return index >= 0 ? normalized.substring(index + 1) : normalized;
   }
 
   void _submitEvidenceAttachments() {
@@ -374,6 +497,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   void _skipEvidenceAttachments() {
     setState(() {
       _evidenceAttachmentIds.clear();
+      _evidenceAttachmentNames.clear();
     });
     _showThinkingThen(_startDraftViewer);
   }
@@ -522,6 +646,38 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
   }
 
+  void _handlePathChooserSelectionSubmit() {
+    if (_selectedOptionIds.isEmpty || _step != DemoStep.pathChooser) return;
+    final selectedId = _selectedOptionIds.first;
+
+    if (selectedId == 'path-recommended') {
+      _data = _data.copyWith(route: '이웃사이센터 조정 신청');
+      _showThinkingThen(() {
+        _setAi(
+          text: '경로를 확정했어요.\n증거 체크리스트에서 필요한 항목만 첨부해 주세요.',
+          step: DemoStep.evidence,
+          miniType: MiniInterfaceType.optionList,
+        );
+      });
+      return;
+    }
+
+    if (selectedId == 'path-alternative') {
+      _showThinkingThen(() {
+        _setAi(
+          text: '원하시는 기관을 선택해 주세요.',
+          step: DemoStep.pathAlternative,
+          miniType: MiniInterfaceType.listPicker,
+          options: const [
+            MiniOption(id: 'path-epeople', label: '국민신문고'),
+            MiniOption(id: 'path-management', label: '관리사무소 공식 민원'),
+            MiniOption(id: 'path-dispute', label: '분쟁조정(후순위)'),
+          ],
+        );
+      });
+    }
+  }
+
   bool get _isUiReadyAfterAi => !_isThinking && _isAiAnswerReady;
   bool get _isInputEnabled => _miniType == MiniInterfaceType.none;
   bool get _shouldShowMiniInterface =>
@@ -651,12 +807,18 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   bool get _isSendEnabled {
     if (!_isUiReadyAfterAi) return false;
     if (_miniType == MiniInterfaceType.none) return _inputController.text.trim().isNotEmpty;
-    return _miniType == MiniInterfaceType.listPicker && _selectedOptionIds.isNotEmpty;
+    return (_miniType == MiniInterfaceType.listPicker ||
+            _miniType == MiniInterfaceType.pathChooser) &&
+        _selectedOptionIds.isNotEmpty;
   }
 
   void _handleSendPressed() {
     if (_miniType == MiniInterfaceType.listPicker) {
       _handleListSelectionSubmit();
+      return;
+    }
+    if (_miniType == MiniInterfaceType.pathChooser) {
+      _handlePathChooserSelectionSubmit();
       return;
     }
     _handleTextSend();
@@ -680,7 +842,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         if (_step == DemoStep.evidence) {
           return _EvidenceOptionListWidget(
             selectedAttachmentIds: _evidenceAttachmentIds,
-            onToggleAttachment: _toggleEvidenceAttachment,
+            audioFileName: _evidenceAttachmentNames['evidence-audio'],
+            videoFileName: _evidenceAttachmentNames['evidence-video'],
+            isPicking: _isPickingEvidence,
+            onToggleAttachment: (id) {
+              _toggleEvidenceAttachment(id);
+            },
             onSubmit: _submitEvidenceAttachments,
             onSkip: _skipEvidenceAttachments,
             canSubmit: _evidenceAttachmentIds.isNotEmpty,
@@ -701,6 +868,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           onPickDate: _selectPickerDate,
           onPrevMonth: () => _movePickerMonth(-1),
           onNextMonth: () => _movePickerMonth(1),
+          onSelectYear: _setPickerYear,
+          onSelectMonth: _setPickerMonthValue,
           onBack: _cancelPicker,
           onConfirm: _confirmDatePicker,
           selectedDateLabel: _pickerDateSelection == null
@@ -760,25 +929,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         );
       case MiniInterfaceType.pathChooser:
         return _PathChooserWidget(
-          onSelectRecommended: () {
-            _data = _data.copyWith(route: '이웃사이센터 조정 신청');
-            _setAi(
-              text: '경로를 확정했어요.\n증거 체크리스트에서 필요한 항목만 첨부해 주세요.',
-              step: DemoStep.evidence,
-              miniType: MiniInterfaceType.optionList,
-            );
-          },
-          onSelectAlternative: () {
-            _setAi(
-              text: '원하시는 기관을 선택해 주세요.',
-              step: DemoStep.pathAlternative,
-              miniType: MiniInterfaceType.listPicker,
-              options: const [
-                MiniOption(id: 'path-epeople', label: '국민신문고'),
-                MiniOption(id: 'path-management', label: '관리사무소 공식 민원'),
-                MiniOption(id: 'path-dispute', label: '분쟁조정(후순위)'),
-              ],
-            );
+          selectedId: _selectedOptionIds.isEmpty ? null : _selectedOptionIds.first,
+          onSelect: (id) {
+            setState(() {
+              _selectedOptionIds
+                ..clear()
+                ..add(id);
+            });
           },
         );
       case MiniInterfaceType.noiseDiaryBuilder:
@@ -867,8 +1024,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
     if (_evidenceAttachmentIds.isNotEmpty) {
       final labels = <String>[];
-      if (_evidenceAttachmentIds.contains('evidence-audio')) labels.add('녹음 파일');
-      if (_evidenceAttachmentIds.contains('evidence-video')) labels.add('동영상');
+      if (_evidenceAttachmentIds.contains('evidence-audio')) {
+        labels.add('녹음 파일(${_evidenceAttachmentNames['evidence-audio'] ?? '첨부됨'})');
+      }
+      if (_evidenceAttachmentIds.contains('evidence-video')) {
+        labels.add('동영상(${_evidenceAttachmentNames['evidence-video'] ?? '첨부됨'})');
+      }
       if (labels.isNotEmpty) {
         lines.add('첨부 파일: ${labels.join(', ')}');
       }
@@ -1006,10 +1167,7 @@ class _MiniInterfaceCard extends StatelessWidget {
         ],
       ),
       padding: const EdgeInsets.fromLTRB(18, 15, 18, 15),
-      child: SingleChildScrollView(
-        physics: const ClampingScrollPhysics(),
-        child: child,
-      ),
+      child: child,
     );
   }
 }
@@ -1194,11 +1352,35 @@ class _ListPickerOptionButtonState extends State<_ListPickerOptionButton> {
               color: selected ? AppColors.primary : const Color(0xFFF3F4F6),
               width: selected ? 1.4 : 1,
             ),
+            boxShadow: _pressed
+                ? const [
+                    BoxShadow(
+                      color: Color(0x10000000),
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ]
+                : selected
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x18305A78),
+                          blurRadius: 6,
+                          offset: Offset(0, 3),
+                        ),
+                      ]
+                    : const [
+                        BoxShadow(
+                          color: Color(0x0E000000),
+                          blurRadius: 2,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
           ),
           child: Text(
             widget.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.left,
             style: TextStyle(
               color: selected ? AppColors.primary : const Color(0xFF1F2937),
               fontSize: selected ? 16.8 : 16,
@@ -1286,6 +1468,9 @@ class _OptionListWidget extends StatelessWidget {
 class _EvidenceOptionListWidget extends StatelessWidget {
   const _EvidenceOptionListWidget({
     required this.selectedAttachmentIds,
+    required this.audioFileName,
+    required this.videoFileName,
+    required this.isPicking,
     required this.onToggleAttachment,
     required this.onSubmit,
     required this.onSkip,
@@ -1293,6 +1478,9 @@ class _EvidenceOptionListWidget extends StatelessWidget {
   });
 
   final Set<String> selectedAttachmentIds;
+  final String? audioFileName;
+  final String? videoFileName;
+  final bool isPicking;
   final ValueChanged<String> onToggleAttachment;
   final VoidCallback onSubmit;
   final VoidCallback onSkip;
@@ -1339,7 +1527,11 @@ class _EvidenceOptionListWidget extends StatelessWidget {
               _OptionDateTimeRow(
                 icon: Icons.mic_rounded,
                 label: '녹음 파일 첨부',
-                value: isAudioSelected ? '선택됨' : '음성 파일 첨부',
+                value: isPicking
+                    ? '불러오는 중...'
+                    : isAudioSelected
+                        ? (audioFileName ?? '첨부됨')
+                        : '오디오 파일 선택',
                 selected: isAudioSelected,
                 onTap: () => onToggleAttachment('evidence-audio'),
               ),
@@ -1350,7 +1542,11 @@ class _EvidenceOptionListWidget extends StatelessWidget {
               _OptionDateTimeRow(
                 icon: Icons.video_file_rounded,
                 label: '동영상 첨부',
-                value: isVideoSelected ? '선택됨' : '영상 파일 첨부',
+                value: isPicking
+                    ? '불러오는 중...'
+                    : isVideoSelected
+                        ? (videoFileName ?? '첨부됨')
+                        : '갤러리에서 영상 선택',
                 selected: isVideoSelected,
                 onTap: () => onToggleAttachment('evidence-video'),
               ),
@@ -1364,21 +1560,10 @@ class _EvidenceOptionListWidget extends StatelessWidget {
           compact: true,
         ),
         const SizedBox(height: 8),
-        OutlinedButton(
+        _SecondaryButton(
+          label: '건너뛰기',
           onPressed: onSkip,
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-            side: const BorderSide(color: AppColors.borderStrong),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          child: const Text(
-            '건너뛰기',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 16.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          compact: true,
         ),
       ],
     );
@@ -1439,6 +1624,8 @@ class _OptionDateTimeRow extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: selected ? AppColors.primary : AppColors.textMain,
                       fontSize: 16,
@@ -1469,6 +1656,8 @@ class _MiniDatePickerWidget extends StatelessWidget {
     required this.onPickDate,
     required this.onPrevMonth,
     required this.onNextMonth,
+    required this.onSelectYear,
+    required this.onSelectMonth,
     required this.onBack,
     required this.onConfirm,
     required this.selectedDateLabel,
@@ -1479,6 +1668,8 @@ class _MiniDatePickerWidget extends StatelessWidget {
   final ValueChanged<DateTime> onPickDate;
   final VoidCallback onPrevMonth;
   final VoidCallback onNextMonth;
+  final ValueChanged<int> onSelectYear;
+  final ValueChanged<int> onSelectMonth;
   final VoidCallback onBack;
   final VoidCallback onConfirm;
   final String selectedDateLabel;
@@ -1486,6 +1677,16 @@ class _MiniDatePickerWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final days = _calendarDays(month);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final currentYear = today.year;
+    final yearOptions = List<int>.generate(11, (i) => currentYear - 10 + i);
+    final currentMonthStart = DateTime(today.year, today.month, 1);
+    final monthStart = DateTime(month.year, month.month, 1);
+    final canMoveNext = monthStart.isBefore(currentMonthStart);
+    final monthOptions = month.year == currentYear
+        ? List<int>.generate(today.month, (i) => i + 1)
+        : List<int>.generate(12, (i) => i + 1);
     const weekdayLabels = ['일', '월', '화', '수', '목', '금', '토'];
 
     return Column(
@@ -1512,91 +1713,128 @@ class _MiniDatePickerWidget extends StatelessWidget {
             ),
             Expanded(
               child: Center(
-                child: Text(
-                  '${month.year}년 ${month.month}월',
-                  style: const TextStyle(
-                    color: AppColors.textMain,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    fontFamilyFallback: _kKrFontFallback,
-                  ),
+                child: Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _MiniPickerSelector<int>(
+                      valueLabel: '${month.year}년',
+                      options: yearOptions,
+                      optionLabel: (year) => '$year년',
+                      onSelected: onSelectYear,
+                    ),
+                    _MiniPickerSelector<int>(
+                      valueLabel: '${month.month}월',
+                      options: monthOptions,
+                      optionLabel: (value) => '$value월',
+                      onSelected: onSelectMonth,
+                    ),
+                  ],
                 ),
               ),
             ),
             _MiniIconCircleButton(
               icon: Icons.chevron_right_rounded,
-              onTap: onNextMonth,
+              onTap: canMoveNext ? onNextMonth : null,
             ),
           ],
         ),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            for (final weekday in weekdayLabels)
-              Expanded(
-                child: Center(
-                  child: Text(
-                    weekday,
-                    style: const TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: days.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 7,
-            crossAxisSpacing: 4,
-            mainAxisSpacing: 4,
-            mainAxisExtent: 30,
-          ),
-          itemBuilder: (context, index) {
-            final day = days[index];
-            final inMonth = day.month == month.month;
-            final selected = selectedDate != null &&
-                day.year == selectedDate!.year &&
-                day.month == selectedDate!.month &&
-                day.day == selectedDate!.day;
-
-            return InkWell(
-              borderRadius: BorderRadius.circular(999),
-              onTap: () => onPickDate(day),
-              child: Center(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 120),
-                  width: 27,
-                  height: 27,
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.primary : Colors.transparent,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '${day.day}',
-                    style: TextStyle(
-                      color: selected
-                          ? Colors.white
-                          : inMonth
-                              ? AppColors.textMain
-                              : const Color(0xFFCBD5E1),
-                      fontSize: 12.5,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 260),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final offset = Tween<Offset>(
+              begin: const Offset(0.05, 0),
+              end: Offset.zero,
+            ).animate(animation);
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: offset,
+                child: child,
               ),
             );
           },
+          child: KeyedSubtree(
+            key: ValueKey<String>('month-${month.year}-${month.month}'),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    for (final weekday in weekdayLabels)
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            weekday,
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              fontFamilyFallback: _kKrFontFallback,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: days.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                    mainAxisExtent: 30,
+                  ),
+                  itemBuilder: (context, index) {
+                    final day = days[index];
+                    final inMonth = day.month == month.month;
+                    final isFuture = day.isAfter(today);
+                    final selected = selectedDate != null &&
+                        day.year == selectedDate!.year &&
+                        day.month == selectedDate!.month &&
+                        day.day == selectedDate!.day;
+
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: isFuture ? null : () => onPickDate(day),
+                      child: Center(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          width: 27,
+                          height: 27,
+                          decoration: BoxDecoration(
+                            color: selected ? AppColors.primary : Colors.transparent,
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '${day.day}',
+                            style: TextStyle(
+                              color: selected
+                                  ? Colors.white
+                                  : isFuture
+                                      ? const Color(0xFFD6DEE8)
+                                  : inMonth
+                                      ? AppColors.textMain
+                                      : const Color(0xFFCBD5E1),
+                              fontSize: 12.5,
+                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                              fontFamilyFallback: _kKrFontFallback,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: 6),
         _PickerBottomSection(
@@ -1654,26 +1892,37 @@ class _MiniTimePickerWidget extends StatefulWidget {
 class _MiniTimePickerWidgetState extends State<_MiniTimePickerWidget> {
   late final FixedExtentScrollController _hourController;
   late final FixedExtentScrollController _minuteController;
+  late bool _localIsAm;
+  late int _localHour12;
+  late int _localMinute;
 
   @override
   void initState() {
     super.initState();
+    _localIsAm = widget.isAm;
+    _localHour12 = widget.hour12;
+    _localMinute = widget.minute;
     _hourController = FixedExtentScrollController(
-      initialItem: (widget.hour12 - 1) + (12 * 200),
+      initialItem: (_localHour12 - 1) + (12 * 200),
     );
     _minuteController = FixedExtentScrollController(
-      initialItem: widget.minute + (60 * 100),
+      initialItem: _localMinute + (60 * 100),
     );
   }
 
   @override
   void didUpdateWidget(covariant _MiniTimePickerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.isAm != widget.isAm) {
+      _localIsAm = widget.isAm;
+    }
     if (oldWidget.hour12 != widget.hour12) {
-      _hourController.jumpToItem((widget.hour12 - 1) + (12 * 200));
+      _localHour12 = widget.hour12;
+      _hourController.jumpToItem((_localHour12 - 1) + (12 * 200));
     }
     if (oldWidget.minute != widget.minute) {
-      _minuteController.jumpToItem(widget.minute + (60 * 100));
+      _localMinute = widget.minute;
+      _minuteController.jumpToItem(_localMinute + (60 * 100));
     }
   }
 
@@ -1707,16 +1956,16 @@ class _MiniTimePickerWidgetState extends State<_MiniTimePickerWidget> {
             Expanded(
               child: _MeridiemToggleButton(
                 label: '오전',
-                selected: widget.isAm,
-                onTap: () => widget.onSelectMeridiem(true),
+                selected: _localIsAm,
+                onTap: () => setState(() => _localIsAm = true),
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: _MeridiemToggleButton(
                 label: '오후',
-                selected: !widget.isAm,
-                onTap: () => widget.onSelectMeridiem(false),
+                selected: !_localIsAm,
+                onTap: () => setState(() => _localIsAm = false),
               ),
             ),
           ],
@@ -1787,12 +2036,16 @@ class _MiniTimePickerWidgetState extends State<_MiniTimePickerWidget> {
                     child: _MiniWheelPicker(
                       controller: _hourController,
                       itemExtent: 36,
-                      onIndexChanged: (index) => widget.onSelectHour((index % 12) + 1),
+                      onIndexChanged: (index) {
+                        final nextHour = (index % 12) + 1;
+                        if (_localHour12 == nextHour) return;
+                        setState(() => _localHour12 = nextHour);
+                      },
                       itemBuilder: (index) {
                         final hour = (index % 12) + 1;
                         return _wheelText(
                           hour.toString().padLeft(2, '0'),
-                          selected: hour == widget.hour12,
+                          selected: hour == _localHour12,
                         );
                       },
                     ),
@@ -1801,12 +2054,16 @@ class _MiniTimePickerWidgetState extends State<_MiniTimePickerWidget> {
                     child: _MiniWheelPicker(
                       controller: _minuteController,
                       itemExtent: 36,
-                      onIndexChanged: (index) => widget.onSelectMinute(index % 60),
+                      onIndexChanged: (index) {
+                        final nextMinute = index % 60;
+                        if (_localMinute == nextMinute) return;
+                        setState(() => _localMinute = nextMinute);
+                      },
                       itemBuilder: (index) {
                         final minute = index % 60;
                         return _wheelText(
                           minute.toString().padLeft(2, '0'),
-                          selected: minute == widget.minute,
+                          selected: minute == _localMinute,
                         );
                       },
                     ),
@@ -1819,12 +2076,22 @@ class _MiniTimePickerWidgetState extends State<_MiniTimePickerWidget> {
         const SizedBox(height: 8),
         _PickerBottomSection(
           summaryLabel: '선택된 시간',
-          summaryValue: widget.selectedTimeLabel,
+          summaryValue: _formatLocalTime(),
           actionLabel: '시간 선택 완료',
-          onPressed: widget.onConfirm,
+          onPressed: () {
+            widget.onSelectMeridiem(_localIsAm);
+            widget.onSelectHour(_localHour12);
+            widget.onSelectMinute(_localMinute);
+            widget.onConfirm();
+          },
         ),
       ],
     );
+  }
+
+  String _formatLocalTime() {
+    final meridiem = _localIsAm ? '오전' : '오후';
+    return '$meridiem ${_localHour12.toString().padLeft(2, '0')}시 ${_localMinute.toString().padLeft(2, '0')}분';
   }
 
   Widget _wheelText(String text, {required bool selected}) {
@@ -1875,25 +2142,19 @@ class _MeridiemToggleButtonState extends State<_MeridiemToggleButton> {
       onTap: widget.onTap,
       child: AnimatedScale(
         duration: const Duration(milliseconds: 110),
-        scale: _pressed ? 0.985 : 1,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          height: 40,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: widget.selected ? const Color(0xFFF0F7FF) : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: widget.selected ? AppColors.primary : AppColors.border,
-              width: widget.selected ? 1.4 : 1,
-            ),
-          ),
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              color: widget.selected ? AppColors.primary : AppColors.textMuted,
-              fontSize: widget.selected ? 16 : 15,
-              fontWeight: widget.selected ? FontWeight.w800 : FontWeight.w600,
+        scale: _pressed ? 0.97 : 1,
+        child: SizedBox(
+          height: 34,
+          child: Center(
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 140),
+              style: TextStyle(
+                color: widget.selected ? AppColors.primary : AppColors.textMuted,
+                fontSize: widget.selected ? 17 : 16,
+                fontWeight: widget.selected ? FontWeight.w800 : FontWeight.w600,
+                fontFamilyFallback: _kKrFontFallback,
+              ),
+              child: Text(widget.label),
             ),
           ),
         ),
@@ -1909,20 +2170,83 @@ class _MiniBackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
+    return TextButton.icon(
       onPressed: onTap,
       icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
-      label: const Text('이전 단계'),
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size(0, 34),
-        padding: const EdgeInsets.fromLTRB(8, 6, 12, 6),
-        side: const BorderSide(color: AppColors.border),
+      label: const Text('이전'),
+      style: TextButton.styleFrom(
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         foregroundColor: AppColors.textMuted,
         textStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+          fontFamilyFallback: _kKrFontFallback,
         ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+      ),
+    );
+  }
+}
+
+class _MiniPickerSelector<T> extends StatelessWidget {
+  const _MiniPickerSelector({
+    required this.valueLabel,
+    required this.options,
+    required this.optionLabel,
+    required this.onSelected,
+  });
+
+  final String valueLabel;
+  final List<T> options;
+  final String Function(T value) optionLabel;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<T>(
+      tooltip: '',
+      padding: EdgeInsets.zero,
+      onSelected: onSelected,
+      itemBuilder: (context) {
+        return options
+            .map(
+              (value) => PopupMenuItem<T>(
+                value: value,
+                child: Text(
+                  optionLabel(value),
+                  style: const TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                    fontFamilyFallback: _kKrFontFallback,
+                  ),
+                ),
+              ),
+            )
+            .toList(growable: false);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              valueLabel,
+              style: const TextStyle(
+                color: AppColors.textMain,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                fontFamilyFallback: _kKrFontFallback,
+              ),
+            ),
+            const SizedBox(width: 2),
+            const Icon(
+              Icons.expand_more_rounded,
+              size: 18,
+              color: AppColors.textMuted,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1932,22 +2256,19 @@ class _MiniIconCircleButton extends StatelessWidget {
   const _MiniIconCircleButton({required this.icon, required this.onTap});
 
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 34,
-      height: 34,
-      child: OutlinedButton(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          shape: const CircleBorder(),
-          padding: EdgeInsets.zero,
-          side: const BorderSide(color: AppColors.border),
-          foregroundColor: AppColors.textMuted,
-        ),
-        child: Icon(icon, size: 19),
+    return IconButton(
+      onPressed: onTap,
+      splashRadius: 18,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+      icon: Icon(
+        icon,
+        size: 22,
+        color: onTap == null ? const Color(0xFFD1D8E1) : AppColors.textMuted,
       ),
     );
   }
@@ -2081,69 +2402,29 @@ class _SummaryCardWidget extends StatelessWidget {
         const Text(
           '요약 확인',
           style: TextStyle(
-            color: Color(0xFF9CA3AF),
-            fontSize: 12,
-            height: 16 / 12,
-            fontWeight: FontWeight.w500,
+            color: Color(0xFF8B99AC),
+            fontSize: 13,
+            height: 18 / 13,
+            fontWeight: FontWeight.w600,
+            fontFamilyFallback: _kKrFontFallback,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 250),
-          child: SingleChildScrollView(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.border),
-              ),
-              padding: const EdgeInsets.all(10),
+          constraints: const BoxConstraints(maxHeight: 300),
+          child: Scrollbar(
+            thumbVisibility: true,
+            radius: const Radius.circular(999),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(right: 6),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   for (var i = 0; i < rows.length; i++) ...[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.only(top: 6),
-                          width: 7,
-                          height: 7,
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                rows[i].label,
-                                style: const TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                rows[i].value,
-                                style: const TextStyle(
-                                  color: AppColors.textMain,
-                                  fontSize: 16,
-                                  height: 1.35,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                    _SummaryItemRow(row: rows[i]),
                     if (i < rows.length - 1)
                       const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 10, 0, 10),
+                        padding: EdgeInsets.fromLTRB(16, 12, 0, 12),
                         child: Divider(height: 1, color: AppColors.border),
                       ),
                   ],
@@ -2152,23 +2433,67 @@ class _SummaryCardWidget extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 9),
+        const SizedBox(height: 12),
         _PrimaryButton(label: '계속하기', onPressed: onContinue, compact: true),
-        const SizedBox(height: 7),
-        OutlinedButton(
+        const SizedBox(height: 8),
+        _SecondaryButton(
+          label: '수정',
           onPressed: onEdit,
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-            side: const BorderSide(color: AppColors.borderStrong),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          child: const Text(
-            '수정',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 16.5,
-              fontWeight: FontWeight.w700,
+          compact: true,
+        ),
+      ],
+    );
+  }
+}
+
+class _SummaryItemRow extends StatelessWidget {
+  const _SummaryItemRow({required this.row});
+
+  final _SummaryRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 7),
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              shape: BoxShape.circle,
             ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                row.label,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
+                  height: 1.25,
+                  fontWeight: FontWeight.w700,
+                  fontFamilyFallback: _kKrFontFallback,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                row.value,
+                style: const TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 16.5,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                  fontFamilyFallback: _kKrFontFallback,
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -2178,12 +2503,12 @@ class _SummaryCardWidget extends StatelessWidget {
 
 class _PathChooserWidget extends StatefulWidget {
   const _PathChooserWidget({
-    required this.onSelectRecommended,
-    required this.onSelectAlternative,
+    required this.selectedId,
+    required this.onSelect,
   });
 
-  final VoidCallback onSelectRecommended;
-  final VoidCallback onSelectAlternative;
+  final String? selectedId;
+  final ValueChanged<String> onSelect;
 
   @override
   State<_PathChooserWidget> createState() => _PathChooserWidgetState();
@@ -2194,45 +2519,65 @@ class _PathChooserWidgetState extends State<_PathChooserWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '단일 선택',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 10),
-        _SelectableCardButton(
-          selected: false,
-          title: '이웃사이센터 조정 신청',
-          subtitle: '층간소음 상담/조정 절차에 가장 빠르게 연결돼요.',
-          leadingBadge: '추천',
-          onTap: widget.onSelectRecommended,
-          trailing: TextButton(
-            onPressed: () => setState(() => _openReason = !_openReason),
-            child: Text(_openReason ? '추천 이유 접기' : '추천 이유 보기'),
-          ),
-          extra: _openReason
-              ? const Padding(
-                  padding: EdgeInsets.only(top: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _ReasonText(text: '층간소음 조정 절차와 가장 잘 맞아요.'),
-                      _ReasonText(text: '초기 접수부터 중재 요청까지 빠르게 이어집니다.'),
-                      _ReasonText(text: '필요 시 이후 민원 제출 단계로 전환 가능합니다.'),
-                    ],
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 356),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '단일 선택',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: _SelectableCardButton(
+                compact: true,
+                selected: widget.selectedId == 'path-recommended',
+                title: '이웃사이센터 조정 신청',
+                subtitle: '층간소음 상담/조정 절차에 가장 빠르게 연결돼요.',
+                leadingBadge: '추천',
+                onTap: () => widget.onSelect('path-recommended'),
+                trailing: Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: 118,
+                    child: TextButton(
+                      onPressed: () => setState(() => _openReason = !_openReason),
+                      child: Text(_openReason ? '추천 이유 접기' : '추천 이유 보기'),
+                    ),
                   ),
-                )
-              : null,
+                ),
+                extra: _openReason
+                    ? const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _ReasonText(text: '층간소음 조정 절차와 가장 잘 맞아요.'),
+                            _ReasonText(text: '초기 접수부터 중재 요청까지 빠르게 이어집니다.'),
+                            _ReasonText(text: '필요 시 이후 민원 제출 단계로 전환 가능합니다.'),
+                          ],
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: _SelectableCardButton(
+                compact: true,
+                centerContent: true,
+                selected: widget.selectedId == 'path-alternative',
+                title: '다른 기관 선택',
+                onTap: () => widget.onSelect('path-alternative'),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
-        _SelectableCardButton(
-          selected: false,
-          title: '다른 기관 선택',
-          onTap: widget.onSelectAlternative,
-        ),
-      ],
+      ),
     );
   }
 }
@@ -2444,48 +2789,50 @@ class _DraftViewerWidget extends StatelessWidget {
         const Text('신청서 초안', style: TextStyle(color: AppColors.textMain, fontSize: 18, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 360),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _TextCard(lines: previewLines),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    color: const Color(0xFFF8FBFF),
-                    border: Border.all(color: AppColors.border),
-                  ),
+          constraints: const BoxConstraints(maxHeight: 410),
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('수정 포인트', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 6),
-                      ...guidePoints.map(
-                        (point) => Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text('• $point', style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.35)),
+                      _TextCard(lines: previewLines),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          color: const Color(0xFFF8FBFF),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('수정 포인트', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 6),
+                            ...guidePoints.map(
+                              (point) => Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Text('• $point', style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.35)),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                _PrimaryButton(label: '좋아요, 접수', onPressed: onApprove, compact: true),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed: onEdit,
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(50),
-                    side: const BorderSide(color: AppColors.borderStrong),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('수정 요청', style: TextStyle(color: AppColors.textMuted, fontSize: 18, fontWeight: FontWeight.w700)),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 10),
+              _PrimaryButton(label: '좋아요, 접수', onPressed: onApprove, compact: true),
+              const SizedBox(height: 8),
+              _SecondaryButton(
+                label: '수정 요청',
+                onPressed: onEdit,
+                compact: true,
+              ),
+            ],
           ),
         ),
       ],
@@ -2557,14 +2904,10 @@ class _DraftConfirmWidget extends StatelessWidget {
                 const SizedBox(height: 10),
                 _PrimaryButton(label: '좋아요, 접수해주세요', onPressed: onApprove, compact: true),
                 const SizedBox(height: 8),
-                OutlinedButton(
+                _SecondaryButton(
+                  label: '다시 수정',
                   onPressed: onEditAgain,
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(50),
-                    side: const BorderSide(color: AppColors.borderStrong),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('다시 수정', style: TextStyle(color: AppColors.textMuted, fontSize: 18, fontWeight: FontWeight.w700)),
+                  compact: true,
                 ),
               ],
             ),
@@ -2680,7 +3023,7 @@ class _FeedLine extends StatelessWidget {
   }
 }
 
-class _SelectableCardButton extends StatelessWidget {
+class _SelectableCardButton extends StatefulWidget {
   const _SelectableCardButton({
     required this.title,
     required this.selected,
@@ -2689,6 +3032,8 @@ class _SelectableCardButton extends StatelessWidget {
     this.leadingBadge,
     this.trailing,
     this.extra,
+    this.centerContent = false,
+    this.compact = false,
   });
 
   final String title;
@@ -2698,57 +3043,101 @@ class _SelectableCardButton extends StatelessWidget {
   final String? leadingBadge;
   final Widget? trailing;
   final Widget? extra;
+  final bool centerContent;
+  final bool compact;
+
+  @override
+  State<_SelectableCardButton> createState() => _SelectableCardButtonState();
+}
+
+class _SelectableCardButtonState extends State<_SelectableCardButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          color: selected ? AppColors.blueTint : Colors.white,
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.border,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (leadingBadge != null)
-              Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.blueTint,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-                child: Text(
-                  leadingBadge!,
-                  style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w700),
-                ),
-              ),
-            Text(
-              title,
-              style: TextStyle(
-                color: selected ? AppColors.primary : AppColors.textMain,
-                fontSize: 18,
-                height: 1.25,
-                fontWeight: FontWeight.w700,
-              ),
+    final verticalPadding = widget.compact ? 11.0 : 14.0;
+    final titleSize = widget.compact ? 17.0 : 18.0;
+
+    return GestureDetector(
+      onTapDown: (_) => _setPressed(true),
+      onTapUp: (_) => _setPressed(false),
+      onTapCancel: () => _setPressed(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOut,
+        scale: _pressed ? 0.992 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: verticalPadding),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            color: widget.selected ? AppColors.blueTint : Colors.white,
+            border: Border.all(
+              color: widget.selected ? AppColors.primary : AppColors.border,
+              width: widget.selected ? 2 : 1,
             ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 6),
+            boxShadow: _pressed
+                ? const [
+                    BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ]
+                : const [
+                    BoxShadow(
+                      color: Color(0x18234A64),
+                      blurRadius: 2,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+          ),
+          child: Column(
+            crossAxisAlignment:
+                widget.centerContent ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+            children: [
+              if (widget.leadingBadge != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.blueTint,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    widget.leadingBadge!,
+                    style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
               Text(
-                subtitle!,
-                style: const TextStyle(color: Color(0xFF475569), fontSize: 13, height: 1.35),
+                widget.title,
+                textAlign: widget.centerContent ? TextAlign.center : TextAlign.left,
+                style: TextStyle(
+                  color: widget.selected ? AppColors.primary : AppColors.textMain,
+                  fontSize: titleSize,
+                  height: 1.25,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
+              if (widget.subtitle != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  widget.subtitle!,
+                  textAlign: widget.centerContent ? TextAlign.center : TextAlign.left,
+                  style: const TextStyle(color: Color(0xFF475569), fontSize: 13, height: 1.35),
+                ),
+              ],
+              if (widget.trailing != null) widget.trailing!,
+              if (widget.extra != null) widget.extra!,
             ],
-            if (trailing != null) trailing!,
-            if (extra != null) extra!,
-          ],
+          ),
         ),
       ),
     );
@@ -2966,7 +3355,7 @@ class _AiCharFadeTextState extends State<_AiCharFadeText>
   }
 }
 
-class _PrimaryButton extends StatelessWidget {
+class _PrimaryButton extends StatefulWidget {
   const _PrimaryButton({
     required this.label,
     required this.onPressed,
@@ -2978,23 +3367,165 @@ class _PrimaryButton extends StatelessWidget {
   final bool compact;
 
   @override
+  State<_PrimaryButton> createState() => _PrimaryButtonState();
+}
+
+class _PrimaryButtonState extends State<_PrimaryButton> {
+  bool _pressed = false;
+
+  bool get _enabled => widget.onPressed != null;
+
+  void _setPressed(bool value) {
+    if (!_enabled) return;
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final height = widget.compact ? 52.0 : 60.0;
+    final radius = widget.compact ? 16.0 : 20.0;
+    final baseColor = _enabled ? AppColors.primary : const Color(0xFFE6EBF0);
+    final pressedColor = _enabled ? AppColors.primaryDeep : const Color(0xFFE6EBF0);
+
     return SizedBox(
       width: double.infinity,
-      height: compact ? 52 : 60,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          elevation: 0,
-          foregroundColor: Colors.white,
-          backgroundColor: onPressed == null ? const Color(0xFFE6EBF0) : AppColors.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          textStyle: TextStyle(
-            fontSize: compact ? 18 : 22,
-            fontWeight: FontWeight.w700,
+      height: height,
+      child: GestureDetector(
+        onTapDown: (_) => _setPressed(true),
+        onTapUp: (_) => _setPressed(false),
+        onTapCancel: () => _setPressed(false),
+        onTap: widget.onPressed,
+        child: AnimatedScale(
+          scale: _pressed ? 0.987 : 1,
+          duration: const Duration(milliseconds: 90),
+          curve: Curves.easeOut,
+          child: AnimatedSlide(
+            offset: _pressed ? const Offset(0, 0.02) : Offset.zero,
+            duration: const Duration(milliseconds: 90),
+            curve: Curves.easeOut,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(radius),
+                color: _pressed ? pressedColor : baseColor,
+                boxShadow: _enabled
+                    ? _pressed
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x24234A64),
+                              blurRadius: 2,
+                              offset: Offset(0, 1),
+                            ),
+                          ]
+                        : const [
+                            BoxShadow(
+                              color: Color(0x33234A64),
+                              blurRadius: 2,
+                              offset: Offset(0, 4),
+                            ),
+                          ]
+                    : const [],
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                widget.label,
+                style: TextStyle(
+                  color: _enabled ? Colors.white : const Color(0xFF9CA3AF),
+                  fontSize: widget.compact ? 18 : 22,
+                  fontWeight: FontWeight.w700,
+                  fontFamilyFallback: _kKrFontFallback,
+                ),
+              ),
+            ),
           ),
         ),
-        onPressed: onPressed,
-        child: Text(label),
+      ),
+    );
+  }
+}
+
+class _SecondaryButton extends StatefulWidget {
+  const _SecondaryButton({
+    required this.label,
+    required this.onPressed,
+    this.compact = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool compact;
+
+  @override
+  State<_SecondaryButton> createState() => _SecondaryButtonState();
+}
+
+class _SecondaryButtonState extends State<_SecondaryButton> {
+  bool _pressed = false;
+
+  bool get _enabled => widget.onPressed != null;
+
+  void _setPressed(bool value) {
+    if (!_enabled) return;
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final height = widget.compact ? 48.0 : 54.0;
+    final radius = widget.compact ? 14.0 : 16.0;
+
+    return SizedBox(
+      width: double.infinity,
+      height: height,
+      child: GestureDetector(
+        onTapDown: (_) => _setPressed(true),
+        onTapUp: (_) => _setPressed(false),
+        onTapCancel: () => _setPressed(false),
+        onTap: widget.onPressed,
+        child: AnimatedScale(
+          scale: _pressed ? 0.99 : 1,
+          duration: const Duration(milliseconds: 90),
+          curve: Curves.easeOut,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOut,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              color: _pressed ? const Color(0xFFF8FAFC) : Colors.white,
+              border: Border.all(color: AppColors.borderStrong),
+              boxShadow: _enabled
+                  ? _pressed
+                      ? const [
+                          BoxShadow(
+                            color: Color(0x14000000),
+                            blurRadius: 2,
+                            offset: Offset(0, 1),
+                          ),
+                        ]
+                      : const [
+                          BoxShadow(
+                            color: Color(0x1A234A64),
+                            blurRadius: 2,
+                            offset: Offset(0, 3),
+                          ),
+                        ]
+                  : const [],
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              widget.label,
+              style: TextStyle(
+                color: _enabled ? AppColors.textMuted : const Color(0xFFB7C1CD),
+                fontSize: widget.compact ? 16.5 : 17,
+                fontWeight: FontWeight.w700,
+                fontFamilyFallback: _kKrFontFallback,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
