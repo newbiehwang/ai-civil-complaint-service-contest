@@ -7,14 +7,19 @@ class StartFrameLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 390),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: child,
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final frameWidth = constraints.maxWidth < 390 ? constraints.maxWidth : 390.0;
+
+        return Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            width: frameWidth,
+            height: constraints.maxHeight,
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

@@ -6,11 +6,15 @@ class StartPrimaryButton extends StatefulWidget {
   const StartPrimaryButton({
     required this.label,
     required this.onPressed,
+    this.width = 310,
+    this.height = 60,
     super.key,
   });
 
   final String label;
   final VoidCallback? onPressed;
+  final double width;
+  final double height;
 
   @override
   State<StartPrimaryButton> createState() => _StartPrimaryButtonState();
@@ -31,13 +35,13 @@ class _StartPrimaryButtonState extends State<StartPrimaryButton> {
 
   @override
   Widget build(BuildContext context) {
-    final baseColor = _isEnabled ? AppColors.primaryDeep : const Color(0xFFE6EBF0);
-    final pressedColor = _isEnabled ? const Color(0xFF1B3E57) : const Color(0xFFE6EBF0);
+    final baseColor = _isEnabled ? AppColors.primary : const Color(0xFFE6EBF0);
+    final pressedColor = _isEnabled ? AppColors.primaryDeep : const Color(0xFFE6EBF0);
 
     return Center(
       child: SizedBox(
-        width: 310,
-        height: 60,
+        width: widget.width,
+        height: widget.height,
         child: GestureDetector(
           onTapDown: (_) => _setPressed(true),
           onTapUp: (_) => _setPressed(false),
@@ -60,15 +64,15 @@ class _StartPrimaryButtonState extends State<StartPrimaryButton> {
                   boxShadow: _isPressed
                       ? const [
                           BoxShadow(
-                            color: Color(0x22000000),
-                            blurRadius: 3,
+                            color: Color(0x24234A64),
+                            blurRadius: 2,
                             offset: Offset(0, 1),
                           ),
                         ]
                       : const [
                           BoxShadow(
                             color: Color(0x33234A64),
-                            blurRadius: 0,
+                            blurRadius: 2,
                             offset: Offset(0, 4),
                           ),
                         ],
