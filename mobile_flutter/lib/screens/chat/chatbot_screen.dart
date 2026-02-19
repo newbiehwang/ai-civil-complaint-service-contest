@@ -139,6 +139,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String? _noiseDiaryDuration;
   String? _noiseDiaryType;
   String? _noiseDiaryImpact;
+  final Set<String> _evidenceAttachmentIds = <String>{};
   _PickerOwner _pickerOwner = _PickerOwner.incident;
   DateTime _pickerMonth = DateTime.now();
   DateTime? _pickerDateSelection;
@@ -198,6 +199,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _miniType = miniType;
       _options = options;
       _selectedOptionIds.clear();
+      if (step == DemoStep.evidence) {
+        _evidenceAttachmentIds.clear();
+      }
     });
   }
 
@@ -352,6 +356,28 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     );
   }
 
+  void _toggleEvidenceAttachment(String id) {
+    setState(() {
+      if (_evidenceAttachmentIds.contains(id)) {
+        _evidenceAttachmentIds.remove(id);
+      } else {
+        _evidenceAttachmentIds.add(id);
+      }
+    });
+  }
+
+  void _submitEvidenceAttachments() {
+    if (_evidenceAttachmentIds.isEmpty) return;
+    _showThinkingThen(_startDraftViewer);
+  }
+
+  void _skipEvidenceAttachments() {
+    setState(() {
+      _evidenceAttachmentIds.clear();
+    });
+    _showThinkingThen(_startDraftViewer);
+  }
+
   void _handleTextSend() {
     final input = _inputController.text.trim();
     if (input.isEmpty || !_isUiReadyAfterAi) return;
@@ -482,29 +508,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           _setAi(
             text: '선택한 경로로 진행할게요. 증거 체크리스트에서 필요한 항목만 첨부해 주세요.',
             step: DemoStep.evidence,
-            miniType: MiniInterfaceType.listPicker,
-            options: const [
-              MiniOption(id: 'evidence-diary', label: '소음일지 작성'),
-              MiniOption(id: 'evidence-skip', label: '증거 첨부 건너뛰기'),
-            ],
+            miniType: MiniInterfaceType.optionList,
           );
         });
-        return;
-      case DemoStep.evidence:
-        if (selectedId == 'evidence-diary') {
-          _noiseDiaryDate = null;
-          _noiseDiaryTime = null;
-          _noiseDiaryDuration = null;
-          _noiseDiaryType = null;
-          _noiseDiaryImpact = null;
-          _setAi(
-            text: '소음일지를 작성해 주세요.',
-            step: DemoStep.noiseDiary,
-            miniType: MiniInterfaceType.noiseDiaryBuilder,
-          );
-        } else {
-          _showThinkingThen(_startDraftViewer);
-        }
         return;
       case DemoStep.complete:
         if (selectedId == 'complete-restart') {
@@ -593,22 +599,19 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                       duration: const Duration(milliseconds: 280),
                       switchInCurve: Curves.easeOutCubic,
                       switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) {
-                        final slide = Tween<Offset>(
-                          begin: const Offset(0, 0.05),
-                          end: Offset.zero,
-                        ).animate(
-                          CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeOutCubic,
-                          ),
+                      layoutBuilder: (currentChild, previousChildren) {
+                        return Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            ...previousChildren,
+                            if (currentChild != null) currentChild,
+                          ],
                         );
+                      },
+                      transitionBuilder: (child, animation) {
                         return FadeTransition(
                           opacity: animation,
-                          child: SlideTransition(
-                            position: slide,
-                            child: child,
-                          ),
+                          child: child,
                         );
                       },
                       child: _shouldShowMiniInterface
@@ -674,6 +677,15 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           },
         );
       case MiniInterfaceType.optionList:
+        if (_step == DemoStep.evidence) {
+          return _EvidenceOptionListWidget(
+            selectedAttachmentIds: _evidenceAttachmentIds,
+            onToggleAttachment: _toggleEvidenceAttachment,
+            onSubmit: _submitEvidenceAttachments,
+            onSkip: _skipEvidenceAttachments,
+            canSubmit: _evidenceAttachmentIds.isNotEmpty,
+          );
+        }
         return _OptionListWidget(
           dateLabel: _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
           timeLabel: _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
@@ -753,11 +765,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             _setAi(
               text: '경로를 확정했어요.\n증거 체크리스트에서 필요한 항목만 첨부해 주세요.',
               step: DemoStep.evidence,
-              miniType: MiniInterfaceType.listPicker,
-              options: const [
-                MiniOption(id: 'evidence-diary', label: '소음일지 작성'),
-                MiniOption(id: 'evidence-skip', label: '증거 첨부 건너뛰기'),
-              ],
+              miniType: MiniInterfaceType.optionList,
             );
           },
           onSelectAlternative: () {
@@ -827,11 +835,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             _setAi(
               text: '추가 증거를 선택해 주세요.',
               step: DemoStep.evidence,
-              miniType: MiniInterfaceType.listPicker,
-              options: const [
-                MiniOption(id: 'evidence-diary', label: '소음일지 작성'),
-                MiniOption(id: 'evidence-skip', label: '증거 첨부 건너뛰기'),
-              ],
+              miniType: MiniInterfaceType.optionList,
             );
           },
           onOpenSummary: () {
@@ -860,6 +864,14 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
     if (_isNoiseDiaryReady) {
       lines.add('소음일지: ${_formatDate(_noiseDiaryDate!)} ${_formatTime(_noiseDiaryTime!)} · $_noiseDiaryDuration · $_noiseDiaryType · $_noiseDiaryImpact');
+    }
+    if (_evidenceAttachmentIds.isNotEmpty) {
+      final labels = <String>[];
+      if (_evidenceAttachmentIds.contains('evidence-audio')) labels.add('녹음 파일');
+      if (_evidenceAttachmentIds.contains('evidence-video')) labels.add('동영상');
+      if (labels.isNotEmpty) {
+        lines.add('첨부 파일: ${labels.join(', ')}');
+      }
     }
 
     return lines;
@@ -974,7 +986,8 @@ class _MiniInterfaceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxHeight: 460),
+      constraints: const BoxConstraints(maxHeight: 520),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: AppColors.border),
@@ -993,7 +1006,10 @@ class _MiniInterfaceCard extends StatelessWidget {
         ],
       ),
       padding: const EdgeInsets.fromLTRB(18, 15, 18, 15),
-      child: child,
+      child: SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
+        child: child,
+      ),
     );
   }
 }
@@ -1267,18 +1283,122 @@ class _OptionListWidget extends StatelessWidget {
   }
 }
 
+class _EvidenceOptionListWidget extends StatelessWidget {
+  const _EvidenceOptionListWidget({
+    required this.selectedAttachmentIds,
+    required this.onToggleAttachment,
+    required this.onSubmit,
+    required this.onSkip,
+    required this.canSubmit,
+  });
+
+  final Set<String> selectedAttachmentIds;
+  final ValueChanged<String> onToggleAttachment;
+  final VoidCallback onSubmit;
+  final VoidCallback onSkip;
+  final bool canSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final isAudioSelected = selectedAttachmentIds.contains('evidence-audio');
+    final isVideoSelected = selectedAttachmentIds.contains('evidence-video');
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '체크리스트 · 선택사항',
+          style: TextStyle(
+            color: Color(0xFF8B99AC),
+            fontSize: 13,
+            height: 18 / 13,
+            fontWeight: FontWeight.w600,
+            fontFamilyFallback: _kKrFontFallback,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '필요한 항목만 첨부해 주세요.',
+          style: TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            height: 1.3,
+            fontWeight: FontWeight.w500,
+            fontFamilyFallback: _kKrFontFallback,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: Colors.white,
+          ),
+          child: Column(
+            children: [
+              _OptionDateTimeRow(
+                icon: Icons.mic_rounded,
+                label: '녹음 파일 첨부',
+                value: isAudioSelected ? '선택됨' : '음성 파일 첨부',
+                selected: isAudioSelected,
+                onTap: () => onToggleAttachment('evidence-audio'),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14),
+                child: Divider(height: 1, color: AppColors.border),
+              ),
+              _OptionDateTimeRow(
+                icon: Icons.video_file_rounded,
+                label: '동영상 첨부',
+                value: isVideoSelected ? '선택됨' : '영상 파일 첨부',
+                selected: isVideoSelected,
+                onTap: () => onToggleAttachment('evidence-video'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _PrimaryButton(
+          label: '선택 완료',
+          onPressed: canSubmit ? onSubmit : null,
+          compact: true,
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          onPressed: onSkip,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            side: const BorderSide(color: AppColors.borderStrong),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          child: const Text(
+            '건너뛰기',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _OptionDateTimeRow extends StatelessWidget {
   const _OptionDateTimeRow({
     required this.icon,
     required this.label,
     required this.value,
     required this.onTap,
+    this.selected = false,
   });
 
   final IconData icon;
   final String label;
   final String value;
   final VoidCallback onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -1286,6 +1406,7 @@ class _OptionDateTimeRow extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Ink(
+        color: selected ? const Color(0xFFF3F8FF) : Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
@@ -1294,8 +1415,10 @@ class _OptionDateTimeRow extends StatelessWidget {
               height: 52,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE6EEF5)),
-                color: const Color(0xFFF4F8FC),
+                border: Border.all(
+                  color: selected ? AppColors.primary : const Color(0xFFE6EEF5),
+                ),
+                color: selected ? const Color(0xFFEAF3FF) : const Color(0xFFF4F8FC),
               ),
               child: Icon(icon, color: AppColors.primary, size: 26),
             ),
@@ -1316,10 +1439,10 @@ class _OptionDateTimeRow extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     value,
-                    style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 16.5,
-                      fontWeight: FontWeight.w700,
+                    style: TextStyle(
+                      color: selected ? AppColors.primary : AppColors.textMain,
+                      fontSize: 16,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
                       fontFamilyFallback: _kKrFontFallback,
                     ),
                   ),
@@ -1327,10 +1450,10 @@ class _OptionDateTimeRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
-            const Icon(
-              Icons.chevron_right_rounded,
-              size: 22,
-              color: Color(0xFF9AA9BB),
+            Icon(
+              selected ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
+              size: selected ? 21 : 22,
+              color: selected ? AppColors.primary : const Color(0xFF9AA9BB),
             ),
           ],
         ),
@@ -1393,8 +1516,9 @@ class _MiniDatePickerWidget extends StatelessWidget {
                   '${month.year}년 ${month.month}월',
                   style: const TextStyle(
                     color: AppColors.textMain,
-                    fontSize: 19,
+                    fontSize: 20,
                     fontWeight: FontWeight.w700,
+                    fontFamilyFallback: _kKrFontFallback,
                   ),
                 ),
               ),
@@ -1415,24 +1539,25 @@ class _MiniDatePickerWidget extends StatelessWidget {
                     weekday,
                     style: const TextStyle(
                       color: AppColors.textMuted,
-                      fontSize: 11,
+                      fontSize: 11.5,
                       fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
                     ),
                   ),
                 ),
               ),
           ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: days.length,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
-            crossAxisSpacing: 3,
-            mainAxisSpacing: 3,
-            mainAxisExtent: 27,
+            crossAxisSpacing: 4,
+            mainAxisSpacing: 4,
+            mainAxisExtent: 30,
           ),
           itemBuilder: (context, index) {
             final day = days[index];
@@ -1448,8 +1573,8 @@ class _MiniDatePickerWidget extends StatelessWidget {
               child: Center(
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 120),
-                  width: 24,
-                  height: 24,
+                  width: 27,
+                  height: 27,
                   decoration: BoxDecoration(
                     color: selected ? AppColors.primary : Colors.transparent,
                     shape: BoxShape.circle,
@@ -1463,8 +1588,9 @@ class _MiniDatePickerWidget extends StatelessWidget {
                           : inMonth
                               ? AppColors.textMain
                               : const Color(0xFFCBD5E1),
-                      fontSize: 12,
+                      fontSize: 12.5,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      fontFamilyFallback: _kKrFontFallback,
                     ),
                   ),
                 ),
@@ -1473,34 +1599,11 @@ class _MiniDatePickerWidget extends StatelessWidget {
           },
         ),
         const SizedBox(height: 6),
-        const Divider(height: 1, color: AppColors.border),
-        const SizedBox(height: 6),
-        const Center(
-          child: Text(
-            '선택된 날짜',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Center(
-          child: Text(
-            selectedDateLabel,
-            style: const TextStyle(
-              color: AppColors.textMain,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        _PrimaryButton(
-          label: '날짜 선택 완료',
+        _PickerBottomSection(
+          summaryLabel: '선택된 날짜',
+          summaryValue: selectedDateLabel,
+          actionLabel: '날짜 선택 완료',
           onPressed: selectedDate == null ? null : onConfirm,
-          compact: true,
         ),
       ],
     );
@@ -1714,34 +1817,11 @@ class _MiniTimePickerWidgetState extends State<_MiniTimePickerWidget> {
           ),
         ),
         const SizedBox(height: 8),
-        const Divider(height: 1, color: AppColors.border),
-        const SizedBox(height: 6),
-        const Center(
-          child: Text(
-            '선택된 시간',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Center(
-          child: Text(
-            widget.selectedTimeLabel,
-            style: const TextStyle(
-              color: AppColors.textMain,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        _PrimaryButton(
-          label: '시간 선택 완료',
+        _PickerBottomSection(
+          summaryLabel: '선택된 시간',
+          summaryValue: widget.selectedTimeLabel,
+          actionLabel: '시간 선택 완료',
           onPressed: widget.onConfirm,
-          compact: true,
         ),
       ],
     );
@@ -1831,11 +1911,11 @@ class _MiniBackButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
       onPressed: onTap,
-      icon: const Icon(Icons.chevron_left_rounded, size: 18),
+      icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
       label: const Text('이전 단계'),
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(0, 34),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.fromLTRB(8, 6, 12, 6),
         side: const BorderSide(color: AppColors.border),
         foregroundColor: AppColors.textMuted,
         textStyle: const TextStyle(
@@ -1901,6 +1981,75 @@ class _MiniWheelPicker extends StatelessWidget {
       childDelegate: ListWheelChildBuilderDelegate(
         builder: (context, index) => itemBuilder(index),
       ),
+    );
+  }
+}
+
+class _PickerBottomSection extends StatelessWidget {
+  const _PickerBottomSection({
+    required this.summaryLabel,
+    required this.summaryValue,
+    required this.actionLabel,
+    required this.onPressed,
+  });
+
+  final String summaryLabel;
+  final String summaryValue;
+  final String actionLabel;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Divider(height: 1, color: AppColors.border),
+        const SizedBox(height: 11),
+        Text(
+          summaryLabel,
+          style: const TextStyle(
+            color: Color(0xFF8FA1B6),
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            fontFamilyFallback: _kKrFontFallback,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          summaryValue,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: AppColors.textMain,
+            fontSize: 17,
+            height: 1.3,
+            fontWeight: FontWeight.w800,
+            fontFamilyFallback: _kKrFontFallback,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 58,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              elevation: 0,
+              foregroundColor: Colors.white,
+              backgroundColor: onPressed == null
+                  ? const Color(0xFFE6EBF0)
+                  : AppColors.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                fontFamilyFallback: _kKrFontFallback,
+              ),
+            ),
+            onPressed: onPressed,
+            child: Text(actionLabel),
+          ),
+        ),
+      ],
     );
   }
 }
