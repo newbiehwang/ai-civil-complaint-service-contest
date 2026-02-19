@@ -5,12 +5,19 @@ enum MiniInterfaceType {
   none,
   listPicker,
   optionList,
+  datePicker,
+  timePicker,
   summaryCard,
   pathChooser,
   noiseDiaryBuilder,
   draftViewer,
   draftConfirm,
   statusFeed,
+}
+
+enum _PickerOwner {
+  incident,
+  noiseDiary,
 }
 
 enum DemoStep {
@@ -31,6 +38,12 @@ enum DemoStep {
   statusFeed,
   complete,
 }
+
+const List<String> _kKrFontFallback = <String>[
+  'Pretendard',
+  'Apple SD Gothic Neo',
+  'Noto Sans KR',
+];
 
 class MiniOption {
   const MiniOption({
@@ -110,6 +123,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   final FocusNode _focusNode = FocusNode();
 
   bool _isThinking = false;
+  bool _isAiAnswerReady = false;
+  int _aiAnimationNonce = 0;
   String _aiText = '안녕하세요. 어떤 소음이 가장\n불편하신가요?';
   DemoStep _step = DemoStep.waitingIssue;
   MiniInterfaceType _miniType = MiniInterfaceType.none;
@@ -124,6 +139,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String? _noiseDiaryDuration;
   String? _noiseDiaryType;
   String? _noiseDiaryImpact;
+  _PickerOwner _pickerOwner = _PickerOwner.incident;
+  DateTime _pickerMonth = DateTime.now();
+  DateTime? _pickerDateSelection;
+  bool _pickerIsAm = true;
+  int _pickerHour12 = 1;
+  int _pickerMinute = 0;
 
   @override
   void initState() {
@@ -144,12 +165,15 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     super.dispose();
   }
 
-  Future<void> _showThinkingThen(VoidCallback done) async {
+  Future<void> _showThinkingThen(
+    VoidCallback done, {
+    Duration duration = const Duration(milliseconds: 560),
+  }) async {
     FocusScope.of(context).unfocus();
     setState(() {
       _isThinking = true;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 560));
+    await Future<void>.delayed(duration);
     if (!mounted) return;
     setState(() {
       _isThinking = false;
@@ -167,11 +191,20 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       FocusScope.of(context).unfocus();
     }
     setState(() {
+      _aiAnimationNonce += 1;
+      _isAiAnswerReady = false;
       _aiText = text;
       _step = step;
       _miniType = miniType;
       _options = options;
       _selectedOptionIds.clear();
+    });
+  }
+
+  void _handleAiTextAnimationCompleted() {
+    if (!mounted || _isThinking || _isAiAnswerReady) return;
+    setState(() {
+      _isAiAnswerReady = true;
     });
   }
 
@@ -194,55 +227,85 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _noiseDiaryImpact != null;
   }
 
-  Future<void> _pickIncidentDate() async {
+  void _openIncidentDatePicker() => _openDatePicker(_PickerOwner.incident);
+  void _openIncidentTimePicker() => _openTimePicker(_PickerOwner.incident);
+  void _openNoiseDiaryDatePicker() => _openDatePicker(_PickerOwner.noiseDiary);
+  void _openNoiseDiaryTimePicker() => _openTimePicker(_PickerOwner.noiseDiary);
+
+  void _openDatePicker(_PickerOwner owner) {
     final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _incidentDate ?? now,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 1),
-      locale: const Locale('ko'),
-    );
-    if (picked == null) return;
+    final selected = owner == _PickerOwner.noiseDiary ? _noiseDiaryDate : _incidentDate;
+    final seed = selected ?? now;
     setState(() {
-      _incidentDate = picked;
+      _pickerOwner = owner;
+      _pickerMonth = DateTime(seed.year, seed.month, 1);
+      _pickerDateSelection = DateTime(seed.year, seed.month, seed.day);
+      _miniType = MiniInterfaceType.datePicker;
     });
   }
 
-  Future<void> _pickIncidentTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _incidentTime ?? const TimeOfDay(hour: 14, minute: 30),
-    );
-    if (picked == null) return;
+  void _openTimePicker(_PickerOwner owner) {
+    final seed = owner == _PickerOwner.noiseDiary
+        ? (_noiseDiaryTime ?? const TimeOfDay(hour: 22, minute: 10))
+        : (_incidentTime ?? const TimeOfDay(hour: 14, minute: 30));
+    final hour12 = seed.hour % 12 == 0 ? 12 : seed.hour % 12;
+
     setState(() {
-      _incidentTime = picked;
+      _pickerOwner = owner;
+      _pickerIsAm = seed.hour < 12;
+      _pickerHour12 = hour12;
+      _pickerMinute = seed.minute;
+      _miniType = MiniInterfaceType.timePicker;
     });
   }
 
-  Future<void> _pickNoiseDiaryDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _noiseDiaryDate ?? now,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 1),
-      locale: const Locale('ko'),
-    );
-    if (picked == null) return;
+  void _movePickerMonth(int delta) {
     setState(() {
-      _noiseDiaryDate = picked;
+      _pickerMonth = DateTime(_pickerMonth.year, _pickerMonth.month + delta, 1);
     });
   }
 
-  Future<void> _pickNoiseDiaryTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _noiseDiaryTime ?? const TimeOfDay(hour: 22, minute: 10),
-    );
-    if (picked == null) return;
+  void _selectPickerDate(DateTime day) {
     setState(() {
-      _noiseDiaryTime = picked;
+      _pickerDateSelection = DateTime(day.year, day.month, day.day);
+    });
+  }
+
+  void _cancelPicker() {
+    setState(() {
+      _miniType = _pickerOwner == _PickerOwner.noiseDiary
+          ? MiniInterfaceType.noiseDiaryBuilder
+          : MiniInterfaceType.optionList;
+    });
+  }
+
+  void _confirmDatePicker() {
+    final selected = _pickerDateSelection;
+    if (selected == null) return;
+    setState(() {
+      if (_pickerOwner == _PickerOwner.noiseDiary) {
+        _noiseDiaryDate = selected;
+        _miniType = MiniInterfaceType.noiseDiaryBuilder;
+      } else {
+        _incidentDate = selected;
+        _miniType = MiniInterfaceType.optionList;
+      }
+    });
+  }
+
+  void _confirmTimePicker() {
+    final hour24 = _pickerIsAm
+        ? (_pickerHour12 % 12)
+        : ((_pickerHour12 % 12) + 12);
+    final selected = TimeOfDay(hour: hour24, minute: _pickerMinute);
+    setState(() {
+      if (_pickerOwner == _PickerOwner.noiseDiary) {
+        _noiseDiaryTime = selected;
+        _miniType = MiniInterfaceType.noiseDiaryBuilder;
+      } else {
+        _incidentTime = selected;
+        _miniType = MiniInterfaceType.optionList;
+      }
     });
   }
 
@@ -291,12 +354,15 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _handleTextSend() {
     final input = _inputController.text.trim();
-    if (input.isEmpty || _isThinking) return;
+    if (input.isEmpty || !_isUiReadyAfterAi) return;
 
     _inputController.clear();
 
     if (_step == DemoStep.waitingIssue) {
       _data = _data.copyWith(userIssue: input);
+      final thinkingDuration = input == '1'
+          ? const Duration(seconds: 3)
+          : const Duration(milliseconds: 560);
       _showThinkingThen(() {
         _setAi(
           text: '윗집 소음 때문에 많이 힘드시겠어요.\n지금도 소음이 계속되나요?',
@@ -308,7 +374,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             MiniOption(id: 'noise-now-repeat', label: '자주 반복'),
           ],
         );
-      });
+      }, duration: thinkingDuration);
       return;
     }
 
@@ -450,15 +516,26 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
   }
 
+  bool get _isUiReadyAfterAi => !_isThinking && _isAiAnswerReady;
   bool get _isInputEnabled => _miniType == MiniInterfaceType.none;
+  bool get _shouldShowMiniInterface =>
+      _miniType != MiniInterfaceType.none && _isUiReadyAfterAi;
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final aiFontSize = width < 390 ? 24.0 : 26.0;
+    final aiTextStyle = TextStyle(
+      color: AppColors.primary,
+      fontSize: aiFontSize,
+      height: 1.36,
+      fontWeight: FontWeight.w500,
+    );
 
     final inputPlaceholder = _isThinking
         ? '답변을 준비하고 있어요.'
+        : !_isAiAnswerReady
+            ? 'AI 답변을 출력하고 있어요.'
         : _miniType == MiniInterfaceType.none
             ? (_step == DemoStep.waitingRevision
                 ? '수정 내용을 입력해 주세요.'
@@ -480,33 +557,23 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 260),
                         child: _isThinking
-                            ? const Align(
-                                key: ValueKey('thinking'),
+                            ? Align(
+                                key: const ValueKey('thinking'),
                                 alignment: Alignment.topLeft,
-                                child: Text(
-                                  '답변을 준비하고 있어요.',
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontSize: 22,
-                                    height: 1.35,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                child: _ThinkingWaveText(
+                                  text: '답변을 준비하고 있어요.',
+                                  style: aiTextStyle,
                                 ),
                               )
                             : Align(
-                                key: ValueKey(_aiText),
+                                key: ValueKey('ai-text-$_aiAnimationNonce'),
                                 alignment: Alignment.topLeft,
                                 child: _AiCharFadeText(
                                   text: _aiText,
                                   charStep: const Duration(milliseconds: 40),
                                   fadeDuration: const Duration(milliseconds: 180),
-                                  style: TextStyle(
-                                    color: AppColors.primary,
-                                    fontSize: aiFontSize,
-                                    height: 1.36,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                  style: aiTextStyle,
+                                  onCompleted: _handleAiTextAnimationCompleted,
                                 ),
                               ),
                       ),
@@ -518,15 +585,44 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                     top: 16,
                     child: _ChatTopBar(onRestart: widget.onRestart),
                   ),
-                  if (_miniType != MiniInterfaceType.none)
-                    Positioned(
-                      left: 22,
-                      right: 22,
-                      bottom: 92,
-                      child: _MiniInterfaceCard(
-                        child: _buildMiniInterface(context),
-                      ),
+                  Positioned(
+                    left: 22,
+                    right: 22,
+                    bottom: 92,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 280),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        final slide = Tween<Offset>(
+                          begin: const Offset(0, 0.05),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        );
+                        return FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: slide,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: _shouldShowMiniInterface
+                          ? _MiniInterfaceCard(
+                              key: ValueKey(
+                                'mini-${_miniType.name}-$_aiAnimationNonce',
+                              ),
+                              child: _buildMiniInterface(context),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey('mini-hidden'),
+                            ),
                     ),
+                  ),
                   Positioned(
                     left: 22,
                     right: 22,
@@ -535,7 +631,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                       controller: _inputController,
                       focusNode: _focusNode,
                       placeholder: inputPlaceholder,
-                      enabled: _isInputEnabled && !_isThinking,
+                      enabled: _isInputEnabled && _isUiReadyAfterAi,
                       sendEnabled: _isSendEnabled,
                       onSend: _handleSendPressed,
                     ),
@@ -550,7 +646,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   }
 
   bool get _isSendEnabled {
-    if (_isThinking) return false;
+    if (!_isUiReadyAfterAi) return false;
     if (_miniType == MiniInterfaceType.none) return _inputController.text.trim().isNotEmpty;
     return _miniType == MiniInterfaceType.listPicker && _selectedOptionIds.isNotEmpty;
   }
@@ -581,10 +677,40 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         return _OptionListWidget(
           dateLabel: _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
           timeLabel: _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
-          onPickDate: _pickIncidentDate,
-          onPickTime: _pickIncidentTime,
+          onPickDate: _openIncidentDatePicker,
+          onPickTime: _openIncidentTimePicker,
           onSubmit: _submitIncidentDateTime,
           canSubmit: _incidentDate != null && _incidentTime != null,
+        );
+      case MiniInterfaceType.datePicker:
+        return _MiniDatePickerWidget(
+          month: _pickerMonth,
+          selectedDate: _pickerDateSelection,
+          onPickDate: _selectPickerDate,
+          onPrevMonth: () => _movePickerMonth(-1),
+          onNextMonth: () => _movePickerMonth(1),
+          onBack: _cancelPicker,
+          onConfirm: _confirmDatePicker,
+          selectedDateLabel: _pickerDateSelection == null
+              ? '선택해 주세요'
+              : _formatDate(_pickerDateSelection!),
+        );
+      case MiniInterfaceType.timePicker:
+        return _MiniTimePickerWidget(
+          isAm: _pickerIsAm,
+          hour12: _pickerHour12,
+          minute: _pickerMinute,
+          onBack: _cancelPicker,
+          onConfirm: _confirmTimePicker,
+          onSelectMeridiem: (isAm) => setState(() => _pickerIsAm = isAm),
+          onSelectHour: (hour) => setState(() => _pickerHour12 = hour),
+          onSelectMinute: (minute) => setState(() => _pickerMinute = minute),
+          selectedTimeLabel: _formatTime(
+            TimeOfDay(
+              hour: _pickerIsAm ? (_pickerHour12 % 12) : ((_pickerHour12 % 12) + 12),
+              minute: _pickerMinute,
+            ),
+          ),
         );
       case MiniInterfaceType.summaryCard:
         return _SummaryCardWidget(
@@ -651,8 +777,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         return _NoiseDiaryBuilderWidget(
           dateLabel: _noiseDiaryDate == null ? '선택해 주세요' : _formatDate(_noiseDiaryDate!),
           timeLabel: _noiseDiaryTime == null ? '선택해 주세요' : _formatTime(_noiseDiaryTime!),
-          onPickDate: _pickNoiseDiaryDate,
-          onPickTime: _pickNoiseDiaryTime,
+          onPickDate: _openNoiseDiaryDatePicker,
+          onPickTime: _openNoiseDiaryTimePicker,
           selectedDuration: _noiseDiaryDuration,
           selectedType: _noiseDiaryType,
           selectedImpact: _noiseDiaryImpact,
@@ -838,20 +964,35 @@ class _BackIconButtonState extends State<_BackIconButton> {
 }
 
 class _MiniInterfaceCard extends StatelessWidget {
-  const _MiniInterfaceCard({required this.child});
+  const _MiniInterfaceCard({
+    super.key,
+    required this.child,
+  });
 
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxHeight: 510),
+      constraints: const BoxConstraints(maxHeight: 460),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: AppColors.border),
         borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x18305A78),
+            blurRadius: 22,
+            offset: Offset(0, 9),
+          ),
+          BoxShadow(
+            color: Color(0x0C305A78),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+      padding: const EdgeInsets.fromLTRB(18, 15, 18, 15),
       child: child,
     );
   }
@@ -940,29 +1081,117 @@ class _ListPickerWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const maxVisibleOptions = 5;
+    const optionHeight = 58.0;
+    const optionGap = 12.0;
+    const maxOptionsHeight =
+        (optionHeight * maxVisibleOptions) + (optionGap * (maxVisibleOptions - 1));
+    final optionsColumn = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < options.length; i++) ...[
+          Padding(
+            padding: EdgeInsets.only(bottom: i == options.length - 1 ? 0 : optionGap),
+            child: _ListPickerOptionButton(
+              selected: selectedIds.contains(options[i].id),
+              label: options[i].label,
+              onTap: () => onTapOption(options[i].id),
+            ),
+          ),
+        ],
+      ],
+    );
+
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           '단일 선택',
           style: TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            height: 16 / 12,
+            fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: 8),
-        ...options.map(
-          (option) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _SelectableCardButton(
-              selected: selectedIds.contains(option.id),
-              title: option.label,
-              onTap: () => onTapOption(option.id),
+        const SizedBox(height: 12),
+        if (options.length > maxVisibleOptions)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: maxOptionsHeight),
+            child: SingleChildScrollView(child: optionsColumn),
+          )
+        else
+          optionsColumn,
+      ],
+    );
+  }
+}
+
+class _ListPickerOptionButton extends StatefulWidget {
+  const _ListPickerOptionButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_ListPickerOptionButton> createState() => _ListPickerOptionButtonState();
+}
+
+class _ListPickerOptionButtonState extends State<_ListPickerOptionButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.selected;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
+      onTapDown: (_) => _setPressed(true),
+      onTapCancel: () => _setPressed(false),
+      onTapUp: (_) => _setPressed(false),
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOutCubic,
+        scale: _pressed ? 0.99 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          height: selected ? 61 : 58,
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFF0F7FF) : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? AppColors.primary : const Color(0xFFF3F4F6),
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Text(
+            widget.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: selected ? AppColors.primary : const Color(0xFF1F2937),
+              fontSize: selected ? 16.8 : 16,
+              height: 24 / 16,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -987,29 +1216,45 @@ class _OptionListWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           '날짜 및 시간 선택',
           style: TextStyle(
-            color: AppColors.textMuted,
+            color: Color(0xFF8B99AC),
             fontSize: 13,
-            fontWeight: FontWeight.w700,
+            height: 18 / 13,
+            fontWeight: FontWeight.w600,
+            fontFamilyFallback: _kKrFontFallback,
           ),
         ),
         const SizedBox(height: 10),
-        _OptionDateTimeRow(
-          icon: Icons.calendar_month_rounded,
-          label: '발생 날짜',
-          value: dateLabel,
-          onTap: onPickDate,
-        ),
-        const SizedBox(height: 8),
-        _OptionDateTimeRow(
-          icon: Icons.schedule_rounded,
-          label: '발생 시간',
-          value: timeLabel,
-          onTap: onPickTime,
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: Colors.white,
+          ),
+          child: Column(
+            children: [
+              _OptionDateTimeRow(
+                icon: Icons.calendar_month_rounded,
+                label: '발생 날짜',
+                value: dateLabel,
+                onTap: onPickDate,
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14),
+                child: Divider(height: 1, color: AppColors.border),
+              ),
+              _OptionDateTimeRow(
+                icon: Icons.schedule_rounded,
+                label: '발생 시간',
+                value: timeLabel,
+                onTap: onPickTime,
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         _PrimaryButton(
@@ -1039,25 +1284,22 @@ class _OptionDateTimeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 52,
+              height: 52,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: AppColors.blueTint,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE6EEF5)),
+                color: const Color(0xFFF4F8FC),
               ),
-              child: Icon(icon, color: AppColors.primary),
+              child: Icon(icon, color: AppColors.primary, size: 26),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1065,9 +1307,10 @@ class _OptionDateTimeRow extends StatelessWidget {
                   Text(
                     label,
                     style: const TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF7E8EA4),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamilyFallback: _kKrFontFallback,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -1075,15 +1318,588 @@ class _OptionDateTimeRow extends StatelessWidget {
                     value,
                     style: const TextStyle(
                       color: AppColors.textMain,
-                      fontSize: 16,
+                      fontSize: 16.5,
                       fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
                     ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(width: 6),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 22,
+              color: Color(0xFF9AA9BB),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MiniDatePickerWidget extends StatelessWidget {
+  const _MiniDatePickerWidget({
+    required this.month,
+    required this.selectedDate,
+    required this.onPickDate,
+    required this.onPrevMonth,
+    required this.onNextMonth,
+    required this.onBack,
+    required this.onConfirm,
+    required this.selectedDateLabel,
+  });
+
+  final DateTime month;
+  final DateTime? selectedDate;
+  final ValueChanged<DateTime> onPickDate;
+  final VoidCallback onPrevMonth;
+  final VoidCallback onNextMonth;
+  final VoidCallback onBack;
+  final VoidCallback onConfirm;
+  final String selectedDateLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = _calendarDays(month);
+    const weekdayLabels = ['일', '월', '화', '수', '목', '금', '토'];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '날짜 선택',
+          style: TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            height: 16 / 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _MiniBackButton(onTap: onBack),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _MiniIconCircleButton(
+              icon: Icons.chevron_left_rounded,
+              onTap: onPrevMonth,
+            ),
+            Expanded(
+              child: Center(
+                child: Text(
+                  '${month.year}년 ${month.month}월',
+                  style: const TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            _MiniIconCircleButton(
+              icon: Icons.chevron_right_rounded,
+              onTap: onNextMonth,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            for (final weekday in weekdayLabels)
+              Expanded(
+                child: Center(
+                  child: Text(
+                    weekday,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: days.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            crossAxisSpacing: 3,
+            mainAxisSpacing: 3,
+            mainAxisExtent: 27,
+          ),
+          itemBuilder: (context, index) {
+            final day = days[index];
+            final inMonth = day.month == month.month;
+            final selected = selectedDate != null &&
+                day.year == selectedDate!.year &&
+                day.month == selectedDate!.month &&
+                day.day == selectedDate!.day;
+
+            return InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => onPickDate(day),
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.primary : Colors.transparent,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${day.day}',
+                    style: TextStyle(
+                      color: selected
+                          ? Colors.white
+                          : inMonth
+                              ? AppColors.textMain
+                              : const Color(0xFFCBD5E1),
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 6),
+        const Divider(height: 1, color: AppColors.border),
+        const SizedBox(height: 6),
+        const Center(
+          child: Text(
+            '선택된 날짜',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Center(
+          child: Text(
+            selectedDateLabel,
+            style: const TextStyle(
+              color: AppColors.textMain,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        _PrimaryButton(
+          label: '날짜 선택 완료',
+          onPressed: selectedDate == null ? null : onConfirm,
+          compact: true,
+        ),
+      ],
+    );
+  }
+
+  List<DateTime> _calendarDays(DateTime month) {
+    final first = DateTime(month.year, month.month, 1);
+    final firstNextMonth = DateTime(month.year, month.month + 1, 1);
+    final daysInMonth = firstNextMonth.subtract(const Duration(days: 1)).day;
+    final leading = first.weekday % 7;
+    final totalCells = ((leading + daysInMonth + 6) ~/ 7) * 7;
+    final start = first.subtract(Duration(days: leading));
+    return List<DateTime>.generate(
+      totalCells,
+      (i) => DateTime(start.year, start.month, start.day + i),
+      growable: false,
+    );
+  }
+}
+
+class _MiniTimePickerWidget extends StatefulWidget {
+  const _MiniTimePickerWidget({
+    required this.isAm,
+    required this.hour12,
+    required this.minute,
+    required this.onBack,
+    required this.onConfirm,
+    required this.onSelectMeridiem,
+    required this.onSelectHour,
+    required this.onSelectMinute,
+    required this.selectedTimeLabel,
+  });
+
+  final bool isAm;
+  final int hour12;
+  final int minute;
+  final VoidCallback onBack;
+  final VoidCallback onConfirm;
+  final ValueChanged<bool> onSelectMeridiem;
+  final ValueChanged<int> onSelectHour;
+  final ValueChanged<int> onSelectMinute;
+  final String selectedTimeLabel;
+
+  @override
+  State<_MiniTimePickerWidget> createState() => _MiniTimePickerWidgetState();
+}
+
+class _MiniTimePickerWidgetState extends State<_MiniTimePickerWidget> {
+  late final FixedExtentScrollController _hourController;
+  late final FixedExtentScrollController _minuteController;
+
+  @override
+  void initState() {
+    super.initState();
+    _hourController = FixedExtentScrollController(
+      initialItem: (widget.hour12 - 1) + (12 * 200),
+    );
+    _minuteController = FixedExtentScrollController(
+      initialItem: widget.minute + (60 * 100),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _MiniTimePickerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.hour12 != widget.hour12) {
+      _hourController.jumpToItem((widget.hour12 - 1) + (12 * 200));
+    }
+    if (oldWidget.minute != widget.minute) {
+      _minuteController.jumpToItem(widget.minute + (60 * 100));
+    }
+  }
+
+  @override
+  void dispose() {
+    _hourController.dispose();
+    _minuteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '시간 선택',
+          style: TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            height: 16 / 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _MiniBackButton(onTap: widget.onBack),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _MeridiemToggleButton(
+                label: '오전',
+                selected: widget.isAm,
+                onTap: () => widget.onSelectMeridiem(true),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _MeridiemToggleButton(
+                label: '오후',
+                selected: !widget.isAm,
+                onTap: () => widget.onSelectMeridiem(false),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          height: 136,
+          clipBehavior: Clip.hardEdge,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.border),
+            color: const Color(0xFFF9FAFB),
+          ),
+          child: Stack(
+            children: [
+              Align(
+                alignment: Alignment.center,
+                child: Container(
+                  height: 36,
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.borderStrong),
+                    color: Colors.white,
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x14000000),
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.topCenter,
+                child: IgnorePointer(
+                  child: Container(
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFFF9FAFB), Color(0x00F9FAFB)],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: IgnorePointer(
+                  child: Container(
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0x00F9FAFB), Color(0xFFF9FAFB)],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _MiniWheelPicker(
+                      controller: _hourController,
+                      itemExtent: 36,
+                      onIndexChanged: (index) => widget.onSelectHour((index % 12) + 1),
+                      itemBuilder: (index) {
+                        final hour = (index % 12) + 1;
+                        return _wheelText(
+                          hour.toString().padLeft(2, '0'),
+                          selected: hour == widget.hour12,
+                        );
+                      },
+                    ),
+                  ),
+                  Expanded(
+                    child: _MiniWheelPicker(
+                      controller: _minuteController,
+                      itemExtent: 36,
+                      onIndexChanged: (index) => widget.onSelectMinute(index % 60),
+                      itemBuilder: (index) {
+                        final minute = index % 60;
+                        return _wheelText(
+                          minute.toString().padLeft(2, '0'),
+                          selected: minute == widget.minute,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Divider(height: 1, color: AppColors.border),
+        const SizedBox(height: 6),
+        const Center(
+          child: Text(
+            '선택된 시간',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Center(
+          child: Text(
+            widget.selectedTimeLabel,
+            style: const TextStyle(
+              color: AppColors.textMain,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        _PrimaryButton(
+          label: '시간 선택 완료',
+          onPressed: widget.onConfirm,
+          compact: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _wheelText(String text, {required bool selected}) {
+    return Center(
+      child: Text(
+        text,
+        style: TextStyle(
+          color: selected ? AppColors.primary : AppColors.textMuted,
+          fontSize: selected ? 20 : 14.5,
+          fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+          letterSpacing: selected ? 0.2 : 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _MeridiemToggleButton extends StatefulWidget {
+  const _MeridiemToggleButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_MeridiemToggleButton> createState() => _MeridiemToggleButtonState();
+}
+
+class _MeridiemToggleButtonState extends State<_MeridiemToggleButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _setPressed(true),
+      onTapCancel: () => _setPressed(false),
+      onTapUp: (_) => _setPressed(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 110),
+        scale: _pressed ? 0.985 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: widget.selected ? const Color(0xFFF0F7FF) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: widget.selected ? AppColors.primary : AppColors.border,
+              width: widget.selected ? 1.4 : 1,
+            ),
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              color: widget.selected ? AppColors.primary : AppColors.textMuted,
+              fontSize: widget.selected ? 16 : 15,
+              fontWeight: widget.selected ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniBackButton extends StatelessWidget {
+  const _MiniBackButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: const Icon(Icons.chevron_left_rounded, size: 18),
+      label: const Text('이전 단계'),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 34),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        side: const BorderSide(color: AppColors.border),
+        foregroundColor: AppColors.textMuted,
+        textStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+      ),
+    );
+  }
+}
+
+class _MiniIconCircleButton extends StatelessWidget {
+  const _MiniIconCircleButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 34,
+      height: 34,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          shape: const CircleBorder(),
+          padding: EdgeInsets.zero,
+          side: const BorderSide(color: AppColors.border),
+          foregroundColor: AppColors.textMuted,
+        ),
+        child: Icon(icon, size: 19),
+      ),
+    );
+  }
+}
+
+class _MiniWheelPicker extends StatelessWidget {
+  const _MiniWheelPicker({
+    required this.controller,
+    required this.itemExtent,
+    required this.onIndexChanged,
+    required this.itemBuilder,
+  });
+
+  final FixedExtentScrollController controller;
+  final double itemExtent;
+  final ValueChanged<int> onIndexChanged;
+  final Widget Function(int index) itemBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListWheelScrollView.useDelegate(
+      controller: controller,
+      itemExtent: itemExtent,
+      perspective: 0.004,
+      diameterRatio: 1.8,
+      useMagnifier: true,
+      magnification: 1.08,
+      overAndUnderCenterOpacity: 0.62,
+      physics: const FixedExtentScrollPhysics(),
+      onSelectedItemChanged: onIndexChanged,
+      childDelegate: ListWheelChildBuilderDelegate(
+        builder: (context, index) => itemBuilder(index),
       ),
     );
   }
@@ -1110,80 +1926,100 @@ class _SummaryCardWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           '요약 확인',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              for (var i = 0; i < rows.length; i++) ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(top: 7),
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            rows[i].label,
-                            style: const TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            rows[i].value,
-                            style: const TextStyle(
-                              color: AppColors.textMain,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (i < rows.length - 1)
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(18, 12, 0, 12),
-                    child: Divider(height: 1, color: AppColors.border),
-                  ),
-              ],
-            ],
+          style: TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            height: 16 / 12,
+            fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: 10),
-        _PrimaryButton(label: '계속하기', onPressed: onContinue, compact: true),
         const SizedBox(height: 8),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 250),
+          child: SingleChildScrollView(
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.border),
+              ),
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < rows.length; i++) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                rows[i].label,
+                                style: const TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                rows[i].value,
+                                style: const TextStyle(
+                                  color: AppColors.textMain,
+                                  fontSize: 16,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (i < rows.length - 1)
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 10, 0, 10),
+                        child: Divider(height: 1, color: AppColors.border),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 9),
+        _PrimaryButton(label: '계속하기', onPressed: onContinue, compact: true),
+        const SizedBox(height: 7),
         OutlinedButton(
           onPressed: onEdit,
           style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(50),
+            minimumSize: const Size.fromHeight(48),
             side: const BorderSide(color: AppColors.borderStrong),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           child: const Text(
             '수정',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 18, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ],
@@ -1776,20 +2612,108 @@ class _AiCharFadeText extends StatefulWidget {
     required this.style,
     required this.charStep,
     required this.fadeDuration,
+    this.onCompleted,
   });
 
   final String text;
   final TextStyle style;
   final Duration charStep;
   final Duration fadeDuration;
+  final VoidCallback? onCompleted;
 
   @override
   State<_AiCharFadeText> createState() => _AiCharFadeTextState();
 }
 
+class _ThinkingWaveText extends StatefulWidget {
+  const _ThinkingWaveText({
+    required this.text,
+    required this.style,
+  });
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  State<_ThinkingWaveText> createState() => _ThinkingWaveTextState();
+}
+
+class _ThinkingWaveTextState extends State<_ThinkingWaveText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final baseStyle = widget.style.copyWith(color: AppColors.textMuted);
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return Stack(
+          children: [
+            Text(
+              widget.text,
+              textAlign: TextAlign.left,
+              style: baseStyle,
+            ),
+            ShaderMask(
+              blendMode: BlendMode.srcATop,
+              shaderCallback: (bounds) {
+                final width = bounds.width;
+                final shimmerWidth = width * 0.42;
+                final travel = width + shimmerWidth * 2;
+                final offsetX = -shimmerWidth + (travel * _controller.value);
+
+                return LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    Colors.transparent,
+                    Colors.white.withValues(alpha: 0.85),
+                    Colors.transparent,
+                  ],
+                  stops: const [0, 0.52, 1],
+                ).createShader(
+                  Rect.fromLTWH(
+                    offsetX - shimmerWidth,
+                    0,
+                    shimmerWidth * 2,
+                    bounds.height,
+                  ),
+                );
+              },
+              child: Text(
+                widget.text,
+                textAlign: TextAlign.left,
+                style: baseStyle,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _AiCharFadeTextState extends State<_AiCharFadeText>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  bool _completionNotified = false;
 
   List<String> _chunks = const [];
   int _totalMs = 0;
@@ -1804,7 +2728,8 @@ class _AiCharFadeTextState extends State<_AiCharFadeText>
         if (mounted) {
           setState(() {});
         }
-      });
+      })
+      ..addStatusListener(_handleStatusChanged);
     _restartCharFade();
   }
 
@@ -1820,22 +2745,44 @@ class _AiCharFadeTextState extends State<_AiCharFadeText>
 
   @override
   void dispose() {
+    _controller.removeStatusListener(_handleStatusChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  void _handleStatusChanged(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      _notifyCompleted();
+    }
   }
 
   List<String> _splitCharChunks(String text) {
     return text.runes.map(String.fromCharCode).toList(growable: false);
   }
 
+  void _notifyCompleted() {
+    if (_completionNotified) return;
+    _completionNotified = true;
+    final onCompleted = widget.onCompleted;
+    if (onCompleted == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      onCompleted();
+    });
+  }
+
   void _restartCharFade() {
     _chunks = _splitCharChunks(widget.text);
     final stepMs = widget.charStep.inMilliseconds;
     final fadeMs = widget.fadeDuration.inMilliseconds;
+    _completionNotified = false;
     _totalMs = _chunks.isEmpty ? 0 : ((_chunks.length - 1) * stepMs) + fadeMs;
     _controller.stop();
     _controller.value = 0;
-    if (_totalMs <= 0) return;
+    if (_totalMs <= 0) {
+      _notifyCompleted();
+      return;
+    }
     _controller.duration = Duration(milliseconds: _totalMs);
     _controller.forward(from: 0);
   }
