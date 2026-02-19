@@ -144,12 +144,15 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     super.dispose();
   }
 
-  Future<void> _showThinkingThen(VoidCallback done) async {
+  Future<void> _showThinkingThen(
+    VoidCallback done, {
+    Duration duration = const Duration(milliseconds: 560),
+  }) async {
     FocusScope.of(context).unfocus();
     setState(() {
       _isThinking = true;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 560));
+    await Future<void>.delayed(duration);
     if (!mounted) return;
     setState(() {
       _isThinking = false;
@@ -297,6 +300,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
     if (_step == DemoStep.waitingIssue) {
       _data = _data.copyWith(userIssue: input);
+      final thinkingDuration = input == '1'
+          ? const Duration(seconds: 3)
+          : const Duration(milliseconds: 560);
       _showThinkingThen(() {
         _setAi(
           text: '윗집 소음 때문에 많이 힘드시겠어요.\n지금도 소음이 계속되나요?',
@@ -308,7 +314,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             MiniOption(id: 'noise-now-repeat', label: '자주 반복'),
           ],
         );
-      });
+      }, duration: thinkingDuration);
       return;
     }
 
@@ -456,6 +462,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final aiFontSize = width < 390 ? 24.0 : 26.0;
+    final aiTextStyle = TextStyle(
+      color: AppColors.primary,
+      fontSize: aiFontSize,
+      height: 1.36,
+      fontWeight: FontWeight.w500,
+    );
 
     final inputPlaceholder = _isThinking
         ? '답변을 준비하고 있어요.'
@@ -480,18 +492,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 260),
                         child: _isThinking
-                            ? const Align(
-                                key: ValueKey('thinking'),
+                            ? Align(
+                                key: const ValueKey('thinking'),
                                 alignment: Alignment.topLeft,
-                                child: Text(
-                                  '답변을 준비하고 있어요.',
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontSize: 22,
-                                    height: 1.35,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                child: _ThinkingWaveText(
+                                  text: '답변을 준비하고 있어요.',
+                                  style: aiTextStyle,
                                 ),
                               )
                             : Align(
@@ -501,12 +507,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                                   text: _aiText,
                                   charStep: const Duration(milliseconds: 40),
                                   fadeDuration: const Duration(milliseconds: 180),
-                                  style: TextStyle(
-                                    color: AppColors.primary,
-                                    fontSize: aiFontSize,
-                                    height: 1.36,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                  style: aiTextStyle,
                                 ),
                               ),
                       ),
@@ -1785,6 +1786,91 @@ class _AiCharFadeText extends StatefulWidget {
 
   @override
   State<_AiCharFadeText> createState() => _AiCharFadeTextState();
+}
+
+class _ThinkingWaveText extends StatefulWidget {
+  const _ThinkingWaveText({
+    required this.text,
+    required this.style,
+  });
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  State<_ThinkingWaveText> createState() => _ThinkingWaveTextState();
+}
+
+class _ThinkingWaveTextState extends State<_ThinkingWaveText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final baseStyle = widget.style.copyWith(color: AppColors.textMuted);
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return Stack(
+          children: [
+            Text(
+              widget.text,
+              textAlign: TextAlign.left,
+              style: baseStyle,
+            ),
+            ShaderMask(
+              blendMode: BlendMode.srcATop,
+              shaderCallback: (bounds) {
+                final width = bounds.width;
+                final shimmerWidth = width * 0.42;
+                final travel = width + shimmerWidth * 2;
+                final offsetX = -shimmerWidth + (travel * _controller.value);
+
+                return LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    Colors.transparent,
+                    Colors.white.withValues(alpha: 0.85),
+                    Colors.transparent,
+                  ],
+                  stops: const [0, 0.52, 1],
+                ).createShader(
+                  Rect.fromLTWH(
+                    offsetX - shimmerWidth,
+                    0,
+                    shimmerWidth * 2,
+                    bounds.height,
+                  ),
+                );
+              },
+              child: Text(
+                widget.text,
+                textAlign: TextAlign.left,
+                style: baseStyle,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _AiCharFadeTextState extends State<_AiCharFadeText>
