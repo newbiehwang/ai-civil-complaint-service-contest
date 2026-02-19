@@ -58,7 +58,7 @@ class _StartFrameFourState extends State<StartFrameFour>
             children: [
               Positioned(
                 left: (w - iconSize) / 2,
-                top: sy(303),
+                top: sy(287),
                 width: iconSize,
                 height: iconSize,
                 child: ScaleTransition(
