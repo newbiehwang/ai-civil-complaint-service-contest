@@ -6,6 +6,7 @@ import '../../theme/app_colors.dart';
 enum MiniInterfaceType {
   none,
   listPicker,
+  multiForm,
   optionList,
   datePicker,
   timePicker,
@@ -26,6 +27,7 @@ enum DemoStep {
   waitingIssue,
   noiseNow,
   safety,
+  multiForm,
   residence,
   timeBand,
   dateTime,
@@ -120,9 +122,22 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   static const _durations = ['10분 미만', '10~30분', '30분 이상', '모름'];
   static const _noiseTypes = ['쿵쿵', '음악', '가구 끄는 소리', '기타'];
   static const _impacts = ['수면 방해', '업무 방해', '불안', '기타'];
+  static const _residenceOptions = <MiniOption>[
+    MiniOption(id: 'residence-apartment', label: '아파트'),
+    MiniOption(id: 'residence-villa', label: '빌라'),
+    MiniOption(id: 'residence-officetel', label: '오피스텔'),
+    MiniOption(id: 'residence-other', label: '기타'),
+  ];
+  static const _timeBandOptions = <MiniOption>[
+    MiniOption(id: 'time-evening', label: '저녁'),
+    MiniOption(id: 'time-night', label: '심야'),
+    MiniOption(id: 'time-dawn', label: '새벽'),
+    MiniOption(id: 'time-irregular', label: '불규칙'),
+  ];
 
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _multiFormScrollController = ScrollController();
 
   bool _isThinking = false;
   bool _isAiAnswerReady = false;
@@ -136,6 +151,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   DateTime? _incidentDate;
   TimeOfDay? _incidentTime;
+  String? _multiResidenceId;
+  String? _multiTimeBandId;
   DateTime? _noiseDiaryDate;
   TimeOfDay? _noiseDiaryTime;
   String? _noiseDiaryDuration;
@@ -168,6 +185,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _inputController.removeListener(_handleInputControllerChanged);
     _inputController.dispose();
     _focusNode.dispose();
+    _multiFormScrollController.dispose();
     super.dispose();
   }
 
@@ -235,6 +253,29 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _noiseDiaryDuration != null &&
         _noiseDiaryType != null &&
         _noiseDiaryImpact != null;
+  }
+
+  bool get _isMultiFormReady {
+    return _multiResidenceId != null &&
+        _multiTimeBandId != null &&
+        _incidentDate != null &&
+        _incidentTime != null;
+  }
+
+  String? _optionIdByLabel(List<MiniOption> options, String? label) {
+    if (label == null) return null;
+    for (final option in options) {
+      if (option.label == label) return option.id;
+    }
+    return null;
+  }
+
+  String? _optionLabelById(List<MiniOption> options, String? id) {
+    if (id == null) return null;
+    for (final option in options) {
+      if (option.id == id) return option.label;
+    }
+    return null;
   }
 
   void _openIncidentDatePicker() => _openDatePicker(_PickerOwner.incident);
@@ -343,7 +384,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     setState(() {
       _miniType = _pickerOwner == _PickerOwner.noiseDiary
           ? MiniInterfaceType.noiseDiaryBuilder
-          : MiniInterfaceType.optionList;
+          : (_step == DemoStep.multiForm
+              ? MiniInterfaceType.multiForm
+              : MiniInterfaceType.optionList);
     });
   }
 
@@ -359,7 +402,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _miniType = MiniInterfaceType.noiseDiaryBuilder;
       } else {
         _incidentDate = safeSelected;
-        _miniType = MiniInterfaceType.optionList;
+        _miniType = _step == DemoStep.multiForm
+            ? MiniInterfaceType.multiForm
+            : MiniInterfaceType.optionList;
       }
     });
   }
@@ -375,9 +420,32 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _miniType = MiniInterfaceType.noiseDiaryBuilder;
       } else {
         _incidentTime = selected;
-        _miniType = MiniInterfaceType.optionList;
+        _miniType = _step == DemoStep.multiForm
+            ? MiniInterfaceType.multiForm
+            : MiniInterfaceType.optionList;
       }
     });
+  }
+
+  void _submitMultiForm() {
+    if (!_isMultiFormReady) return;
+
+    _data = _data.copyWith(
+      residence: _optionLabelById(_residenceOptions, _multiResidenceId),
+      timeBand: _optionLabelById(_timeBandOptions, _multiTimeBandId),
+      startedAtDate: _incidentDate,
+      startedAtTime: _incidentTime,
+    );
+
+    _setAi(
+      text: '정리해드릴게요.',
+      step: DemoStep.summary,
+      miniType: MiniInterfaceType.summaryCard,
+      options: const [
+        MiniOption(id: 'summary-edit', label: '수정'),
+        MiniOption(id: 'summary-next', label: '다음'),
+      ],
+    );
   }
 
   void _submitIncidentDateTime() {
@@ -580,17 +648,15 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _data = _data.copyWith(
           safety: _options.firstWhere((e) => e.id == selectedId).label,
         );
+        _multiResidenceId = null;
+        _multiTimeBandId = null;
+        _incidentDate = null;
+        _incidentTime = null;
         _showThinkingThen(() {
           _setAi(
-            text: '정식 접수를 위해 기본 정보 3가지만 확인할게요.\n거주 형태를 선택해 주세요.',
-            step: DemoStep.residence,
-            miniType: MiniInterfaceType.listPicker,
-            options: const [
-              MiniOption(id: 'residence-apartment', label: '아파트'),
-              MiniOption(id: 'residence-villa', label: '빌라'),
-              MiniOption(id: 'residence-officetel', label: '오피스텔'),
-              MiniOption(id: 'residence-other', label: '기타'),
-            ],
+            text: '정식 접수를 위해 기본 정보 3가지를 한 번에 입력해 주세요.',
+            step: DemoStep.multiForm,
+            miniType: MiniInterfaceType.multiForm,
           );
         });
         return;
@@ -832,6 +898,22 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           canSubmit: _selectedOptionIds.isNotEmpty,
           onSubmit: _handleListSelectionSubmit,
         );
+      case MiniInterfaceType.multiForm:
+        return _MultiFormWidget(
+          scrollController: _multiFormScrollController,
+          residenceOptions: _residenceOptions,
+          selectedResidenceId: _multiResidenceId,
+          onSelectResidence: (id) => setState(() => _multiResidenceId = id),
+          timeBandOptions: _timeBandOptions,
+          selectedTimeBandId: _multiTimeBandId,
+          onSelectTimeBand: (id) => setState(() => _multiTimeBandId = id),
+          dateLabel: _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
+          timeLabel: _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
+          onPickDate: _openIncidentDatePicker,
+          onPickTime: _openIncidentTimePicker,
+          canSubmit: _isMultiFormReady,
+          onSubmit: _submitMultiForm,
+        );
       case MiniInterfaceType.optionList:
         if (_step == DemoStep.evidence) {
           return _EvidenceOptionListWidget(
@@ -908,16 +990,14 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             );
           },
           onEdit: () {
+            _multiResidenceId = _optionIdByLabel(_residenceOptions, _data.residence);
+            _multiTimeBandId = _optionIdByLabel(_timeBandOptions, _data.timeBand);
+            _incidentDate = _data.startedAtDate;
+            _incidentTime = _data.startedAtTime;
             _setAi(
-              text: '수정할 정보를 다시 선택해 주세요.\n거주 형태부터 진행할게요.',
-              step: DemoStep.residence,
-              miniType: MiniInterfaceType.listPicker,
-              options: const [
-                MiniOption(id: 'residence-apartment', label: '아파트'),
-                MiniOption(id: 'residence-villa', label: '빌라'),
-                MiniOption(id: 'residence-officetel', label: '오피스텔'),
-                MiniOption(id: 'residence-other', label: '기타'),
-              ],
+              text: '수정할 정보를 다시 선택해 주세요.',
+              step: DemoStep.multiForm,
+              miniType: MiniInterfaceType.multiForm,
             );
           },
         );
@@ -1397,6 +1477,378 @@ class _ListPickerOptionButtonState extends State<_ListPickerOptionButton> {
         ),
       ),
     );
+  }
+}
+
+class _MultiFormWidget extends StatelessWidget {
+  const _MultiFormWidget({
+    required this.scrollController,
+    required this.residenceOptions,
+    required this.selectedResidenceId,
+    required this.onSelectResidence,
+    required this.timeBandOptions,
+    required this.selectedTimeBandId,
+    required this.onSelectTimeBand,
+    required this.dateLabel,
+    required this.timeLabel,
+    required this.onPickDate,
+    required this.onPickTime,
+    required this.canSubmit,
+    required this.onSubmit,
+  });
+
+  final ScrollController scrollController;
+  final List<MiniOption> residenceOptions;
+  final String? selectedResidenceId;
+  final ValueChanged<String> onSelectResidence;
+  final List<MiniOption> timeBandOptions;
+  final String? selectedTimeBandId;
+  final ValueChanged<String> onSelectTimeBand;
+  final String dateLabel;
+  final String timeLabel;
+  final VoidCallback onPickDate;
+  final VoidCallback onPickTime;
+  final bool canSubmit;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final containerHeight = (screenHeight * 0.50).clamp(360.0, 500.0);
+
+    return SizedBox(
+      height: containerHeight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              controller: scrollController,
+              key: const PageStorageKey<String>('multi-form-scroll'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '기본 정보 입력',
+                    style: TextStyle(
+                      color: Color(0xFF9CA3AF),
+                      fontSize: 12,
+                      height: 16 / 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    '거주 형태',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: residenceOptions,
+                    selectedId: selectedResidenceId,
+                    onSelect: onSelectResidence,
+                    iconBuilder: _residenceIconForOption,
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '주 발생 시간',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: timeBandOptions,
+                    selectedId: selectedTimeBandId,
+                    onSelect: onSelectTimeBand,
+                    iconBuilder: _timeBandIconForOption,
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '시작 시점',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormDateTimeRow(
+                    icon: Icons.calendar_month_rounded,
+                    label: '발생 날짜',
+                    value: dateLabel,
+                    onTap: onPickDate,
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormDateTimeRow(
+                    icon: Icons.schedule_rounded,
+                    label: '발생 시간',
+                    value: timeLabel,
+                    onTap: onPickTime,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _PrimaryButton(
+            label: '다음',
+            onPressed: canSubmit ? onSubmit : null,
+            compact: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MultiFormButtonGrid extends StatelessWidget {
+  const _MultiFormButtonGrid({
+    required this.options,
+    required this.selectedId,
+    required this.onSelect,
+    required this.iconBuilder,
+  });
+
+  final List<MiniOption> options;
+  final String? selectedId;
+  final ValueChanged<String> onSelect;
+  final IconData Function(String id) iconBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 12.0;
+        final width = ((constraints.maxWidth - spacing) / 2).clamp(120.0, 200.0);
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: 12,
+          children: [
+            for (final option in options)
+              SizedBox(
+                width: width,
+                child: _MultiFormGridButton(
+                  label: option.label,
+                  icon: iconBuilder(option.id),
+                  selected: selectedId == option.id,
+                  onTap: () => onSelect(option.id),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MultiFormGridButton extends StatefulWidget {
+  const _MultiFormGridButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_MultiFormGridButton> createState() => _MultiFormGridButtonState();
+}
+
+class _MultiFormGridButtonState extends State<_MultiFormGridButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.selected;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
+      onTapDown: (_) => _setPressed(true),
+      onTapCancel: () => _setPressed(false),
+      onTapUp: (_) => _setPressed(false),
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOutCubic,
+        scale: _pressed ? 0.985 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
+          height: 90,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: selected ? AppColors.primary : const Color(0xFFF3F4F6),
+              width: selected ? 1.5 : 1,
+            ),
+            boxShadow: selected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x12305A78),
+                      blurRadius: 8,
+                      offset: Offset(0, 3),
+                    ),
+                  ]
+                : const [
+                    BoxShadow(
+                      color: Color(0x08000000),
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                widget.icon,
+                size: 20,
+                color: selected ? AppColors.primary : const Color(0xFF8EA1B6),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                widget.label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: selected ? AppColors.primary : const Color(0xFF4B5563),
+                  fontSize: 16,
+                  height: 24 / 16,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  fontFamilyFallback: _kKrFontFallback,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MultiFormDateTimeRow extends StatelessWidget {
+  const _MultiFormDateTimeRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Ink(
+        color: Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE6EEF5)),
+                color: const Color(0xFFF4F8FC),
+              ),
+              child: Icon(icon, color: AppColors.primary, size: 26),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFF7E8EA4),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 22,
+              color: Color(0xFF9AA9BB),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _residenceIconForOption(String id) {
+  switch (id) {
+    case 'residence-apartment':
+      return Icons.apartment_rounded;
+    case 'residence-villa':
+      return Icons.home_work_rounded;
+    case 'residence-officetel':
+      return Icons.business_rounded;
+    case 'residence-other':
+      return Icons.home_rounded;
+    default:
+      return Icons.home_rounded;
+  }
+}
+
+IconData _timeBandIconForOption(String id) {
+  switch (id) {
+    case 'time-evening':
+      return Icons.wb_sunny_rounded;
+    case 'time-night':
+      return Icons.bedtime_rounded;
+    case 'time-dawn':
+      return Icons.wb_twilight_rounded;
+    case 'time-irregular':
+      return Icons.schedule_rounded;
+    default:
+      return Icons.schedule_rounded;
   }
 }
 
@@ -2415,9 +2867,9 @@ class _SummaryCardWidget extends StatelessWidget {
             fontFamilyFallback: _kKrFontFallback,
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 300),
+          constraints: const BoxConstraints(maxHeight: 360),
           child: Scrollbar(
             thumbVisibility: true,
             radius: const Radius.circular(999),
@@ -2427,10 +2879,13 @@ class _SummaryCardWidget extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   for (var i = 0; i < rows.length; i++) ...[
-                    _SummaryItemRow(row: rows[i]),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: _SummaryItemRow(row: rows[i]),
+                    ),
                     if (i < rows.length - 1)
                       const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 12, 0, 12),
+                        padding: EdgeInsets.fromLTRB(18, 14, 0, 14),
                         child: Divider(height: 1, color: AppColors.border),
                       ),
                   ],
@@ -2460,20 +2915,17 @@ class _SummaryItemRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 7),
-          child: Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
-            ),
+        Container(
+          width: 9,
+          height: 9,
+          decoration: const BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2482,19 +2934,19 @@ class _SummaryItemRow extends StatelessWidget {
                 row.label,
                 style: const TextStyle(
                   color: AppColors.textMuted,
-                  fontSize: 12,
-                  height: 1.25,
+                  fontSize: 13,
+                  height: 1.35,
                   fontWeight: FontWeight.w700,
                   fontFamilyFallback: _kKrFontFallback,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 7),
               Text(
                 row.value,
                 style: const TextStyle(
                   color: AppColors.textMain,
                   fontSize: 16.5,
-                  height: 1.35,
+                  height: 1.45,
                   fontWeight: FontWeight.w700,
                   fontFamilyFallback: _kKrFontFallback,
                 ),
