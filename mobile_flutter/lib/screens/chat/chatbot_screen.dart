@@ -1513,8 +1513,11 @@ class _MultiFormWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final containerHeight = (screenHeight * 0.50).clamp(360.0, 500.0);
+
     return SizedBox(
-      height: 430,
+      height: containerHeight,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1744,7 +1747,7 @@ class _MultiFormGridButtonState extends State<_MultiFormGridButton> {
   }
 }
 
-class _MultiFormDateTimeRow extends StatefulWidget {
+class _MultiFormDateTimeRow extends StatelessWidget {
   const _MultiFormDateTimeRow({
     required this.icon,
     required this.label,
@@ -1758,102 +1761,61 @@ class _MultiFormDateTimeRow extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_MultiFormDateTimeRow> createState() => _MultiFormDateTimeRowState();
-}
-
-class _MultiFormDateTimeRowState extends State<_MultiFormDateTimeRow> {
-  bool _pressed = false;
-
-  void _setPressed(bool value) {
-    if (_pressed == value) return;
-    setState(() => _pressed = value);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => _setPressed(true),
-      onTapCancel: () => _setPressed(false),
-      onTapUp: (_) => _setPressed(false),
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        duration: const Duration(milliseconds: 100),
-        curve: Curves.easeOutCubic,
-        scale: _pressed ? 0.99 : 1,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-            color: _pressed ? const Color(0xFFF8FBFF) : Colors.white,
-            boxShadow: _pressed
-                ? const [
-                    BoxShadow(
-                      color: Color(0x12000000),
-                      blurRadius: 2,
-                      offset: Offset(0, 1),
-                    ),
-                  ]
-                : const [
-                    BoxShadow(
-                      color: Color(0x14234A64),
-                      blurRadius: 3,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
-          ),
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  color: const Color(0xFFF8FBFF),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Icon(widget.icon, size: 19, color: AppColors.primary),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Ink(
+        color: Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE6EEF5)),
+                color: const Color(0xFFF4F8FC),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.label,
-                      style: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        fontFamilyFallback: _kKrFontFallback,
-                      ),
+              child: Icon(icon, color: AppColors.primary, size: 26),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFF7E8EA4),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamilyFallback: _kKrFontFallback,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      widget.value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textMain,
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w700,
-                        fontFamilyFallback: _kKrFontFallback,
-                      ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 24,
-                color: _pressed ? AppColors.primary : AppColors.textMuted,
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 22,
+              color: Color(0xFF9AA9BB),
+            ),
+          ],
         ),
       ),
     );
@@ -2905,9 +2867,9 @@ class _SummaryCardWidget extends StatelessWidget {
             fontFamilyFallback: _kKrFontFallback,
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 300),
+          constraints: const BoxConstraints(maxHeight: 360),
           child: Scrollbar(
             thumbVisibility: true,
             radius: const Radius.circular(999),
@@ -2917,10 +2879,13 @@ class _SummaryCardWidget extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   for (var i = 0; i < rows.length; i++) ...[
-                    _SummaryItemRow(row: rows[i]),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: _SummaryItemRow(row: rows[i]),
+                    ),
                     if (i < rows.length - 1)
                       const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 12, 0, 12),
+                        padding: EdgeInsets.fromLTRB(18, 14, 0, 14),
                         child: Divider(height: 1, color: AppColors.border),
                       ),
                   ],
@@ -2950,20 +2915,17 @@ class _SummaryItemRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 7),
-          child: Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
-            ),
+        Container(
+          width: 9,
+          height: 9,
+          decoration: const BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2972,19 +2934,19 @@ class _SummaryItemRow extends StatelessWidget {
                 row.label,
                 style: const TextStyle(
                   color: AppColors.textMuted,
-                  fontSize: 12,
-                  height: 1.25,
+                  fontSize: 13,
+                  height: 1.35,
                   fontWeight: FontWeight.w700,
                   fontFamilyFallback: _kKrFontFallback,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 7),
               Text(
                 row.value,
                 style: const TextStyle(
                   color: AppColors.textMain,
                   fontSize: 16.5,
-                  height: 1.35,
+                  height: 1.45,
                   fontWeight: FontWeight.w700,
                   fontFamilyFallback: _kKrFontFallback,
                 ),
