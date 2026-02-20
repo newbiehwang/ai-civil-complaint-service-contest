@@ -5244,7 +5244,7 @@ class _StatusTimelineItem extends StatelessWidget {
               ),
               if (!isLast)
                 Container(
-                  margin: const EdgeInsets.only(top: 4),
+                  margin: const EdgeInsets.only(top: 6),
                   width: 2,
                   height: 34,
                   decoration: BoxDecoration(
