@@ -90,9 +90,16 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
       duration: const Duration(milliseconds: 200),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
+      layoutBuilder: (currentChild, _) {
+        return currentChild ?? const SizedBox.shrink();
+      },
       transitionBuilder: (child, animation) {
+        final fadeIn = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
         return FadeTransition(
-          opacity: animation,
+          opacity: fadeIn,
           child: child,
         );
       },

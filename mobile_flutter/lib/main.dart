@@ -95,17 +95,26 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
       case DemoStep.noiseNow:
       case DemoStep.safety:
         return '접수';
-      case DemoStep.multiForm:
       case DemoStep.residence:
+      case DemoStep.management:
+      case DemoStep.noiseType:
+      case DemoStep.frequency:
       case DemoStep.timeBand:
+      case DemoStep.sourceCertainty:
       case DemoStep.dateTime:
+        return '기본 정보';
+      case DemoStep.ineligible:
+        return '대체 경로';
+      case DemoStep.multiForm:
         return '기본 정보';
       case DemoStep.summary:
         return '요약 확인';
       case DemoStep.pathChooser:
       case DemoStep.pathAlternative:
         return '경로 선택';
-      case DemoStep.evidence:
+      case DemoStep.evidenceV1:
+      case DemoStep.measureCheck:
+      case DemoStep.evidenceV2:
       case DemoStep.noiseDiary:
         return '증거 준비';
       case DemoStep.draftViewer:
