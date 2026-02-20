@@ -109,10 +109,79 @@ class DemoFlowData {
   }
 }
 
+class ChatbotScreenSnapshot {
+  const ChatbotScreenSnapshot({
+    required this.isThinking,
+    required this.isAiAnswerReady,
+    required this.aiAnimationNonce,
+    required this.aiText,
+    required this.step,
+    required this.miniType,
+    required this.options,
+    required this.selectedOptionIds,
+    required this.data,
+    required this.incidentDate,
+    required this.incidentTime,
+    required this.multiResidenceId,
+    required this.multiTimeBandId,
+    required this.noiseDiaryDate,
+    required this.noiseDiaryTime,
+    required this.noiseDiaryDuration,
+    required this.noiseDiaryType,
+    required this.noiseDiaryImpact,
+    required this.evidenceAttachmentIds,
+    required this.evidenceAttachmentNames,
+    required this.isPickingEvidence,
+    required this.pickerOwnerIsNoiseDiary,
+    required this.pickerMonth,
+    required this.pickerDateSelection,
+    required this.pickerIsAm,
+    required this.pickerHour12,
+    required this.pickerMinute,
+  });
+
+  final bool isThinking;
+  final bool isAiAnswerReady;
+  final int aiAnimationNonce;
+  final String aiText;
+  final DemoStep step;
+  final MiniInterfaceType miniType;
+  final List<MiniOption> options;
+  final Set<String> selectedOptionIds;
+  final DemoFlowData data;
+  final DateTime? incidentDate;
+  final TimeOfDay? incidentTime;
+  final String? multiResidenceId;
+  final String? multiTimeBandId;
+  final DateTime? noiseDiaryDate;
+  final TimeOfDay? noiseDiaryTime;
+  final String? noiseDiaryDuration;
+  final String? noiseDiaryType;
+  final String? noiseDiaryImpact;
+  final Set<String> evidenceAttachmentIds;
+  final Map<String, String> evidenceAttachmentNames;
+  final bool isPickingEvidence;
+  final bool pickerOwnerIsNoiseDiary;
+  final DateTime pickerMonth;
+  final DateTime? pickerDateSelection;
+  final bool pickerIsAm;
+  final int pickerHour12;
+  final int pickerMinute;
+}
+
 class ChatbotDemoScreen extends StatefulWidget {
-  const ChatbotDemoScreen({required this.onRestart, super.key});
+  const ChatbotDemoScreen({
+    required this.onRestart,
+    required this.onBackToList,
+    this.initialSnapshot,
+    this.onSnapshotChanged,
+    super.key,
+  });
 
   final VoidCallback onRestart;
+  final VoidCallback onBackToList;
+  final ChatbotScreenSnapshot? initialSnapshot;
+  final ValueChanged<ChatbotScreenSnapshot>? onSnapshotChanged;
 
   @override
   State<ChatbotDemoScreen> createState() => _ChatbotDemoScreenState();
@@ -172,6 +241,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialSnapshot != null) {
+      _restoreFromSnapshot(widget.initialSnapshot!);
+    }
     _inputController.addListener(_handleInputControllerChanged);
   }
 
@@ -182,11 +254,86 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   @override
   void dispose() {
+    widget.onSnapshotChanged?.call(_buildSnapshot());
     _inputController.removeListener(_handleInputControllerChanged);
     _inputController.dispose();
     _focusNode.dispose();
     _multiFormScrollController.dispose();
     super.dispose();
+  }
+
+  void _restoreFromSnapshot(ChatbotScreenSnapshot snapshot) {
+    _isThinking = snapshot.isThinking;
+    _isAiAnswerReady = snapshot.isAiAnswerReady;
+    _aiAnimationNonce = snapshot.aiAnimationNonce;
+    _aiText = snapshot.aiText;
+    _step = snapshot.step;
+    _miniType = snapshot.miniType;
+    _options = List<MiniOption>.from(snapshot.options);
+    _selectedOptionIds
+      ..clear()
+      ..addAll(snapshot.selectedOptionIds);
+    _data = snapshot.data;
+    _incidentDate = snapshot.incidentDate;
+    _incidentTime = snapshot.incidentTime;
+    _multiResidenceId = snapshot.multiResidenceId;
+    _multiTimeBandId = snapshot.multiTimeBandId;
+    _noiseDiaryDate = snapshot.noiseDiaryDate;
+    _noiseDiaryTime = snapshot.noiseDiaryTime;
+    _noiseDiaryDuration = snapshot.noiseDiaryDuration;
+    _noiseDiaryType = snapshot.noiseDiaryType;
+    _noiseDiaryImpact = snapshot.noiseDiaryImpact;
+    _evidenceAttachmentIds
+      ..clear()
+      ..addAll(snapshot.evidenceAttachmentIds);
+    _evidenceAttachmentNames
+      ..clear()
+      ..addAll(snapshot.evidenceAttachmentNames);
+    _isPickingEvidence = snapshot.isPickingEvidence;
+    _pickerOwner = snapshot.pickerOwnerIsNoiseDiary ? _PickerOwner.noiseDiary : _PickerOwner.incident;
+    _pickerMonth = snapshot.pickerMonth;
+    _pickerDateSelection = snapshot.pickerDateSelection;
+    _pickerIsAm = snapshot.pickerIsAm;
+    _pickerHour12 = snapshot.pickerHour12;
+    _pickerMinute = snapshot.pickerMinute;
+  }
+
+  ChatbotScreenSnapshot _buildSnapshot() {
+    final safeIsAiAnswerReady = _isThinking ? true : _isAiAnswerReady;
+    return ChatbotScreenSnapshot(
+      isThinking: false,
+      isAiAnswerReady: safeIsAiAnswerReady,
+      aiAnimationNonce: _aiAnimationNonce,
+      aiText: _aiText,
+      step: _step,
+      miniType: _miniType,
+      options: List<MiniOption>.from(_options),
+      selectedOptionIds: Set<String>.from(_selectedOptionIds),
+      data: _data,
+      incidentDate: _incidentDate,
+      incidentTime: _incidentTime,
+      multiResidenceId: _multiResidenceId,
+      multiTimeBandId: _multiTimeBandId,
+      noiseDiaryDate: _noiseDiaryDate,
+      noiseDiaryTime: _noiseDiaryTime,
+      noiseDiaryDuration: _noiseDiaryDuration,
+      noiseDiaryType: _noiseDiaryType,
+      noiseDiaryImpact: _noiseDiaryImpact,
+      evidenceAttachmentIds: Set<String>.from(_evidenceAttachmentIds),
+      evidenceAttachmentNames: Map<String, String>.from(_evidenceAttachmentNames),
+      isPickingEvidence: _isPickingEvidence,
+      pickerOwnerIsNoiseDiary: _pickerOwner == _PickerOwner.noiseDiary,
+      pickerMonth: _pickerMonth,
+      pickerDateSelection: _pickerDateSelection,
+      pickerIsAm: _pickerIsAm,
+      pickerHour12: _pickerHour12,
+      pickerMinute: _pickerMinute,
+    );
+  }
+
+  void _handleBackToList() {
+    widget.onSnapshotChanged?.call(_buildSnapshot());
+    widget.onBackToList();
   }
 
   Future<void> _showThinkingThen(
@@ -704,6 +851,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         return;
       case DemoStep.complete:
         if (selectedId == 'complete-restart') {
+          widget.onSnapshotChanged?.call(_buildSnapshot());
           widget.onRestart();
         }
         return;
@@ -811,7 +959,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                     left: 18,
                     right: 18,
                     top: 16,
-                    child: _ChatTopBar(onRestart: widget.onRestart),
+                    child: _ChatTopBar(onBackToList: _handleBackToList),
                   ),
                   Positioned(
                     left: 22,
@@ -1134,9 +1282,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 }
 
 class _ChatTopBar extends StatelessWidget {
-  const _ChatTopBar({required this.onRestart});
+  const _ChatTopBar({required this.onBackToList});
 
-  final VoidCallback onRestart;
+  final VoidCallback onBackToList;
 
   @override
   Widget build(BuildContext context) {
@@ -1146,7 +1294,7 @@ class _ChatTopBar extends StatelessWidget {
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: _BackIconButton(onPressed: onRestart),
+            child: _BackIconButton(onPressed: onBackToList),
           ),
           const Align(
             alignment: Alignment.center,
