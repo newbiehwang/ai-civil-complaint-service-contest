@@ -72,10 +72,10 @@ class StartFrameOne extends StatelessWidget {
                 top: sy(buttonTopY),
                 width: buttonWidth,
                 child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 380),
+                  duration: const Duration(milliseconds: 560),
                   opacity: showButton ? 1 : 0,
                   child: AnimatedSlide(
-                    duration: const Duration(milliseconds: 380),
+                    duration: const Duration(milliseconds: 560),
                     offset: showButton ? Offset.zero : const Offset(0, 0.03),
                     curve: Curves.easeOutCubic,
                     child: StartPrimaryButton(

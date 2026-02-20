@@ -4662,8 +4662,17 @@ class _DraftViewerWidget extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('신청서 초안', style: TextStyle(color: AppColors.textMain, fontSize: 18, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 8),
+        const Text(
+          '신청서 초안',
+          style: TextStyle(
+            color: Color(0xFF8B99AC),
+            fontSize: 13,
+            height: 18 / 13,
+            fontWeight: FontWeight.w600,
+            fontFamilyFallback: _kKrFontFallback,
+          ),
+        ),
+        const SizedBox(height: 10),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 410),
           child: Column(
@@ -5220,19 +5229,22 @@ class _StatusTimelineItem extends StatelessWidget {
           width: 28,
           child: Column(
             children: [
-              Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: nodeBg,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: nodeBorder),
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: nodeBg,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: nodeBorder),
+                  ),
+                  child: Icon(nodeIcon, size: 13, color: nodeIconColor),
                 ),
-                child: Icon(nodeIcon, size: 13, color: nodeIconColor),
               ),
               if (!isLast)
                 Container(
-                  margin: const EdgeInsets.only(top: 6),
+                  margin: const EdgeInsets.only(top: 4),
                   width: 2,
                   height: 34,
                   decoration: BoxDecoration(
