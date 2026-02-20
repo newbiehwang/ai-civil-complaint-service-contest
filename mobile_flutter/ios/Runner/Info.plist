@@ -28,6 +28,10 @@
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>동영상 파일을 첨부하기 위해 사진 보관함 접근 권한이 필요합니다.</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>오디오 파일을 선택하기 위해 미디어 라이브러리 접근 권한이 필요합니다.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>녹음 파일 첨부 및 향후 음성 기능을 위해 마이크 접근 권한이 필요합니다.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

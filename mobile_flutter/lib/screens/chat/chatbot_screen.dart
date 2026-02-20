@@ -8,6 +8,7 @@ enum MiniInterfaceType {
   listPicker,
   multiForm,
   optionList,
+  measureCheck,
   datePicker,
   timePicker,
   summaryCard,
@@ -27,14 +28,21 @@ enum DemoStep {
   waitingIssue,
   noiseNow,
   safety,
-  multiForm,
   residence,
+  management,
+  noiseType,
+  frequency,
   timeBand,
+  sourceCertainty,
   dateTime,
+  ineligible,
+  multiForm,
   summary,
   pathChooser,
   pathAlternative,
-  evidence,
+  evidenceV1,
+  measureCheck,
+  evidenceV2,
   noiseDiary,
   draftViewer,
   waitingRevision,
@@ -67,7 +75,12 @@ class DemoFlowData {
     this.noiseNow,
     this.safety,
     this.residence,
+    this.management,
+    this.noiseType,
+    this.frequency,
     this.timeBand,
+    this.sourceCertainty,
+    this.eligibilityReason,
     this.route,
     this.startedAtDate,
     this.startedAtTime,
@@ -78,7 +91,12 @@ class DemoFlowData {
   final String? noiseNow;
   final String? safety;
   final String? residence;
+  final String? management;
+  final String? noiseType;
+  final String? frequency;
   final String? timeBand;
+  final String? sourceCertainty;
+  final String? eligibilityReason;
   final String? route;
   final DateTime? startedAtDate;
   final TimeOfDay? startedAtTime;
@@ -89,7 +107,12 @@ class DemoFlowData {
     String? noiseNow,
     String? safety,
     String? residence,
+    String? management,
+    String? noiseType,
+    String? frequency,
     String? timeBand,
+    String? sourceCertainty,
+    String? eligibilityReason,
     String? route,
     DateTime? startedAtDate,
     TimeOfDay? startedAtTime,
@@ -100,7 +123,12 @@ class DemoFlowData {
       noiseNow: noiseNow ?? this.noiseNow,
       safety: safety ?? this.safety,
       residence: residence ?? this.residence,
+      management: management ?? this.management,
+      noiseType: noiseType ?? this.noiseType,
+      frequency: frequency ?? this.frequency,
       timeBand: timeBand ?? this.timeBand,
+      sourceCertainty: sourceCertainty ?? this.sourceCertainty,
+      eligibilityReason: eligibilityReason ?? this.eligibilityReason,
       route: route ?? this.route,
       startedAtDate: startedAtDate ?? this.startedAtDate,
       startedAtTime: startedAtTime ?? this.startedAtTime,
@@ -109,10 +137,105 @@ class DemoFlowData {
   }
 }
 
+class ChatbotScreenSnapshot {
+  const ChatbotScreenSnapshot({
+    required this.isThinking,
+    required this.isAiAnswerReady,
+    required this.aiAnimationNonce,
+    required this.aiText,
+    required this.step,
+    required this.miniType,
+    required this.options,
+    required this.selectedOptionIds,
+    required this.data,
+    required this.incidentDate,
+    required this.incidentTime,
+    required this.multiResidenceId,
+    required this.multiTimeBandId,
+    required this.noiseDiaryDate,
+    required this.noiseDiaryTime,
+    required this.noiseDiaryDuration,
+    required this.noiseDiaryType,
+    required this.noiseDiaryImpact,
+    required this.evidenceAttachmentIds,
+    required this.evidenceAttachmentNames,
+    required this.evidenceV2AttachmentIds,
+    required this.evidenceV2AttachmentNames,
+    required this.isPickingEvidence,
+    required this.measureVisitDone,
+    required this.measureWithin30Days,
+    required this.measureReceivingUnit,
+    required this.pickerOwnerIsNoiseDiary,
+    required this.pickerMonth,
+    required this.pickerDateSelection,
+    required this.pickerIsAm,
+    required this.pickerHour12,
+    required this.pickerMinute,
+    required this.triageNoiseNowId,
+    required this.triageSafetyId,
+    required this.intakeResidenceId,
+    required this.intakeManagementId,
+    required this.intakeSourceCertaintyId,
+    required this.intakeNoiseTypeId,
+    required this.intakeFrequencyId,
+    required this.intakeTimeBandId,
+  });
+
+  final bool isThinking;
+  final bool isAiAnswerReady;
+  final int aiAnimationNonce;
+  final String aiText;
+  final DemoStep step;
+  final MiniInterfaceType miniType;
+  final List<MiniOption> options;
+  final Set<String> selectedOptionIds;
+  final DemoFlowData data;
+  final DateTime? incidentDate;
+  final TimeOfDay? incidentTime;
+  final String? multiResidenceId;
+  final String? multiTimeBandId;
+  final DateTime? noiseDiaryDate;
+  final TimeOfDay? noiseDiaryTime;
+  final String? noiseDiaryDuration;
+  final String? noiseDiaryType;
+  final String? noiseDiaryImpact;
+  final Set<String> evidenceAttachmentIds;
+  final Map<String, String> evidenceAttachmentNames;
+  final Set<String> evidenceV2AttachmentIds;
+  final Map<String, String> evidenceV2AttachmentNames;
+  final bool isPickingEvidence;
+  final bool? measureVisitDone;
+  final bool? measureWithin30Days;
+  final bool? measureReceivingUnit;
+  final bool pickerOwnerIsNoiseDiary;
+  final DateTime pickerMonth;
+  final DateTime? pickerDateSelection;
+  final bool pickerIsAm;
+  final int pickerHour12;
+  final int pickerMinute;
+  final String? triageNoiseNowId;
+  final String? triageSafetyId;
+  final String? intakeResidenceId;
+  final String? intakeManagementId;
+  final String? intakeSourceCertaintyId;
+  final String? intakeNoiseTypeId;
+  final String? intakeFrequencyId;
+  final String? intakeTimeBandId;
+}
+
 class ChatbotDemoScreen extends StatefulWidget {
-  const ChatbotDemoScreen({required this.onRestart, super.key});
+  const ChatbotDemoScreen({
+    required this.onRestart,
+    required this.onBackToList,
+    this.initialSnapshot,
+    this.onSnapshotChanged,
+    super.key,
+  });
 
   final VoidCallback onRestart;
+  final VoidCallback onBackToList;
+  final ChatbotScreenSnapshot? initialSnapshot;
+  final ValueChanged<ChatbotScreenSnapshot>? onSnapshotChanged;
 
   @override
   State<ChatbotDemoScreen> createState() => _ChatbotDemoScreenState();
@@ -133,6 +256,37 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     MiniOption(id: 'time-night', label: '심야'),
     MiniOption(id: 'time-dawn', label: '새벽'),
     MiniOption(id: 'time-irregular', label: '불규칙'),
+  ];
+  static const _managementOptions = <MiniOption>[
+    MiniOption(id: 'management-yes', label: '있음'),
+    MiniOption(id: 'management-no', label: '없음'),
+    MiniOption(id: 'management-unknown', label: '모름'),
+  ];
+  static const _sourceCertaintyOptions = <MiniOption>[
+    MiniOption(id: 'source-exact', label: '호수까지 확실'),
+    MiniOption(id: 'source-floor', label: '층은 확실(호수 불명)'),
+    MiniOption(id: 'source-unknown', label: '모름'),
+  ];
+  static const _noiseTypeOptions = <MiniOption>[
+    MiniOption(id: 'noise-impact', label: '충격 소음(쿵쿵)'),
+    MiniOption(id: 'noise-air', label: '공기전달 소음(TV/음악)'),
+    MiniOption(id: 'noise-both', label: '둘 다'),
+    MiniOption(id: 'noise-unknown', label: '잘 모르겠음'),
+  ];
+  static const _frequencyOptions = <MiniOption>[
+    MiniOption(id: 'freq-low', label: '주 1회 이하'),
+    MiniOption(id: 'freq-mid', label: '주 2~3회'),
+    MiniOption(id: 'freq-high', label: '거의 매일'),
+  ];
+  static const _triageNoiseNowOptions = <MiniOption>[
+    MiniOption(id: 'noise-now-active', label: '지금 진행 중'),
+    MiniOption(id: 'noise-now-recent', label: '방금 멈춤'),
+    MiniOption(id: 'noise-now-repeat', label: '자주 반복'),
+  ];
+  static const _triageSafetyOptions = <MiniOption>[
+    MiniOption(id: 'safety-normal', label: '위협 징후 없음'),
+    MiniOption(id: 'safety-unknown', label: '잘 모르겠음'),
+    MiniOption(id: 'safety-danger', label: '위협 징후 있음'),
   ];
 
   final TextEditingController _inputController = TextEditingController();
@@ -160,18 +314,34 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String? _noiseDiaryImpact;
   final Set<String> _evidenceAttachmentIds = <String>{};
   final Map<String, String> _evidenceAttachmentNames = <String, String>{};
+  final Set<String> _evidenceV2AttachmentIds = <String>{};
+  final Map<String, String> _evidenceV2AttachmentNames = <String, String>{};
   final ImagePicker _imagePicker = ImagePicker();
   bool _isPickingEvidence = false;
+  bool? _measureVisitDone;
+  bool? _measureWithin30Days;
+  bool? _measureReceivingUnit;
   _PickerOwner _pickerOwner = _PickerOwner.incident;
   DateTime _pickerMonth = DateTime.now();
   DateTime? _pickerDateSelection;
   bool _pickerIsAm = true;
   int _pickerHour12 = 1;
   int _pickerMinute = 0;
+  String? _triageNoiseNowId;
+  String? _triageSafetyId;
+  String? _intakeResidenceId;
+  String? _intakeManagementId;
+  String? _intakeSourceCertaintyId;
+  String? _intakeNoiseTypeId;
+  String? _intakeFrequencyId;
+  String? _intakeTimeBandId;
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialSnapshot != null) {
+      _restoreFromSnapshot(widget.initialSnapshot!);
+    }
     _inputController.addListener(_handleInputControllerChanged);
   }
 
@@ -182,11 +352,116 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   @override
   void dispose() {
+    widget.onSnapshotChanged?.call(_buildSnapshot());
     _inputController.removeListener(_handleInputControllerChanged);
     _inputController.dispose();
     _focusNode.dispose();
     _multiFormScrollController.dispose();
     super.dispose();
+  }
+
+  void _restoreFromSnapshot(ChatbotScreenSnapshot snapshot) {
+    _isThinking = snapshot.isThinking;
+    _isAiAnswerReady = snapshot.isAiAnswerReady;
+    _aiAnimationNonce = snapshot.aiAnimationNonce;
+    _aiText = snapshot.aiText;
+    _step = snapshot.step;
+    _miniType = snapshot.miniType;
+    _options = List<MiniOption>.from(snapshot.options);
+    _selectedOptionIds
+      ..clear()
+      ..addAll(snapshot.selectedOptionIds);
+    _data = snapshot.data;
+    _incidentDate = snapshot.incidentDate;
+    _incidentTime = snapshot.incidentTime;
+    _multiResidenceId = snapshot.multiResidenceId;
+    _multiTimeBandId = snapshot.multiTimeBandId;
+    _noiseDiaryDate = snapshot.noiseDiaryDate;
+    _noiseDiaryTime = snapshot.noiseDiaryTime;
+    _noiseDiaryDuration = snapshot.noiseDiaryDuration;
+    _noiseDiaryType = snapshot.noiseDiaryType;
+    _noiseDiaryImpact = snapshot.noiseDiaryImpact;
+    _evidenceAttachmentIds
+      ..clear()
+      ..addAll(snapshot.evidenceAttachmentIds);
+    _evidenceAttachmentNames
+      ..clear()
+      ..addAll(snapshot.evidenceAttachmentNames);
+    _evidenceV2AttachmentIds
+      ..clear()
+      ..addAll(snapshot.evidenceV2AttachmentIds);
+    _evidenceV2AttachmentNames
+      ..clear()
+      ..addAll(snapshot.evidenceV2AttachmentNames);
+    _isPickingEvidence = snapshot.isPickingEvidence;
+    _measureVisitDone = snapshot.measureVisitDone;
+    _measureWithin30Days = snapshot.measureWithin30Days;
+    _measureReceivingUnit = snapshot.measureReceivingUnit;
+    _pickerOwner = snapshot.pickerOwnerIsNoiseDiary ? _PickerOwner.noiseDiary : _PickerOwner.incident;
+    _pickerMonth = snapshot.pickerMonth;
+    _pickerDateSelection = snapshot.pickerDateSelection;
+    _pickerIsAm = snapshot.pickerIsAm;
+    _pickerHour12 = snapshot.pickerHour12;
+    _pickerMinute = snapshot.pickerMinute;
+    _triageNoiseNowId = snapshot.triageNoiseNowId;
+    _triageSafetyId = snapshot.triageSafetyId;
+    _intakeResidenceId = snapshot.intakeResidenceId;
+    _intakeManagementId = snapshot.intakeManagementId;
+    _intakeSourceCertaintyId = snapshot.intakeSourceCertaintyId;
+    _intakeNoiseTypeId = snapshot.intakeNoiseTypeId;
+    _intakeFrequencyId = snapshot.intakeFrequencyId;
+    _intakeTimeBandId = snapshot.intakeTimeBandId;
+  }
+
+  ChatbotScreenSnapshot _buildSnapshot() {
+    final safeIsAiAnswerReady = _isThinking ? true : _isAiAnswerReady;
+    return ChatbotScreenSnapshot(
+      isThinking: false,
+      isAiAnswerReady: safeIsAiAnswerReady,
+      aiAnimationNonce: _aiAnimationNonce,
+      aiText: _aiText,
+      step: _step,
+      miniType: _miniType,
+      options: List<MiniOption>.from(_options),
+      selectedOptionIds: Set<String>.from(_selectedOptionIds),
+      data: _data,
+      incidentDate: _incidentDate,
+      incidentTime: _incidentTime,
+      multiResidenceId: _multiResidenceId,
+      multiTimeBandId: _multiTimeBandId,
+      noiseDiaryDate: _noiseDiaryDate,
+      noiseDiaryTime: _noiseDiaryTime,
+      noiseDiaryDuration: _noiseDiaryDuration,
+      noiseDiaryType: _noiseDiaryType,
+      noiseDiaryImpact: _noiseDiaryImpact,
+      evidenceAttachmentIds: Set<String>.from(_evidenceAttachmentIds),
+      evidenceAttachmentNames: Map<String, String>.from(_evidenceAttachmentNames),
+      evidenceV2AttachmentIds: Set<String>.from(_evidenceV2AttachmentIds),
+      evidenceV2AttachmentNames: Map<String, String>.from(_evidenceV2AttachmentNames),
+      isPickingEvidence: _isPickingEvidence,
+      measureVisitDone: _measureVisitDone,
+      measureWithin30Days: _measureWithin30Days,
+      measureReceivingUnit: _measureReceivingUnit,
+      pickerOwnerIsNoiseDiary: _pickerOwner == _PickerOwner.noiseDiary,
+      pickerMonth: _pickerMonth,
+      pickerDateSelection: _pickerDateSelection,
+      pickerIsAm: _pickerIsAm,
+      pickerHour12: _pickerHour12,
+      pickerMinute: _pickerMinute,
+      triageNoiseNowId: _triageNoiseNowId,
+      triageSafetyId: _triageSafetyId,
+      intakeResidenceId: _intakeResidenceId,
+      intakeManagementId: _intakeManagementId,
+      intakeSourceCertaintyId: _intakeSourceCertaintyId,
+      intakeNoiseTypeId: _intakeNoiseTypeId,
+      intakeFrequencyId: _intakeFrequencyId,
+      intakeTimeBandId: _intakeTimeBandId,
+    );
+  }
+
+  void _handleBackToList() {
+    widget.onSnapshotChanged?.call(_buildSnapshot());
+    widget.onBackToList();
   }
 
   Future<void> _showThinkingThen(
@@ -222,9 +497,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _miniType = miniType;
       _options = options;
       _selectedOptionIds.clear();
-      if (step == DemoStep.evidence) {
+      if (step == DemoStep.evidenceV1) {
         _evidenceAttachmentIds.clear();
         _evidenceAttachmentNames.clear();
+      }
+      if (step == DemoStep.evidenceV2) {
+        _evidenceV2AttachmentIds.clear();
+        _evidenceV2AttachmentNames.clear();
       }
     });
   }
@@ -262,6 +541,20 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _incidentTime != null;
   }
 
+  bool get _isIntakeBasicReady {
+    return _intakeResidenceId != null &&
+        _intakeManagementId != null &&
+        _intakeSourceCertaintyId != null;
+  }
+
+  bool get _isIntakeDetailReady {
+    return _intakeNoiseTypeId != null &&
+        _intakeFrequencyId != null &&
+        _intakeTimeBandId != null &&
+        _incidentDate != null &&
+        _incidentTime != null;
+  }
+
   String? _optionIdByLabel(List<MiniOption> options, String? label) {
     if (label == null) return null;
     for (final option in options) {
@@ -270,12 +563,51 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     return null;
   }
 
+  bool get _isMeasureCheckReady {
+    return _measureVisitDone != null &&
+        _measureWithin30Days != null &&
+        _measureReceivingUnit != null;
+  }
+
+  bool get _isMeasureEligible {
+    return _measureVisitDone == true &&
+        _measureWithin30Days == true &&
+        _measureReceivingUnit == true;
+  }
+
   String? _optionLabelById(List<MiniOption> options, String? id) {
     if (id == null) return null;
     for (final option in options) {
       if (option.id == id) return option.label;
     }
     return null;
+  }
+
+  ({bool eligible, String reason}) _evaluateEligibility() {
+    if (_data.safety == '있음(위험)') {
+      return (
+        eligible: false,
+        reason: '안전 위험 징후가 있어요.',
+      );
+    }
+
+    final residence = _data.residence ?? '';
+    final isJointHousing = residence == '아파트' || residence == '빌라' || residence == '오피스텔';
+    if (!isJointHousing) {
+      return (
+        eligible: false,
+        reason: '층간소음 공식 절차 대상이 아니에요.',
+      );
+    }
+
+    if (_data.sourceCertainty == '모름') {
+      return (
+        eligible: false,
+        reason: '발생 세대 확인이 먼저 필요해요.',
+      );
+    }
+
+    return (eligible: true, reason: '층간소음 절차 진행이 가능합니다.');
   }
 
   void _openIncidentDatePicker() => _openDatePicker(_PickerOwner.incident);
@@ -384,7 +716,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     setState(() {
       _miniType = _pickerOwner == _PickerOwner.noiseDiary
           ? MiniInterfaceType.noiseDiaryBuilder
-          : (_step == DemoStep.multiForm
+          : ((_step == DemoStep.multiForm || _step == DemoStep.dateTime)
               ? MiniInterfaceType.multiForm
               : MiniInterfaceType.optionList);
     });
@@ -402,7 +734,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _miniType = MiniInterfaceType.noiseDiaryBuilder;
       } else {
         _incidentDate = safeSelected;
-        _miniType = _step == DemoStep.multiForm
+        _miniType = (_step == DemoStep.multiForm || _step == DemoStep.dateTime)
             ? MiniInterfaceType.multiForm
             : MiniInterfaceType.optionList;
       }
@@ -420,22 +752,56 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _miniType = MiniInterfaceType.noiseDiaryBuilder;
       } else {
         _incidentTime = selected;
-        _miniType = _step == DemoStep.multiForm
+        _miniType = (_step == DemoStep.multiForm || _step == DemoStep.dateTime)
             ? MiniInterfaceType.multiForm
             : MiniInterfaceType.optionList;
       }
     });
   }
 
-  void _submitMultiForm() {
-    if (!_isMultiFormReady) return;
+  void _submitIntakeBasicMultiForm() {
+    if (!_isIntakeBasicReady) return;
 
     _data = _data.copyWith(
-      residence: _optionLabelById(_residenceOptions, _multiResidenceId),
-      timeBand: _optionLabelById(_timeBandOptions, _multiTimeBandId),
+      residence: _optionLabelById(_residenceOptions, _intakeResidenceId),
+      management: _optionLabelById(_managementOptions, _intakeManagementId),
+      sourceCertainty: _optionLabelById(_sourceCertaintyOptions, _intakeSourceCertaintyId),
+    );
+
+    _showThinkingThen(() {
+      _setAi(
+        text: '좋아요. 소음 패턴과 시작 시점을 입력해 주세요.',
+        step: DemoStep.dateTime,
+        miniType: MiniInterfaceType.multiForm,
+      );
+    });
+  }
+
+  void _submitIntakeDetailMultiForm() {
+    if (!_isIntakeDetailReady) return;
+
+    _data = _data.copyWith(
+      noiseType: _optionLabelById(_noiseTypeOptions, _intakeNoiseTypeId),
+      frequency: _optionLabelById(_frequencyOptions, _intakeFrequencyId),
+      timeBand: _optionLabelById(_timeBandOptions, _intakeTimeBandId),
       startedAtDate: _incidentDate,
       startedAtTime: _incidentTime,
     );
+
+    final eligibility = _evaluateEligibility();
+    _data = _data.copyWith(eligibilityReason: eligibility.reason);
+
+    if (!eligibility.eligible) {
+      _setAi(
+        text: '${eligibility.reason}\n대체 경로로 즉시 연결할게요.',
+        step: DemoStep.ineligible,
+        miniType: MiniInterfaceType.listPicker,
+        options: const [
+          MiniOption(id: 'ineligible-next', label: '바로 연결'),
+        ],
+      );
+      return;
+    }
 
     _setAi(
       text: '정리해드릴게요.',
@@ -448,23 +814,71 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     );
   }
 
-  void _submitIncidentDateTime() {
-    if (_incidentDate == null || _incidentTime == null) return;
+  void _submitTriageMultiForm() {
+    if (_triageNoiseNowId == null || _triageSafetyId == null) return;
+
+    final noiseNowLabel = _optionLabelById(_triageNoiseNowOptions, _triageNoiseNowId);
+    final safetyLabel = _optionLabelById(_triageSafetyOptions, _triageSafetyId);
+    if (noiseNowLabel == null || safetyLabel == null) return;
 
     _data = _data.copyWith(
-      startedAtDate: _incidentDate,
-      startedAtTime: _incidentTime,
+      noiseNow: noiseNowLabel,
+      safety: safetyLabel,
     );
 
-    _setAi(
-      text: '정리해드릴게요.',
-      step: DemoStep.summary,
-      miniType: MiniInterfaceType.summaryCard,
-      options: const [
-        MiniOption(id: 'summary-edit', label: '수정'),
-        MiniOption(id: 'summary-next', label: '다음'),
-      ],
+    if (_triageSafetyId == 'safety-danger') {
+      _showThinkingThen(() {
+        _setAi(
+          text: '위협·폭행 우려가 있으면 112 신고가 우선입니다.\n안전 안내를 확인한 뒤 계속 진행할 수 있어요.',
+          step: DemoStep.safety,
+          miniType: MiniInterfaceType.listPicker,
+          options: const [
+            MiniOption(id: 'safety-guide', label: '112 안전 안내 확인'),
+            MiniOption(id: 'safety-continue', label: '생활소음 접수 계속'),
+          ],
+        );
+      });
+      return;
+    }
+
+    _goIntakeMultiFormBasic(
+      '좋아요. 기본 정보를 입력해 주세요.',
+      resetSelections: true,
     );
+  }
+
+  void _goIntakeMultiFormBasic(
+    String prompt, {
+    bool resetSelections = false,
+  }) {
+    if (resetSelections) {
+      _intakeResidenceId = null;
+      _intakeManagementId = null;
+      _intakeSourceCertaintyId = null;
+      _intakeNoiseTypeId = null;
+      _intakeFrequencyId = null;
+      _intakeTimeBandId = null;
+      _incidentDate = null;
+      _incidentTime = null;
+    } else {
+      _intakeResidenceId = _optionIdByLabel(_residenceOptions, _data.residence);
+      _intakeManagementId = _optionIdByLabel(_managementOptions, _data.management);
+      _intakeSourceCertaintyId =
+          _optionIdByLabel(_sourceCertaintyOptions, _data.sourceCertainty);
+      _intakeNoiseTypeId = _optionIdByLabel(_noiseTypeOptions, _data.noiseType);
+      _intakeFrequencyId = _optionIdByLabel(_frequencyOptions, _data.frequency);
+      _intakeTimeBandId = _optionIdByLabel(_timeBandOptions, _data.timeBand);
+      _incidentDate = _data.startedAtDate;
+      _incidentTime = _data.startedAtTime;
+    }
+
+    _showThinkingThen(() {
+      _setAi(
+        text: prompt,
+        step: DemoStep.multiForm,
+        miniType: MiniInterfaceType.multiForm,
+      );
+    });
   }
 
   void _startDraftViewer() {
@@ -481,7 +895,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _goStatusFeed() {
     _setAi(
-      text: '접수 완료! 이제부터 진행을 끝까지 추적해 드릴게요.',
+      text: '접수를 완료했어요.\n이제 사용자 확인 기반 타임라인으로 진행을 추적해드릴게요.',
       step: DemoStep.statusFeed,
       miniType: MiniInterfaceType.statusFeed,
       options: const [
@@ -511,7 +925,17 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
       if (id == 'evidence-audio') {
         final result = await FilePicker.platform.pickFiles(
-          type: FileType.audio,
+          // NOTE: iOS에서 FileType.audio 경로에서 네이티브 예외가 나는 케이스가 있어
+          // custom 확장자 필터로 우회한다.
+          type: FileType.custom,
+          allowedExtensions: const <String>[
+            'm4a',
+            'mp3',
+            'wav',
+            'aac',
+            'caf',
+            'flac',
+          ],
           allowMultiple: false,
           withData: false,
         );
@@ -559,7 +983,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _submitEvidenceAttachments() {
     if (_evidenceAttachmentIds.isEmpty) return;
-    _showThinkingThen(_startDraftViewer);
+    _showThinkingThen(_goMeasureCheck);
   }
 
   void _skipEvidenceAttachments() {
@@ -567,6 +991,108 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _evidenceAttachmentIds.clear();
       _evidenceAttachmentNames.clear();
     });
+    _showThinkingThen(_goMeasureCheck);
+  }
+
+  void _goMeasureCheck() {
+    _measureVisitDone = null;
+    _measureWithin30Days = null;
+    _measureReceivingUnit = null;
+    _setAi(
+      text: '측정 단계 전환 조건을 확인해 주세요.',
+      step: DemoStep.measureCheck,
+      miniType: MiniInterfaceType.measureCheck,
+    );
+  }
+
+  Future<void> _toggleEvidenceV2Attachment(String id) async {
+    if (_isPickingEvidence) return;
+
+    if (_evidenceV2AttachmentIds.contains(id)) {
+      setState(() {
+        _evidenceV2AttachmentIds.remove(id);
+        _evidenceV2AttachmentNames.remove(id);
+      });
+      return;
+    }
+
+    setState(() {
+      _isPickingEvidence = true;
+    });
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const <String>[
+          'pdf',
+          'hwp',
+          'doc',
+          'docx',
+          'txt',
+          'jpg',
+          'jpeg',
+          'png',
+        ],
+        allowMultiple: false,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final selectedFileName = result.files.first.name;
+      if (selectedFileName.trim().isEmpty) return;
+
+      if (!mounted) return;
+      setState(() {
+        _evidenceV2AttachmentIds.add(id);
+        _evidenceV2AttachmentNames[id] = selectedFileName;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('파일을 불러오지 못했어요. 다시 시도해 주세요.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingEvidence = false;
+        });
+      }
+    }
+  }
+
+  void _submitMeasureCheck() {
+    if (!_isMeasureCheckReady) return;
+
+    if (_isMeasureEligible) {
+      _data = _data.copyWith(eligibilityReason: '측정 전환 조건 충족');
+      _showThinkingThen(() {
+        _setAi(
+          text: '측정 단계 전환이 가능해요.\n증거 제출을 진행해 주세요.',
+          step: DemoStep.evidenceV2,
+          miniType: MiniInterfaceType.optionList,
+        );
+      });
+      return;
+    }
+
+    final missing = <String>[];
+    if (_measureVisitDone != true) missing.add('방문상담 이후 지속');
+    if (_measureWithin30Days != true) missing.add('30일 이내');
+    if (_measureReceivingUnit != true) missing.add('수음세대 신청');
+    _data = _data.copyWith(
+      eligibilityReason: '측정 전환 보류: ${missing.join(', ')}',
+    );
+    _showThinkingThen(_startDraftViewer);
+  }
+
+  void _submitEvidenceV2Attachments() {
+    if (_evidenceV2AttachmentIds.length < 2) return;
+    _showThinkingThen(_startDraftViewer);
+  }
+
+  void _skipEvidenceV2Attachments() {
     _showThinkingThen(_startDraftViewer);
   }
 
@@ -582,15 +1108,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           ? const Duration(seconds: 3)
           : const Duration(milliseconds: 560);
       _showThinkingThen(() {
+        _triageNoiseNowId = null;
+        _triageSafetyId = null;
         _setAi(
-          text: '윗집 소음 때문에 많이 힘드시겠어요.\n지금도 소음이 계속되나요?',
+          text: '힘드셨겠어요.\n현재 소음 상태와 안전 긴급도를 함께 선택해 주세요.',
           step: DemoStep.noiseNow,
-          miniType: MiniInterfaceType.listPicker,
-          options: const [
-            MiniOption(id: 'noise-now-active', label: '지금 진행 중'),
-            MiniOption(id: 'noise-now-recent', label: '방금 멈춤'),
-            MiniOption(id: 'noise-now-repeat', label: '자주 반복'),
-          ],
+          miniType: MiniInterfaceType.multiForm,
         );
       }, duration: thinkingDuration);
       return;
@@ -625,85 +1148,69 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   void _handleListSelectionSubmit() {
     if (_selectedOptionIds.isEmpty) return;
     final selectedId = _selectedOptionIds.first;
+    final selectedLabel = _options.firstWhere((e) => e.id == selectedId).label;
 
     switch (_step) {
       case DemoStep.noiseNow:
-        _data = _data.copyWith(
-          noiseNow: _options.firstWhere((e) => e.id == selectedId).label,
-        );
-        _showThinkingThen(() {
-          _setAi(
-            text: '좋아요. 안전 문제가 아닌지 10초만 확인할게요.',
-            step: DemoStep.safety,
-            miniType: MiniInterfaceType.listPicker,
-            options: const [
-              MiniOption(id: 'safety-normal', label: '없음(생활소음)'),
-              MiniOption(id: 'safety-danger', label: '있음(위험)'),
-              MiniOption(id: 'safety-unknown', label: '잘 모르겠음'),
-            ],
-          );
-        });
         return;
       case DemoStep.safety:
-        _data = _data.copyWith(
-          safety: _options.firstWhere((e) => e.id == selectedId).label,
+        if (selectedId == 'safety-guide') {
+          _showThinkingThen(() {
+            _setAi(
+              text: '긴급 위험 시 112, 비긴급은 110/지자체 민원으로 연결할 수 있어요.\n계속 진행할까요?',
+              step: DemoStep.safety,
+              miniType: MiniInterfaceType.listPicker,
+              options: const [
+                MiniOption(id: 'safety-continue', label: '생활소음 접수 계속'),
+              ],
+            );
+          });
+          return;
+        }
+        if (selectedId != 'safety-continue') return;
+        _goIntakeMultiFormBasic(
+          '좋아요. 기본 정보를 입력해 주세요.',
+          resetSelections: true,
         );
-        _multiResidenceId = null;
-        _multiTimeBandId = null;
-        _incidentDate = null;
-        _incidentTime = null;
-        _showThinkingThen(() {
-          _setAi(
-            text: '정식 접수를 위해 기본 정보 3가지를 한 번에 입력해 주세요.',
-            step: DemoStep.multiForm,
-            miniType: MiniInterfaceType.multiForm,
-          );
-        });
         return;
       case DemoStep.residence:
-        _data = _data.copyWith(
-          residence: _options.firstWhere((e) => e.id == selectedId).label,
-        );
+      case DemoStep.management:
+      case DemoStep.noiseType:
+      case DemoStep.frequency:
+      case DemoStep.timeBand:
+      case DemoStep.sourceCertainty:
+      case DemoStep.dateTime:
+        return;
+      case DemoStep.ineligible:
+        if (selectedId != 'ineligible-next') return;
         _showThinkingThen(() {
           _setAi(
-            text: '소음이 주로 발생하는 시간대를 선택해 주세요.',
-            step: DemoStep.timeBand,
+            text: '적합한 대체 경로를 선택해 주세요.',
+            step: DemoStep.pathAlternative,
             miniType: MiniInterfaceType.listPicker,
             options: const [
-              MiniOption(id: 'time-evening', label: '저녁'),
-              MiniOption(id: 'time-night', label: '심야'),
-              MiniOption(id: 'time-dawn', label: '새벽'),
-              MiniOption(id: 'time-irregular', label: '불규칙'),
+              MiniOption(id: 'path-local', label: '지자체 소음 민원'),
+              MiniOption(id: 'path-epeople', label: '국민신문고'),
+              MiniOption(id: 'path-112', label: '112 신고 안내'),
             ],
           );
         });
-        return;
-      case DemoStep.timeBand:
-        _data = _data.copyWith(
-          timeBand: _options.firstWhere((e) => e.id == selectedId).label,
-        );
-        _incidentDate = null;
-        _incidentTime = null;
-        _setAi(
-          text: '마지막으로 소음 발생 날짜와 시간을 선택해 주세요.',
-          step: DemoStep.dateTime,
-          miniType: MiniInterfaceType.optionList,
-        );
         return;
       case DemoStep.pathAlternative:
         _data = _data.copyWith(
-          route: _options.firstWhere((e) => e.id == selectedId).label,
+          route: selectedLabel,
         );
         _showThinkingThen(() {
           _setAi(
-            text: '선택한 경로로 진행할게요. 증거 체크리스트에서 필요한 항목만 첨부해 주세요.',
-            step: DemoStep.evidence,
+            text: '선택한 경로로 진행할게요.\n증거 제출을 진행해 주세요.',
+            step: DemoStep.evidenceV1,
             miniType: MiniInterfaceType.optionList,
           );
         });
         return;
       case DemoStep.complete:
         if (selectedId == 'complete-restart') {
+          widget.onSnapshotChanged?.call(_buildSnapshot());
           widget.onRestart();
         }
         return;
@@ -720,8 +1227,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _data = _data.copyWith(route: '이웃사이센터 조정 신청');
       _showThinkingThen(() {
         _setAi(
-          text: '경로를 확정했어요.\n증거 체크리스트에서 필요한 항목만 첨부해 주세요.',
-          step: DemoStep.evidence,
+          text: '추천 경로로 진행합니다.\n증거 제출을 진행해 주세요.',
+          step: DemoStep.evidenceV1,
           miniType: MiniInterfaceType.optionList,
         );
       });
@@ -737,7 +1244,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           options: const [
             MiniOption(id: 'path-epeople', label: '국민신문고'),
             MiniOption(id: 'path-management', label: '관리사무소 공식 민원'),
-            MiniOption(id: 'path-dispute', label: '분쟁조정(후순위)'),
+            MiniOption(id: 'path-local', label: '지자체 소음 민원'),
           ],
         );
       });
@@ -784,6 +1291,16 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                       padding: const EdgeInsets.fromLTRB(24, 104, 24, 110),
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 260),
+                        layoutBuilder: (currentChild, _) {
+                          return currentChild ?? const SizedBox.shrink();
+                        },
+                        transitionBuilder: (child, animation) {
+                          final fadeIn = CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          );
+                          return FadeTransition(opacity: fadeIn, child: child);
+                        },
                         child: _isThinking
                             ? Align(
                                 key: const ValueKey('thinking'),
@@ -811,7 +1328,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                     left: 18,
                     right: 18,
                     top: 16,
-                    child: _ChatTopBar(onRestart: widget.onRestart),
+                    child: _ChatTopBar(onBackToList: _handleBackToList),
                   ),
                   Positioned(
                     left: 22,
@@ -899,6 +1416,55 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           onSubmit: _handleListSelectionSubmit,
         );
       case MiniInterfaceType.multiForm:
+        if (_step == DemoStep.noiseNow) {
+          return _TriageMultiFormWidget(
+            noiseNowOptions: _triageNoiseNowOptions,
+            safetyOptions: _triageSafetyOptions,
+            selectedNoiseNowId: _triageNoiseNowId,
+            selectedSafetyId: _triageSafetyId,
+            onSelectNoiseNow: (id) => setState(() => _triageNoiseNowId = id),
+            onSelectSafety: (id) => setState(() => _triageSafetyId = id),
+            canSubmit: _triageNoiseNowId != null && _triageSafetyId != null,
+            onSubmit: _submitTriageMultiForm,
+          );
+        }
+        if (_step == DemoStep.multiForm) {
+          return _IntakeMultiFormBasicWidget(
+            scrollController: _multiFormScrollController,
+            residenceOptions: _residenceOptions,
+            selectedResidenceId: _intakeResidenceId,
+            onSelectResidence: (id) => setState(() => _intakeResidenceId = id),
+            managementOptions: _managementOptions,
+            selectedManagementId: _intakeManagementId,
+            onSelectManagement: (id) => setState(() => _intakeManagementId = id),
+            sourceCertaintyOptions: _sourceCertaintyOptions,
+            selectedSourceCertaintyId: _intakeSourceCertaintyId,
+            onSelectSourceCertainty: (id) =>
+                setState(() => _intakeSourceCertaintyId = id),
+            canSubmit: _isIntakeBasicReady,
+            onSubmit: _submitIntakeBasicMultiForm,
+          );
+        }
+        if (_step == DemoStep.dateTime) {
+          return _IntakeMultiFormDetailWidget(
+            scrollController: _multiFormScrollController,
+            noiseTypeOptions: _noiseTypeOptions,
+            selectedNoiseTypeId: _intakeNoiseTypeId,
+            onSelectNoiseType: (id) => setState(() => _intakeNoiseTypeId = id),
+            frequencyOptions: _frequencyOptions,
+            selectedFrequencyId: _intakeFrequencyId,
+            onSelectFrequency: (id) => setState(() => _intakeFrequencyId = id),
+            timeBandOptions: _timeBandOptions,
+            selectedTimeBandId: _intakeTimeBandId,
+            onSelectTimeBand: (id) => setState(() => _intakeTimeBandId = id),
+            dateLabel: _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
+            timeLabel: _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
+            onPickDate: _openIncidentDatePicker,
+            onPickTime: _openIncidentTimePicker,
+            canSubmit: _isIntakeDetailReady,
+            onSubmit: _submitIntakeDetailMultiForm,
+          );
+        }
         return _MultiFormWidget(
           scrollController: _multiFormScrollController,
           residenceOptions: _residenceOptions,
@@ -912,10 +1478,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           onPickDate: _openIncidentDatePicker,
           onPickTime: _openIncidentTimePicker,
           canSubmit: _isMultiFormReady,
-          onSubmit: _submitMultiForm,
+          onSubmit: () {},
         );
       case MiniInterfaceType.optionList:
-        if (_step == DemoStep.evidence) {
+        if (_step == DemoStep.evidenceV1) {
           return _EvidenceOptionListWidget(
             selectedAttachmentIds: _evidenceAttachmentIds,
             audioFileName: _evidenceAttachmentNames['evidence-audio'],
@@ -929,13 +1495,38 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             canSubmit: _evidenceAttachmentIds.isNotEmpty,
           );
         }
+        if (_step == DemoStep.evidenceV2) {
+          return _EvidencePackV2Widget(
+            selectedAttachmentIds: _evidenceV2AttachmentIds,
+            formFileName: _evidenceV2AttachmentNames['evidence-v2-form'],
+            diaryFileName: _evidenceV2AttachmentNames['evidence-v2-diary'],
+            isPicking: _isPickingEvidence,
+            onToggleAttachment: (id) {
+              _toggleEvidenceV2Attachment(id);
+            },
+            onSubmit: _submitEvidenceV2Attachments,
+            onSkip: _skipEvidenceV2Attachments,
+            canSubmit: _evidenceV2AttachmentIds.length >= 2,
+          );
+        }
         return _OptionListWidget(
           dateLabel: _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
           timeLabel: _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
           onPickDate: _openIncidentDatePicker,
           onPickTime: _openIncidentTimePicker,
-          onSubmit: _submitIncidentDateTime,
-          canSubmit: _incidentDate != null && _incidentTime != null,
+          onSubmit: _submitIntakeDetailMultiForm,
+          canSubmit: _isIntakeDetailReady,
+        );
+      case MiniInterfaceType.measureCheck:
+        return _MeasureTransitionCheckWidget(
+          visitDone: _measureVisitDone,
+          within30Days: _measureWithin30Days,
+          receivingUnit: _measureReceivingUnit,
+          onSelectVisitDone: (value) => setState(() => _measureVisitDone = value),
+          onSelectWithin30Days: (value) => setState(() => _measureWithin30Days = value),
+          onSelectReceivingUnit: (value) => setState(() => _measureReceivingUnit = value),
+          canSubmit: _isMeasureCheckReady,
+          onSubmit: _submitMeasureCheck,
         );
       case MiniInterfaceType.datePicker:
         return _MiniDatePickerWidget(
@@ -973,7 +1564,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         return _SummaryCardWidget(
           rows: [
             _SummaryRow(label: '거주 형태', value: _data.residence ?? '미입력'),
+            _SummaryRow(label: '관리주체', value: _data.management ?? '미입력'),
+            _SummaryRow(label: '소음 유형', value: _data.noiseType ?? '미입력'),
+            _SummaryRow(label: '반복 빈도', value: _data.frequency ?? '미입력'),
             _SummaryRow(label: '주 발생 시간', value: _data.timeBand ?? '미입력'),
+            _SummaryRow(label: '발생원 특정', value: _data.sourceCertainty ?? '미입력'),
             _SummaryRow(
               label: '시작 시점',
               value: _data.startedAtDate != null && _data.startedAtTime != null
@@ -990,15 +1585,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             );
           },
           onEdit: () {
-            _multiResidenceId = _optionIdByLabel(_residenceOptions, _data.residence);
-            _multiTimeBandId = _optionIdByLabel(_timeBandOptions, _data.timeBand);
-            _incidentDate = _data.startedAtDate;
-            _incidentTime = _data.startedAtTime;
-            _setAi(
-              text: '수정할 정보를 다시 선택해 주세요.',
-              step: DemoStep.multiForm,
-              miniType: MiniInterfaceType.multiForm,
-            );
+            _goIntakeMultiFormBasic('수정할 기본 정보를 다시 입력해 주세요.');
           },
         );
       case MiniInterfaceType.pathChooser:
@@ -1064,10 +1651,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         );
       case MiniInterfaceType.statusFeed:
         return _StatusFeedWidget(
+          routeLabel: _data.route ?? '미선택',
+          needsSupplementLikely: _evidenceAttachmentIds.isEmpty,
           onUploadMore: () {
             _setAi(
               text: '추가 증거를 선택해 주세요.',
-              step: DemoStep.evidence,
+              step: DemoStep.evidenceV1,
               miniType: MiniInterfaceType.optionList,
             );
           },
@@ -1089,7 +1678,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     final lines = <String>[
       '제목: 층간소음 민원 접수 초안',
       '거주 형태: ${_data.residence ?? '미입력'}',
+      '관리주체: ${_data.management ?? '미입력'}',
+      '소음 유형: ${_data.noiseType ?? '미입력'}',
+      '반복 빈도: ${_data.frequency ?? '미입력'}',
       '주 발생 시간: ${_data.timeBand ?? '미입력'}',
+      '발생원 특정: ${_data.sourceCertainty ?? '미입력'}',
       '시작 시점: ${_data.startedAtDate != null && _data.startedAtTime != null ? '${_formatDate(_data.startedAtDate!)} ${_formatTime(_data.startedAtTime!)}' : '미입력'}',
       '현재 상태: ${_data.noiseNow ?? '미입력'}',
       '추천 경로: ${_data.route ?? '미선택'}',
@@ -1107,7 +1700,20 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         labels.add('동영상(${_evidenceAttachmentNames['evidence-video'] ?? '첨부됨'})');
       }
       if (labels.isNotEmpty) {
-        lines.add('첨부 파일: ${labels.join(', ')}');
+        lines.add('증거 제출: ${labels.join(', ')}');
+      }
+    }
+
+    if (_evidenceV2AttachmentIds.isNotEmpty) {
+      final labels = <String>[];
+      if (_evidenceV2AttachmentIds.contains('evidence-v2-form')) {
+        labels.add('측정 신청서(${_evidenceV2AttachmentNames['evidence-v2-form'] ?? '첨부됨'})');
+      }
+      if (_evidenceV2AttachmentIds.contains('evidence-v2-diary')) {
+        labels.add('발생일지(${_evidenceV2AttachmentNames['evidence-v2-diary'] ?? '첨부됨'})');
+      }
+      if (labels.isNotEmpty) {
+        lines.add('측정 서류 제출: ${labels.join(', ')}');
       }
     }
 
@@ -1116,8 +1722,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   List<String> _buildDraftGuidePoints() {
     return [
+      _data.eligibilityReason ?? '입력한 정보로 적합 경로를 자동 판별했어요.',
       '사실 중심 문장으로 정리돼 기관 검토가 쉬워요.',
-      '날짜/시간/유형이 포함되어 처리 누락을 줄여요.',
+      '날짜/시간/빈도가 포함되어 처리 누락을 줄여요.',
       _data.revisionNote?.trim().isNotEmpty == true
           ? '최근 반영 요청: ${_data.revisionNote!.trim()}'
           : '필요하면 수정 요청으로 문장을 보완할 수 있어요.',
@@ -1134,9 +1741,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 }
 
 class _ChatTopBar extends StatelessWidget {
-  const _ChatTopBar({required this.onRestart});
+  const _ChatTopBar({required this.onBackToList});
 
-  final VoidCallback onRestart;
+  final VoidCallback onBackToList;
 
   @override
   Widget build(BuildContext context) {
@@ -1146,7 +1753,7 @@ class _ChatTopBar extends StatelessWidget {
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: _BackIconButton(onPressed: onRestart),
+            child: _BackIconButton(onPressed: onBackToList),
           ),
           const Align(
             alignment: Alignment.center,
@@ -1475,6 +2082,377 @@ class _ListPickerOptionButtonState extends State<_ListPickerOptionButton> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _TriageMultiFormWidget extends StatelessWidget {
+  const _TriageMultiFormWidget({
+    required this.noiseNowOptions,
+    required this.safetyOptions,
+    required this.selectedNoiseNowId,
+    required this.selectedSafetyId,
+    required this.onSelectNoiseNow,
+    required this.onSelectSafety,
+    required this.canSubmit,
+    required this.onSubmit,
+  });
+
+  final List<MiniOption> noiseNowOptions;
+  final List<MiniOption> safetyOptions;
+  final String? selectedNoiseNowId;
+  final String? selectedSafetyId;
+  final ValueChanged<String> onSelectNoiseNow;
+  final ValueChanged<String> onSelectSafety;
+  final bool canSubmit;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final containerHeight = (screenHeight * 0.50).clamp(360.0, 500.0);
+
+    return SizedBox(
+      height: containerHeight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '기본 정보 입력',
+                    style: TextStyle(
+                      color: Color(0xFF9CA3AF),
+                      fontSize: 12,
+                      height: 16 / 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    '현재 소음 상태',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: noiseNowOptions,
+                    selectedId: selectedNoiseNowId,
+                    onSelect: onSelectNoiseNow,
+                    iconBuilder: _triageNoiseNowIconForOption,
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '안전 긴급도',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: safetyOptions,
+                    selectedId: selectedSafetyId,
+                    onSelect: onSelectSafety,
+                    iconBuilder: _triageSafetyIconForOption,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _PrimaryButton(
+            label: '다음',
+            onPressed: canSubmit ? onSubmit : null,
+            compact: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IntakeMultiFormBasicWidget extends StatelessWidget {
+  const _IntakeMultiFormBasicWidget({
+    required this.scrollController,
+    required this.residenceOptions,
+    required this.selectedResidenceId,
+    required this.onSelectResidence,
+    required this.managementOptions,
+    required this.selectedManagementId,
+    required this.onSelectManagement,
+    required this.sourceCertaintyOptions,
+    required this.selectedSourceCertaintyId,
+    required this.onSelectSourceCertainty,
+    required this.canSubmit,
+    required this.onSubmit,
+  });
+
+  final ScrollController scrollController;
+  final List<MiniOption> residenceOptions;
+  final String? selectedResidenceId;
+  final ValueChanged<String> onSelectResidence;
+  final List<MiniOption> managementOptions;
+  final String? selectedManagementId;
+  final ValueChanged<String> onSelectManagement;
+  final List<MiniOption> sourceCertaintyOptions;
+  final String? selectedSourceCertaintyId;
+  final ValueChanged<String> onSelectSourceCertainty;
+  final bool canSubmit;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final containerHeight = (screenHeight * 0.50).clamp(360.0, 500.0);
+
+    return SizedBox(
+      height: containerHeight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              controller: scrollController,
+              key: const PageStorageKey<String>('intake-basic-scroll'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '기본 정보 입력',
+                    style: TextStyle(
+                      color: Color(0xFF9CA3AF),
+                      fontSize: 12,
+                      height: 16 / 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    '거주 형태',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: residenceOptions,
+                    selectedId: selectedResidenceId,
+                    onSelect: onSelectResidence,
+                    iconBuilder: _residenceIconForOption,
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '관리사무소(관리주체) 유무',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: managementOptions,
+                    selectedId: selectedManagementId,
+                    onSelect: onSelectManagement,
+                    iconBuilder: _managementIconForOption,
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '발생원 특정 정도',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: sourceCertaintyOptions,
+                    selectedId: selectedSourceCertaintyId,
+                    onSelect: onSelectSourceCertainty,
+                    iconBuilder: _sourceCertaintyIconForOption,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _PrimaryButton(
+            label: '다음',
+            onPressed: canSubmit ? onSubmit : null,
+            compact: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IntakeMultiFormDetailWidget extends StatelessWidget {
+  const _IntakeMultiFormDetailWidget({
+    required this.scrollController,
+    required this.noiseTypeOptions,
+    required this.selectedNoiseTypeId,
+    required this.onSelectNoiseType,
+    required this.frequencyOptions,
+    required this.selectedFrequencyId,
+    required this.onSelectFrequency,
+    required this.timeBandOptions,
+    required this.selectedTimeBandId,
+    required this.onSelectTimeBand,
+    required this.dateLabel,
+    required this.timeLabel,
+    required this.onPickDate,
+    required this.onPickTime,
+    required this.canSubmit,
+    required this.onSubmit,
+  });
+
+  final ScrollController scrollController;
+  final List<MiniOption> noiseTypeOptions;
+  final String? selectedNoiseTypeId;
+  final ValueChanged<String> onSelectNoiseType;
+  final List<MiniOption> frequencyOptions;
+  final String? selectedFrequencyId;
+  final ValueChanged<String> onSelectFrequency;
+  final List<MiniOption> timeBandOptions;
+  final String? selectedTimeBandId;
+  final ValueChanged<String> onSelectTimeBand;
+  final String dateLabel;
+  final String timeLabel;
+  final VoidCallback onPickDate;
+  final VoidCallback onPickTime;
+  final bool canSubmit;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final containerHeight = (screenHeight * 0.56).clamp(400.0, 560.0);
+
+    return SizedBox(
+      height: containerHeight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              controller: scrollController,
+              key: const PageStorageKey<String>('intake-detail-scroll'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '소음 패턴 입력',
+                    style: TextStyle(
+                      color: Color(0xFF9CA3AF),
+                      fontSize: 12,
+                      height: 16 / 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    '소음 유형',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: noiseTypeOptions,
+                    selectedId: selectedNoiseTypeId,
+                    onSelect: onSelectNoiseType,
+                    iconBuilder: _noiseTypeIconForOption,
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '반복 빈도',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: frequencyOptions,
+                    selectedId: selectedFrequencyId,
+                    onSelect: onSelectFrequency,
+                    iconBuilder: _frequencyIconForOption,
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '주 발생 시간',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormButtonGrid(
+                    options: timeBandOptions,
+                    selectedId: selectedTimeBandId,
+                    onSelect: onSelectTimeBand,
+                    iconBuilder: _timeBandIconForOption,
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '소음 시작 시점',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormDateTimeRow(
+                    icon: Icons.calendar_month_rounded,
+                    label: '발생 날짜',
+                    value: dateLabel,
+                    onTap: onPickDate,
+                  ),
+                  const SizedBox(height: 8),
+                  _MultiFormDateTimeRow(
+                    icon: Icons.schedule_rounded,
+                    label: '발생 시간',
+                    value: timeLabel,
+                    onTap: onPickTime,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _PrimaryButton(
+            label: '정보 확인',
+            onPressed: canSubmit ? onSubmit : null,
+            compact: true,
+          ),
+        ],
       ),
     );
   }
@@ -1852,6 +2830,86 @@ IconData _timeBandIconForOption(String id) {
   }
 }
 
+IconData _managementIconForOption(String id) {
+  switch (id) {
+    case 'management-yes':
+      return Icons.approval_rounded;
+    case 'management-no':
+      return Icons.block_rounded;
+    case 'management-unknown':
+      return Icons.help_outline_rounded;
+    default:
+      return Icons.approval_rounded;
+  }
+}
+
+IconData _sourceCertaintyIconForOption(String id) {
+  switch (id) {
+    case 'source-exact':
+      return Icons.pin_drop_rounded;
+    case 'source-floor':
+      return Icons.layers_rounded;
+    case 'source-unknown':
+      return Icons.blur_on_rounded;
+    default:
+      return Icons.pin_drop_rounded;
+  }
+}
+
+IconData _noiseTypeIconForOption(String id) {
+  switch (id) {
+    case 'noise-impact':
+      return Icons.fitness_center_rounded;
+    case 'noise-air':
+      return Icons.speaker_rounded;
+    case 'noise-both':
+      return Icons.graphic_eq_rounded;
+    case 'noise-unknown':
+      return Icons.help_outline_rounded;
+    default:
+      return Icons.graphic_eq_rounded;
+  }
+}
+
+IconData _frequencyIconForOption(String id) {
+  switch (id) {
+    case 'freq-low':
+      return Icons.looks_one_rounded;
+    case 'freq-mid':
+      return Icons.looks_two_rounded;
+    case 'freq-high':
+      return Icons.looks_3_rounded;
+    default:
+      return Icons.looks_two_rounded;
+  }
+}
+
+IconData _triageNoiseNowIconForOption(String id) {
+  switch (id) {
+    case 'noise-now-active':
+      return Icons.volume_up_rounded;
+    case 'noise-now-recent':
+      return Icons.pause_circle_outline_rounded;
+    case 'noise-now-repeat':
+      return Icons.repeat_rounded;
+    default:
+      return Icons.volume_up_rounded;
+  }
+}
+
+IconData _triageSafetyIconForOption(String id) {
+  switch (id) {
+    case 'safety-normal':
+      return Icons.shield_outlined;
+    case 'safety-unknown':
+      return Icons.help_outline_rounded;
+    case 'safety-danger':
+      return Icons.warning_amber_rounded;
+    default:
+      return Icons.shield_outlined;
+  }
+}
+
 class _OptionListWidget extends StatelessWidget {
   const _OptionListWidget({
     required this.dateLabel,
@@ -1954,7 +3012,7 @@ class _EvidenceOptionListWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          '체크리스트 · 선택사항',
+          '증거 제출',
           style: TextStyle(
             color: Color(0xFF8B99AC),
             fontSize: 13,
@@ -1965,7 +3023,7 @@ class _EvidenceOptionListWidget extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         const Text(
-          '필요한 항목만 첨부해 주세요.',
+          '상담 단계에서 필요한 자료를 선택해 주세요. (선택사항)',
           style: TextStyle(
             color: Color(0xFF9CA3AF),
             fontSize: 12,
@@ -2019,11 +3077,350 @@ class _EvidenceOptionListWidget extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _SecondaryButton(
-          label: '건너뛰기',
+          label: '자료 없이 진행',
           onPressed: onSkip,
           compact: true,
         ),
       ],
+    );
+  }
+}
+
+class _EvidencePackV2Widget extends StatelessWidget {
+  const _EvidencePackV2Widget({
+    required this.selectedAttachmentIds,
+    required this.formFileName,
+    required this.diaryFileName,
+    required this.isPicking,
+    required this.onToggleAttachment,
+    required this.onSubmit,
+    required this.onSkip,
+    required this.canSubmit,
+  });
+
+  final Set<String> selectedAttachmentIds;
+  final String? formFileName;
+  final String? diaryFileName;
+  final bool isPicking;
+  final ValueChanged<String> onToggleAttachment;
+  final VoidCallback onSubmit;
+  final VoidCallback onSkip;
+  final bool canSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final isFormSelected = selectedAttachmentIds.contains('evidence-v2-form');
+    final isDiarySelected = selectedAttachmentIds.contains('evidence-v2-diary');
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '증거 제출',
+          style: TextStyle(
+            color: Color(0xFF8B99AC),
+            fontSize: 13,
+            height: 18 / 13,
+            fontWeight: FontWeight.w600,
+            fontFamilyFallback: _kKrFontFallback,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '측정 단계 제출에 필요한 2개 서류를 첨부해 주세요. (필수)',
+          style: TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            height: 1.3,
+            fontWeight: FontWeight.w500,
+            fontFamilyFallback: _kKrFontFallback,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: Colors.white,
+          ),
+          child: Column(
+            children: [
+              _OptionDateTimeRow(
+                icon: Icons.description_rounded,
+                label: '층간소음 측정 신청서',
+                value: isPicking
+                    ? '불러오는 중...'
+                    : isFormSelected
+                        ? (formFileName ?? '첨부됨')
+                        : 'PDF/HWP 파일 선택',
+                selected: isFormSelected,
+                onTap: () => onToggleAttachment('evidence-v2-form'),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14),
+                child: Divider(height: 1, color: AppColors.border),
+              ),
+              _OptionDateTimeRow(
+                icon: Icons.fact_check_rounded,
+                label: '층간소음 발생일지',
+                value: isPicking
+                    ? '불러오는 중...'
+                    : isDiarySelected
+                        ? (diaryFileName ?? '첨부됨')
+                        : '발생일지 파일 선택',
+                selected: isDiarySelected,
+                onTap: () => onToggleAttachment('evidence-v2-diary'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _PrimaryButton(
+          label: '제출 준비 완료',
+          onPressed: canSubmit ? onSubmit : null,
+          compact: true,
+        ),
+        const SizedBox(height: 8),
+        _SecondaryButton(
+          label: '측정 단계 건너뛰기',
+          onPressed: onSkip,
+          compact: true,
+        ),
+      ],
+    );
+  }
+}
+
+class _MeasureTransitionCheckWidget extends StatelessWidget {
+  const _MeasureTransitionCheckWidget({
+    required this.visitDone,
+    required this.within30Days,
+    required this.receivingUnit,
+    required this.onSelectVisitDone,
+    required this.onSelectWithin30Days,
+    required this.onSelectReceivingUnit,
+    required this.canSubmit,
+    required this.onSubmit,
+  });
+
+  final bool? visitDone;
+  final bool? within30Days;
+  final bool? receivingUnit;
+  final ValueChanged<bool> onSelectVisitDone;
+  final ValueChanged<bool> onSelectWithin30Days;
+  final ValueChanged<bool> onSelectReceivingUnit;
+  final bool canSubmit;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 380),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '측정 전환 체크',
+            style: TextStyle(
+              color: Color(0xFF8B99AC),
+              fontSize: 13,
+              height: 18 / 13,
+              fontWeight: FontWeight.w600,
+              fontFamilyFallback: _kKrFontFallback,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  _MeasureCheckRow(
+                    title: '방문상담 이후에도 갈등이 지속되나요?',
+                    value: visitDone,
+                    onSelect: onSelectVisitDone,
+                  ),
+                  const SizedBox(height: 8),
+                  _MeasureCheckRow(
+                    title: '방문상담 후 30일 이내 신청인가요?',
+                    value: within30Days,
+                    onSelect: onSelectWithin30Days,
+                  ),
+                  const SizedBox(height: 8),
+                  _MeasureCheckRow(
+                    title: '수음세대(피해 세대) 신청인가요?',
+                    value: receivingUnit,
+                    onSelect: onSelectReceivingUnit,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _PrimaryButton(
+            label: '측정 전환 판단',
+            onPressed: canSubmit ? onSubmit : null,
+            compact: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MeasureCheckRow extends StatelessWidget {
+  const _MeasureCheckRow({
+    required this.title,
+    required this.value,
+    required this.onSelect,
+  });
+
+  final String title;
+  final bool? value;
+  final ValueChanged<bool> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12305A78),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.textMain,
+              fontSize: 14,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+              fontFamilyFallback: _kKrFontFallback,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _MeasureToggleButton(
+                  label: '예',
+                  selected: value == true,
+                  onTap: () => onSelect(true),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MeasureToggleButton(
+                  label: '아니오',
+                  selected: value == false,
+                  onTap: () => onSelect(false),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MeasureToggleButton extends StatefulWidget {
+  const _MeasureToggleButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_MeasureToggleButton> createState() => _MeasureToggleButtonState();
+}
+
+class _MeasureToggleButtonState extends State<_MeasureToggleButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _setPressed(true),
+      onTapUp: (_) => _setPressed(false),
+      onTapCancel: () => _setPressed(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOutCubic,
+        scale: _pressed ? 0.985 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: widget.selected ? AppColors.blueTint : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: widget.selected ? AppColors.primary : AppColors.border,
+              width: widget.selected ? 1.4 : 1,
+            ),
+            boxShadow: _pressed
+                ? const [
+                    BoxShadow(
+                      color: Color(0x10000000),
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ]
+                : widget.selected
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x16305A78),
+                          blurRadius: 6,
+                          offset: Offset(0, 3),
+                        ),
+                      ]
+                    : const [
+                        BoxShadow(
+                          color: Color(0x0B000000),
+                          blurRadius: 2,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              color: widget.selected ? AppColors.primary : AppColors.textMuted,
+              fontSize: 14,
+              fontWeight: widget.selected ? FontWeight.w700 : FontWeight.w600,
+              fontFamilyFallback: _kKrFontFallback,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2853,56 +4250,67 @@ class _SummaryCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '요약 확인',
-          style: TextStyle(
-            color: Color(0xFF8B99AC),
-            fontSize: 13,
-            height: 18 / 13,
-            fontWeight: FontWeight.w600,
-            fontFamilyFallback: _kKrFontFallback,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 360),
-          child: Scrollbar(
-            thumbVisibility: true,
-            radius: const Radius.circular(999),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.only(right: 6),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < rows.length; i++) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: _SummaryItemRow(row: rows[i]),
-                    ),
-                    if (i < rows.length - 1)
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(18, 14, 0, 14),
-                        child: Divider(height: 1, color: AppColors.border),
-                      ),
-                  ],
-                ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : 420.0;
+        final containerHeight = maxHeight.clamp(310.0, 420.0).toDouble();
+
+        return SizedBox(
+          height: containerHeight,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '요약 확인',
+                style: TextStyle(
+                  color: Color(0xFF8B99AC),
+                  fontSize: 13,
+                  height: 18 / 13,
+                  fontWeight: FontWeight.w600,
+                  fontFamilyFallback: _kKrFontFallback,
+                ),
               ),
-            ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: Scrollbar(
+                  thumbVisibility: true,
+                  radius: const Radius.circular(999),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < rows.length; i++) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 5),
+                            child: _SummaryItemRow(row: rows[i]),
+                          ),
+                          if (i < rows.length - 1)
+                            const Padding(
+                              padding: EdgeInsets.fromLTRB(18, 14, 0, 14),
+                              child: Divider(height: 1, color: AppColors.border),
+                            ),
+                        ],
+                        const SizedBox(height: 4),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _PrimaryButton(label: '계속하기', onPressed: onContinue, compact: true),
+              const SizedBox(height: 8),
+              _SecondaryButton(
+                label: '수정',
+                onPressed: onEdit,
+                compact: true,
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 12),
-        _PrimaryButton(label: '계속하기', onPressed: onContinue, compact: true),
-        const SizedBox(height: 8),
-        _SecondaryButton(
-          label: '수정',
-          onPressed: onEdit,
-          compact: true,
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -3419,10 +4827,14 @@ class _TextCard extends StatelessWidget {
 
 class _StatusFeedWidget extends StatefulWidget {
   const _StatusFeedWidget({
+    required this.routeLabel,
+    required this.needsSupplementLikely,
     required this.onUploadMore,
     required this.onOpenSummary,
   });
 
+  final String routeLabel;
+  final bool needsSupplementLikely;
   final VoidCallback onUploadMore;
   final VoidCallback onOpenSummary;
 
@@ -3435,6 +4847,87 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final feedPanelMaxHeight = (screenHeight * 0.38).clamp(292.0, 380.0);
+    final allEvents = <_StatusEvent>[
+      const _StatusEvent(
+        code: 'INTAKE_DONE',
+        title: '대화형 접수 완료',
+        subtitle: '필수 질문 수집을 마쳤어요.',
+        stepState: _StatusStepState.done,
+        important: true,
+      ),
+      const _StatusEvent(
+        code: 'ELIGIBLE',
+        title: '적합성 판별 완료',
+        subtitle: '층간소음 절차 대상 여부를 확인했어요.',
+        stepState: _StatusStepState.done,
+        important: true,
+      ),
+      _StatusEvent(
+        code: 'ROUTED',
+        title: '경로 확정',
+        subtitle: '선택 경로: ${widget.routeLabel}',
+        stepState: _StatusStepState.done,
+        important: true,
+      ),
+      const _StatusEvent(
+        code: 'PACKAGE_READY',
+        title: '접수 패키지 준비',
+        subtitle: '요약/증거 패키지를 생성했어요.',
+        stepState: _StatusStepState.done,
+        important: false,
+      ),
+      const _StatusEvent(
+        code: 'SUBMITTED_BY_USER',
+        title: '사용자 제출 완료',
+        subtitle: '최종 확인 후 접수가 진행됐어요.',
+        stepState: _StatusStepState.done,
+        important: true,
+      ),
+      const _StatusEvent(
+        code: 'RECEIPT_CONFIRMED',
+        title: '접수 확인',
+        subtitle: '접수번호/확인 단계가 진행 중이에요.',
+        stepState: _StatusStepState.active,
+        important: true,
+      ),
+      if (widget.needsSupplementLikely)
+        const _StatusEvent(
+          code: 'SUPPLEMENT_REQUIRED',
+          title: '보완요청 가능성',
+          subtitle: '증거가 부족하면 추가자료 요청이 올 수 있어요.',
+          stepState: _StatusStepState.pending,
+          important: true,
+        ),
+      const _StatusEvent(
+        code: 'VISIT_SCHEDULED',
+        title: '방문상담/일정',
+        subtitle: '기관 회신 후 일정이 잡혀요.',
+        stepState: _StatusStepState.pending,
+        important: false,
+      ),
+      const _StatusEvent(
+        code: 'MEASURE_ELIGIBLE',
+        title: '소음측정 전환 판단',
+        subtitle: '조건 충족 시 측정 단계로 넘어가요.',
+        stepState: _StatusStepState.pending,
+        important: false,
+      ),
+      const _StatusEvent(
+        code: 'CLOSED',
+        title: '종결',
+        subtitle: '처리 완료 후 후속 안내를 드려요.',
+        stepState: _StatusStepState.pending,
+        important: false,
+      ),
+    ];
+    final visibleEvents = _importantOnly
+        ? allEvents
+            .where((event) => event.important || event.stepState == _StatusStepState.active)
+            .toList(growable: false)
+        : allEvents;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3448,78 +4941,45 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
         ),
         const SizedBox(height: 8),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 258),
+          constraints: BoxConstraints(maxHeight: feedPanelMaxHeight.toDouble()),
           child: SingleChildScrollView(
             child: Column(
               children: [
-                const _StatusSummaryCard(
-                  statusText: '기관 확인 중',
+                _StatusSummaryCard(
+                  statusText: widget.needsSupplementLikely ? '보완요청 가능성 확인 중' : '접수 확인 단계',
                   updatedAtText: '마지막 갱신 5분 전',
-                  etaText: '예상 소요 1~2일',
+                  etaText: widget.needsSupplementLikely ? '추가자료 요청 가능' : '예상 소요 1~2일',
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: AppColors.border),
                     color: Colors.white,
                   ),
-                  child: const Column(
+                  child: Column(
                     children: [
-                      _StatusTimelineItem(
-                        title: '접수 완료',
-                        subtitle: '접수번호 DEMO-24001',
-                        stepState: _StatusStepState.done,
-                      ),
-                      _StatusTimelineItem(
-                        title: '기관 확인 중',
-                        subtitle: '담당부서 검토 진행중',
-                        stepState: _StatusStepState.active,
-                      ),
-                      _StatusTimelineItem(
-                        title: '담당자 배정',
-                        subtitle: '배정 시 알림 예정',
-                        stepState: _StatusStepState.pending,
-                        isLast: true,
-                      ),
+                      for (var i = 0; i < visibleEvents.length; i++)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: i == visibleEvents.length - 1 ? 0 : 12,
+                          ),
+                          child: _StatusTimelineItem(
+                            code: visibleEvents[i].code,
+                            title: visibleEvents[i].title,
+                            subtitle: visibleEvents[i].subtitle,
+                            stepState: visibleEvents[i].stepState,
+                            highlight: visibleEvents[i].code == 'SUPPLEMENT_REQUIRED',
+                            isLast: i == visibleEvents.length - 1,
+                          ),
+                        ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border),
-                    color: const Color(0xFFF8FCFF),
-                  ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '다음에 할 일',
-                        style: TextStyle(
-                          color: AppColors.textMain,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '지금은 기관 확인 단계입니다. 추가 자료 요청이 오면 바로 알려드릴게요.',
-                        style: TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 12.5,
-                          height: 1.4,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                const SizedBox(height: 12),
+                _StatusNextActionCard(needsSupplementLikely: widget.needsSupplementLikely),
               ],
             ),
           ),
@@ -3576,7 +5036,7 @@ class _StatusSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.border),
@@ -3586,8 +5046,8 @@ class _StatusSummaryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(999),
@@ -3595,11 +5055,11 @@ class _StatusSummaryCard extends StatelessWidget {
             ),
             child: const Icon(
               Icons.schedule_rounded,
-              size: 18,
+              size: 19,
               color: AppColors.primary,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3611,7 +5071,7 @@ class _StatusSummaryCard extends StatelessWidget {
                         statusText,
                         style: const TextStyle(
                           color: AppColors.textMain,
-                          fontSize: 14.5,
+                          fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -3638,7 +5098,7 @@ class _StatusSummaryCard extends StatelessWidget {
                   '$updatedAtText · $etaText',
                   style: const TextStyle(
                     color: Color(0xFF64748B),
-                    fontSize: 12,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -3651,19 +5111,83 @@ class _StatusSummaryCard extends StatelessWidget {
   }
 }
 
+class _StatusNextActionCard extends StatelessWidget {
+  const _StatusNextActionCard({required this.needsSupplementLikely});
+
+  final bool needsSupplementLikely;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+        color: const Color(0xFFF8FCFF),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '다음에 할 일',
+            style: TextStyle(
+              color: AppColors.textMain,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            needsSupplementLikely
+                ? '보완요청 가능성이 있어요. 필요한 경우 바로 추가자료를 업로드해 주세요.'
+                : '기관 확인 단계입니다. 주요 업데이트가 생기면 바로 알려드릴게요.',
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 13,
+              height: 1.4,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusEvent {
+  const _StatusEvent({
+    required this.code,
+    required this.title,
+    required this.subtitle,
+    required this.stepState,
+    required this.important,
+  });
+
+  final String code;
+  final String title;
+  final String subtitle;
+  final _StatusStepState stepState;
+  final bool important;
+}
+
 enum _StatusStepState { done, active, pending }
 
 class _StatusTimelineItem extends StatelessWidget {
   const _StatusTimelineItem({
+    required this.code,
     required this.title,
     required this.subtitle,
     required this.stepState,
+    this.highlight = false,
     this.isLast = false,
   });
 
+  final String code;
   final String title;
   final String subtitle;
   final _StatusStepState stepState;
+  final bool highlight;
   final bool isLast;
 
   @override
@@ -3693,12 +5217,12 @@ class _StatusTimelineItem extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 24,
+          width: 28,
           child: Column(
             children: [
               Container(
-                width: 20,
-                height: 20,
+                width: 22,
+                height: 22,
                 decoration: BoxDecoration(
                   color: nodeBg,
                   shape: BoxShape.circle,
@@ -3708,9 +5232,9 @@ class _StatusTimelineItem extends StatelessWidget {
               ),
               if (!isLast)
                 Container(
-                  margin: const EdgeInsets.only(top: 4),
+                  margin: const EdgeInsets.only(top: 6),
                   width: 2,
-                  height: 28,
+                  height: 34,
                   decoration: BoxDecoration(
                     color: const Color(0xFFE2E8F0),
                     borderRadius: BorderRadius.circular(999),
@@ -3719,31 +5243,55 @@ class _StatusTimelineItem extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 12),
         Expanded(
-          child: Column(
+          child: Container(
+            padding: highlight
+                ? const EdgeInsets.symmetric(horizontal: 10, vertical: 8)
+                : EdgeInsets.zero,
+            decoration: highlight
+                ? BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFAC9A5)),
+                  )
+                : null,
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text(
+                code,
+                style: TextStyle(
+                  color: highlight ? const Color(0xFFB45309) : const Color(0xFF94A3B8),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(height: 2),
               Text(
                 title,
                 style: TextStyle(
                   color: stepState == _StatusStepState.pending
                       ? const Color(0xFF475569)
                       : AppColors.textMain,
-                  fontSize: 14,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              const SizedBox(height: 2),
               Text(
                 subtitle,
                 style: const TextStyle(
                   color: Color(0xFF64748B),
-                  fontSize: 12.5,
+                  fontSize: 13,
+                  height: 1.35,
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
+        ),
         ),
       ],
     );
