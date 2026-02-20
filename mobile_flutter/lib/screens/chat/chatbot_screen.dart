@@ -806,21 +806,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   bool get _isSendEnabled {
     if (!_isUiReadyAfterAi) return false;
-    if (_miniType == MiniInterfaceType.none) return _inputController.text.trim().isNotEmpty;
-    return (_miniType == MiniInterfaceType.listPicker ||
-            _miniType == MiniInterfaceType.pathChooser) &&
-        _selectedOptionIds.isNotEmpty;
+    if (_miniType == MiniInterfaceType.none) {
+      return _inputController.text.trim().isNotEmpty;
+    }
+    return false;
   }
 
   void _handleSendPressed() {
-    if (_miniType == MiniInterfaceType.listPicker) {
-      _handleListSelectionSubmit();
-      return;
-    }
-    if (_miniType == MiniInterfaceType.pathChooser) {
-      _handlePathChooserSelectionSubmit();
-      return;
-    }
     _handleTextSend();
   }
 
@@ -837,6 +829,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                 ..add(id);
             });
           },
+          canSubmit: _selectedOptionIds.isNotEmpty,
+          onSubmit: _handleListSelectionSubmit,
         );
       case MiniInterfaceType.optionList:
         if (_step == DemoStep.evidence) {
@@ -937,6 +931,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                 ..add(id);
             });
           },
+          canSubmit: _selectedOptionIds.isNotEmpty,
+          onSubmit: _handlePathChooserSelectionSubmit,
         );
       case MiniInterfaceType.noiseDiaryBuilder:
         return _NoiseDiaryBuilderWidget(
@@ -1247,11 +1243,15 @@ class _ListPickerWidget extends StatelessWidget {
     required this.options,
     required this.selectedIds,
     required this.onTapOption,
+    required this.canSubmit,
+    required this.onSubmit,
   });
 
   final List<MiniOption> options;
   final Set<String> selectedIds;
   final ValueChanged<String> onTapOption;
+  final bool canSubmit;
+  final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
@@ -1297,6 +1297,12 @@ class _ListPickerWidget extends StatelessWidget {
           )
         else
           optionsColumn,
+        const SizedBox(height: 12),
+        _PrimaryButton(
+          label: '선택 완료',
+          onPressed: canSubmit ? onSubmit : null,
+          compact: true,
+        ),
       ],
     );
   }
@@ -2505,10 +2511,14 @@ class _PathChooserWidget extends StatefulWidget {
   const _PathChooserWidget({
     required this.selectedId,
     required this.onSelect,
+    required this.canSubmit,
+    required this.onSubmit,
   });
 
   final String? selectedId;
   final ValueChanged<String> onSelect;
+  final bool canSubmit;
+  final VoidCallback onSubmit;
 
   @override
   State<_PathChooserWidget> createState() => _PathChooserWidgetState();
@@ -2574,6 +2584,12 @@ class _PathChooserWidgetState extends State<_PathChooserWidget> {
                 title: '다른 기관 선택',
                 onTap: () => widget.onSelect('path-alternative'),
               ),
+            ),
+            const SizedBox(height: 12),
+            _PrimaryButton(
+              label: '선택 완료',
+              onPressed: widget.canSubmit ? widget.onSubmit : null,
+              compact: true,
             ),
           ],
         ),

@@ -39,17 +39,8 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
   }
 
   void _playFrameOneReveal() {
-    _showStartTitle = false;
+    _showStartTitle = true;
     _showStartButton = false;
-
-    _timers.add(
-      Timer(const Duration(milliseconds: 280), () {
-        if (!mounted || _phase != StartFlowPhase.frame1) return;
-        setState(() {
-          _showStartTitle = true;
-        });
-      }),
-    );
 
     _timers.add(
       Timer(const Duration(milliseconds: 740), () {
