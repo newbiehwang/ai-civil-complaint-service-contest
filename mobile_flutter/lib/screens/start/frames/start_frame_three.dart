@@ -25,7 +25,7 @@ class StartFrameThree extends StatelessWidget {
             children: [
               Positioned(
                 left: (w - spinnerSize) / 2,
-                top: sy(303),
+                top: sy(287),
                 width: spinnerSize,
                 height: spinnerSize,
                 child: CircularProgressIndicator(

@@ -39,17 +39,8 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
   }
 
   void _playFrameOneReveal() {
-    _showStartTitle = false;
+    _showStartTitle = true;
     _showStartButton = false;
-
-    _timers.add(
-      Timer(const Duration(milliseconds: 280), () {
-        if (!mounted || _phase != StartFlowPhase.frame1) return;
-        setState(() {
-          _showStartTitle = true;
-        });
-      }),
-    );
 
     _timers.add(
       Timer(const Duration(milliseconds: 740), () {
@@ -96,19 +87,13 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
     };
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 480),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
+      duration: const Duration(milliseconds: 200),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
       transitionBuilder: (child, animation) {
         return FadeTransition(
           opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.02, 0),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
-          ),
+          child: child,
         );
       },
       child: KeyedSubtree(

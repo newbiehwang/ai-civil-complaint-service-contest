@@ -16,6 +16,10 @@ class StartFrameTwo extends StatelessWidget {
         builder: (context, constraints) {
           const designWidth = 390.0;
           const designHeight = 884.0;
+          const heroCenterY = 315.0;
+          const titleTopY = 381.0;
+          const buttonTopY = 677.695;
+          const captionTopY = 753.695;
           final w = constraints.maxWidth;
           final h = constraints.maxHeight;
           double sx(double x) => x * (w / designWidth);
@@ -23,15 +27,15 @@ class StartFrameTwo extends StatelessWidget {
 
           final buttonWidth = sx(310);
           final buttonHeight = sx(60);
-          final logoWidth = sx(140.64);
-          final logoHeight = sx(166);
+          final logoWidth = sx(128);
+          final logoHeight = sx(168);
           final titleWidth = sx(247.68);
 
           return Stack(
             children: [
               Positioned(
                 left: (w - logoWidth) / 2,
-                top: sy(258),
+                top: sy(heroCenterY) - (logoHeight / 2),
                 width: logoWidth,
                 height: logoHeight,
                 child: Image.asset(
@@ -41,7 +45,7 @@ class StartFrameTwo extends StatelessWidget {
               ),
               Positioned(
                 left: (w - titleWidth) / 2,
-                top: sy(438),
+                top: sy(titleTopY),
                 width: titleWidth,
                 child: const Text(
                   '본인 확인 후 민원 신청을\n이어서 진행합니다.',
@@ -56,7 +60,7 @@ class StartFrameTwo extends StatelessWidget {
               ),
               Positioned(
                 left: (w - buttonWidth) / 2,
-                top: sy(677.695),
+                top: sy(buttonTopY),
                 width: buttonWidth,
                 child: StartPrimaryButton(
                   label: '정부24에서 계속',
@@ -68,7 +72,7 @@ class StartFrameTwo extends StatelessWidget {
               Positioned(
                 left: 0,
                 right: 0,
-                top: sy(753.695),
+                top: sy(captionTopY),
                 child: const Text(
                   '소요 1~2분 · 암호화된 안전한 인증',
                   textAlign: TextAlign.center,

@@ -23,6 +23,10 @@ class StartFrameOne extends StatelessWidget {
         builder: (context, constraints) {
           const designWidth = 390.0;
           const designHeight = 884.0;
+          const heroCenterY = 315.0;
+          const titleTopY = 381.0;
+          const buttonTopY = 677.695;
+          const captionTopY = 753.695;
           final w = constraints.maxWidth;
           final h = constraints.maxHeight;
           double sx(double x) => x * (w / designWidth);
@@ -38,7 +42,7 @@ class StartFrameOne extends StatelessWidget {
             children: [
               Positioned(
                 left: (w - logoWidth) / 2,
-                top: sy(276.5),
+                top: sy(heroCenterY) - (logoHeight / 2),
                 width: logoWidth,
                 height: logoHeight,
                 child: Image.asset(
@@ -48,26 +52,24 @@ class StartFrameOne extends StatelessWidget {
               ),
               Positioned(
                 left: (w - titleWidth) / 2,
-                top: sy(458.5),
+                top: sy(titleTopY),
                 width: titleWidth,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 420),
-                  opacity: showTitle ? 1 : 0,
-                  child: const Text(
-                    '신속한 처리, 정부 24',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 24,
-                      height: 39 / 24,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1F2937),
-                    ),
-                  ),
-                ),
+                child: showTitle
+                    ? const Text(
+                        '신속한 처리, 정부 24',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 24,
+                          height: 39 / 24,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1F2937),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
               Positioned(
                 left: (w - buttonWidth) / 2,
-                top: sy(677.695),
+                top: sy(buttonTopY),
                 width: buttonWidth,
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 380),
@@ -88,7 +90,7 @@ class StartFrameOne extends StatelessWidget {
               Positioned(
                 left: 0,
                 right: 0,
-                top: sy(753.695),
+                top: sy(captionTopY),
                 child: const Text(
                   '평균 2분 · 언제든 중단 후 이어하기 가능',
                   textAlign: TextAlign.center,
