@@ -2965,7 +2965,7 @@ class _TextCard extends StatelessWidget {
   }
 }
 
-class _StatusFeedWidget extends StatelessWidget {
+class _StatusFeedWidget extends StatefulWidget {
   const _StatusFeedWidget({
     required this.onUploadMore,
     required this.onOpenSummary,
@@ -2975,66 +2975,365 @@ class _StatusFeedWidget extends StatelessWidget {
   final VoidCallback onOpenSummary;
 
   @override
+  State<_StatusFeedWidget> createState() => _StatusFeedWidgetState();
+}
+
+class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
+  bool _importantOnly = true;
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('진행 상태', style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.border),
+        const Text(
+          '진행 상태',
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
           ),
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _FeedLine(icon: '✅', title: '접수 완료', subtitle: '접수번호 DEMO-24001'),
-              SizedBox(height: 8),
-              _FeedLine(icon: '⏳', title: '기관 확인 중', subtitle: '담당부서 검토 진행중'),
-              SizedBox(height: 8),
-              _FeedLine(icon: '⏳', title: '담당자 배정', subtitle: '배정 시 알림 예정'),
-            ],
+        ),
+        const SizedBox(height: 8),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 258),
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                const _StatusSummaryCard(
+                  statusText: '기관 확인 중',
+                  updatedAtText: '마지막 갱신 5분 전',
+                  etaText: '예상 소요 1~2일',
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                    color: Colors.white,
+                  ),
+                  child: const Column(
+                    children: [
+                      _StatusTimelineItem(
+                        title: '접수 완료',
+                        subtitle: '접수번호 DEMO-24001',
+                        stepState: _StatusStepState.done,
+                      ),
+                      _StatusTimelineItem(
+                        title: '기관 확인 중',
+                        subtitle: '담당부서 검토 진행중',
+                        stepState: _StatusStepState.active,
+                      ),
+                      _StatusTimelineItem(
+                        title: '담당자 배정',
+                        subtitle: '배정 시 알림 예정',
+                        stepState: _StatusStepState.pending,
+                        isLast: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                    color: const Color(0xFFF8FCFF),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '다음에 할 일',
+                        style: TextStyle(
+                          color: AppColors.textMain,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        '지금은 기관 확인 단계입니다. 추가 자료 요청이 오면 바로 알려드릴게요.',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12.5,
+                          height: 1.4,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 10),
-        _SelectableCardButton(title: '추가 증거 업로드', selected: false, onTap: onUploadMore),
+        Row(
+          children: [
+            Expanded(
+              child: _StatusFilterChip(
+                label: '중요 업데이트만',
+                selected: _importantOnly,
+                onTap: () => setState(() => _importantOnly = true),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _StatusFilterChip(
+                label: '단계별 모두',
+                selected: !_importantOnly,
+                onTap: () => setState(() => _importantOnly = false),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
-        _SelectableCardButton(title: '케이스 요약 보기', selected: false, onTap: onOpenSummary),
+        _PrimaryButton(
+          label: '케이스 요약 보기',
+          onPressed: widget.onOpenSummary,
+          compact: true,
+        ),
+        const SizedBox(height: 8),
+        _SecondaryButton(
+          label: '추가 증거 업로드',
+          onPressed: widget.onUploadMore,
+          compact: true,
+        ),
       ],
     );
   }
 }
 
-class _FeedLine extends StatelessWidget {
-  const _FeedLine({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
+class _StatusSummaryCard extends StatelessWidget {
+  const _StatusSummaryCard({
+    required this.statusText,
+    required this.updatedAtText,
+    required this.etaText,
   });
 
-  final String icon;
-  final String title;
-  final String subtitle;
+  final String statusText;
+  final String updatedAtText;
+  final String etaText;
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+        color: const Color(0xFFF3F9FF),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Icon(
+              Icons.schedule_rounded,
+              size: 18,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        statusText,
+                        style: const TextStyle(
+                          color: AppColors.textMain,
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE6F1FF),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        '진행중',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$updatedAtText · $etaText',
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _StatusStepState { done, active, pending }
+
+class _StatusTimelineItem extends StatelessWidget {
+  const _StatusTimelineItem({
+    required this.title,
+    required this.subtitle,
+    required this.stepState,
+    this.isLast = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final _StatusStepState stepState;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final (nodeBg, nodeBorder, nodeIcon, nodeIconColor) = switch (stepState) {
+      _StatusStepState.done => (
+          AppColors.primary,
+          AppColors.primary,
+          Icons.check_rounded,
+          Colors.white,
+        ),
+      _StatusStepState.active => (
+          const Color(0xFFEAF4FF),
+          const Color(0xFFB9D8F7),
+          Icons.schedule_rounded,
+          AppColors.primary,
+        ),
+      _StatusStepState.pending => (
+          Colors.white,
+          AppColors.border,
+          Icons.radio_button_unchecked_rounded,
+          const Color(0xFF94A3B8),
+        ),
+    };
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(icon, style: const TextStyle(fontSize: 14)),
-        const SizedBox(width: 8),
+        SizedBox(
+          width: 24,
+          child: Column(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: nodeBg,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: nodeBorder),
+                ),
+                child: Icon(nodeIcon, size: 13, color: nodeIconColor),
+              ),
+              if (!isLast)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  width: 2,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(color: AppColors.textMain, fontSize: 14, fontWeight: FontWeight.w700)),
-              Text(subtitle, style: const TextStyle(color: Color(0xFF64748B), fontSize: 12.5, fontWeight: FontWeight.w500)),
+              Text(
+                title,
+                style: TextStyle(
+                  color: stepState == _StatusStepState.pending
+                      ? const Color(0xFF475569)
+                      : AppColors.textMain,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _StatusFilterChip extends StatelessWidget {
+  const _StatusFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        height: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFEAF4FF) : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? const Color(0xFFB9D8F7) : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? AppColors.primary : AppColors.textMuted,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }
