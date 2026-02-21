@@ -46,6 +46,11 @@ public class ScenarioAApiController implements ScenarioAApi {
     }
 
     @Override
+    public ResponseEntity<ApiModels.ChatTurnResponse> chatTurn(String traceId, ApiModels.ChatTurnRequest request) {
+        return ResponseEntity.ok(caseWorkflowService.chatTurn(traceId, request));
+    }
+
+    @Override
     public ResponseEntity<ApiModels.DecompositionResult> decomposeCase(String traceId, UUID caseId) {
         return ResponseEntity.ok(caseWorkflowService.decomposeCase(caseId));
     }

@@ -23,3 +23,24 @@ flutter:
   uses-material-design: true
   assets:
     - assets/korea_gov24.transparent.png
+  fonts:
+    - family: "Pretendard GOV"
+      fonts:
+        - asset: assets/fonts/PretendardGOV-Thin.otf
+          weight: 100
+        - asset: assets/fonts/PretendardGOV-ExtraLight.otf
+          weight: 200
+        - asset: assets/fonts/PretendardGOV-Light.otf
+          weight: 300
+        - asset: assets/fonts/PretendardGOV-Regular.otf
+          weight: 400
+        - asset: assets/fonts/PretendardGOV-Medium.otf
+          weight: 500
+        - asset: assets/fonts/PretendardGOV-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/PretendardGOV-Bold.otf
+          weight: 700
+        - asset: assets/fonts/PretendardGOV-ExtraBold.otf
+          weight: 800
+        - asset: assets/fonts/PretendardGOV-Black.otf
+          weight: 900

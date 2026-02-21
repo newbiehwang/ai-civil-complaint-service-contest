@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/chat_session_summary.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/krds_tokens.dart';
 
 enum ChatListFilter {
   all,
@@ -208,15 +209,16 @@ class _FilterChipButtonState extends State<_FilterChipButton> {
           if (!mounted) return;
           setState(() => _pressed = value);
         },
-        borderRadius: BorderRadius.circular(9999),
+        borderRadius: BorderRadius.circular(KrdsTokens.radiusXl),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
           height: 24,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: widget.selected ? AppColors.primary : const Color(0xFFF3F4F6),
-            borderRadius: BorderRadius.circular(9999),
+            color:
+                widget.selected ? AppColors.primary : const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(KrdsTokens.radiusXl),
             boxShadow: widget.selected
                 ? const [
                     BoxShadow(
@@ -267,12 +269,12 @@ class _SessionCard extends StatelessWidget {
       shadowColor: const Color(0x22000000),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(KrdsTokens.radiusXl),
         side: const BorderSide(color: Color(0xFFEEF2F7)),
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(KrdsTokens.radiusXl),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
           child: Column(
@@ -557,21 +559,18 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (title, description, showCreateAction) = switch (filter) {
+    final (title, description) = switch (filter) {
       ChatListFilter.all => (
           '아직 생성된 대화창이 없어요.',
           '오른쪽 아래 버튼으로 새 민원을 시작해 주세요.',
-          true,
         ),
       ChatListFilter.inProgress => (
           '진행 중인 대화창이 없어요.',
           '새 민원을 시작하면 이곳에 표시됩니다.',
-          true,
         ),
       ChatListFilter.completed => (
           '완료된 대화창이 없어요.',
           '완료된 대화가 생기면 이곳에 표시됩니다.',
-          false,
         ),
     };
 
@@ -608,22 +607,6 @@ class _EmptyState extends StatelessWidget {
                 fontWeight: FontWeight.w400,
               ),
             ),
-            if (showCreateAction) ...[
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: onCreateSession,
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                child: const Text(
-                  '새 민원 만들기',
-                ),
-              ),
-            ],
           ],
         ),
       ),

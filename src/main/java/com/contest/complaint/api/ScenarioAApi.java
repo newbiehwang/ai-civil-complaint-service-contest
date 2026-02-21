@@ -35,6 +35,12 @@ public interface ScenarioAApi {
             @Valid @RequestBody ApiModels.AppendIntakeMessageRequest request
     );
 
+    @PostMapping("/chat/turn")
+    ResponseEntity<ApiModels.ChatTurnResponse> chatTurn(
+            @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+            @Valid @RequestBody ApiModels.ChatTurnRequest request
+    );
+
     @PostMapping("/cases/{caseId}/decomposition")
     ResponseEntity<ApiModels.DecompositionResult> decomposeCase(
             @RequestHeader(value = "X-Trace-Id", required = false) String traceId,

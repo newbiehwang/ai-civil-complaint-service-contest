@@ -7,7 +7,7 @@ import 'screens/chat/chat_list_screen.dart';
 import 'screens/start/start_flow_screen.dart';
 import 'services/auth_session.dart';
 import 'store/chat_session_store.dart';
-import 'theme/app_colors.dart';
+import 'theme/krds_theme.dart';
 
 void main() {
   runApp(const CivilComplaintApp());
@@ -21,12 +21,7 @@ class CivilComplaintApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: '층간소음 상담',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primary),
-        scaffoldBackgroundColor: Colors.white,
-        useMaterial3: true,
-        fontFamily: 'Pretendard',
-      ),
+      theme: KrdsTheme.light(),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -159,7 +154,6 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
   String _stepLabel(DemoStep step) {
     switch (step) {
       case DemoStep.waitingIssue:
-      case DemoStep.backendIntake:
       case DemoStep.noiseNow:
       case DemoStep.safety:
         return '접수';

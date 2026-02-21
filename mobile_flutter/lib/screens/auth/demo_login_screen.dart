@@ -64,6 +64,13 @@ class _DemoLoginScreenState extends State<DemoLoginScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (error) {
+      if (error is ApiClientError) {
+        debugPrint(
+          '[demo-login-error] ${error.toString()} details=${error.details.join(' || ')}',
+        );
+      } else {
+        debugPrint('[demo-login-error] type=${error.runtimeType} value=$error');
+      }
       if (!mounted) return;
       setState(() {
         _errorText = toKoreanErrorMessage(error);

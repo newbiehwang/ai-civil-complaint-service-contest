@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../services/api_client.dart';
 import '../../services/error_map.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/krds_tokens.dart';
 
 enum MiniInterfaceType {
   none,
@@ -31,7 +32,6 @@ enum _PickerOwner {
 
 enum DemoStep {
   waitingIssue,
-  backendIntake,
   noiseNow,
   safety,
   residence,
@@ -58,6 +58,7 @@ enum DemoStep {
 }
 
 const List<String> _kKrFontFallback = <String>[
+  'Pretendard GOV',
   'Pretendard',
   'Apple SD Gothic Neo',
   'Noto Sans KR',
@@ -355,6 +356,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String? _backendCaseStatus;
   String? _backendTraceId;
   bool _isBackendRequestInFlight = false;
+  Future<void> _backendSyncQueue = Future<void>.value();
 
   @override
   void initState() {
@@ -624,151 +626,107 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
   }
 
-  String _fallbackQuestionByStatus(String status) {
-    switch (status) {
-      case 'RECEIVED':
-        return '추가 정보를 알려 주세요.';
-      case 'CLASSIFIED':
-        return '분류가 완료되었어요.';
-      case 'ROUTE_CONFIRMED':
-        return '경로가 확정되었어요.';
-      default:
-        return '계속 진행해 볼게요.';
-    }
-  }
-
-  Future<String> _ensureBackendCase(String initialSummary) async {
-    if (_backendCaseId != null && _backendCaseId!.isNotEmpty) {
-      return _backendCaseId!;
-    }
-
+  Future<ChatTurnResponseDto> _sendChatTurnMessage(String message) async {
     final traceId = _backendTraceId ?? _bootTraceId;
-    final created = await _apiClient.createCase(
+    final response = await _apiClient.chatTurn(
       traceId: traceId,
-      idempotencyKey: 'flutter-create-$traceId',
-      initialSummary: initialSummary,
+      userMessage: message,
+      caseId: _backendCaseId,
       housingType: _housingTypeForBackend(),
+      uiCapabilities: const <String>[
+        'LIST_PICKER',
+        'OPTION_LIST',
+        'SUMMARY_CARD',
+        'PATH_CHOOSER',
+        'STATUS_FEED',
+      ],
     );
-
-    _backendCaseId = created.caseId;
-    _backendCaseStatus = created.status;
-    _backendTraceId = traceId;
-    return created.caseId;
-  }
-
-  Future<IntakeUpdateResponseDto> _appendUserMessageToBackend(
-      String message) async {
-    final traceId = _backendTraceId ?? _bootTraceId;
-    final caseId = await _ensureBackendCase(_data.userIssue ?? message);
-    final response = await _apiClient.appendIntakeMessage(
-      traceId: traceId,
-      caseId: caseId,
-      role: 'USER',
-      message: message,
-    );
-    _backendCaseId = response.caseId;
-    _backendCaseStatus = response.status;
+    if (response.sessionId.trim().isNotEmpty) {
+      _backendCaseId = response.sessionId.trim();
+    }
+    final backendStatus = response.statePatch['status']?.toString();
+    if (backendStatus != null && backendStatus.trim().isNotEmpty) {
+      _backendCaseStatus = backendStatus.trim();
+    }
     _backendTraceId = traceId;
     return response;
   }
 
+  String? _buildErrorDiagnostic(Object error) {
+    if (error is! ApiClientErrorLike) return null;
+    final parts = <String>[];
+    final code = error.code;
+    if (code != null && code.trim().isNotEmpty) {
+      parts.add('code=$code');
+    }
+    final status = error.status;
+    if (status != null) {
+      parts.add('status=$status');
+    }
+    if (error is ApiClientError &&
+        error.traceId != null &&
+        error.traceId!.trim().isNotEmpty) {
+      parts.add('trace=${error.traceId}');
+    }
+    if (parts.isEmpty) return null;
+    return parts.join(' | ');
+  }
+
   void _showApiErrorSnack(Object error) {
     final message = toKoreanErrorMessage(error);
+    final diagnostic = _buildErrorDiagnostic(error);
+    if (error is ApiClientError) {
+      debugPrint(
+        '[chat-api-error] ${error.toString()} details=${error.details.join(' || ')}',
+      );
+    } else {
+      debugPrint('[chat-api-error] type=${error.runtimeType} value=$error');
+    }
+
     if (!mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(
+        content: Text(
+          diagnostic == null ? message : '$message\n$diagnostic',
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
     );
   }
 
-  void _applyBackendIntakeResponse(IntakeUpdateResponseDto response) {
-    final followUp = response.followUpInterface;
-    final question = response.recommendedFollowUpQuestion.trim().isNotEmpty
-        ? response.recommendedFollowUpQuestion.trim()
-        : _fallbackQuestionByStatus(response.status);
+  void _enqueueBackendSyncMessages(List<String> messages) {
+    if (!_isBackendEnabled || messages.isEmpty) return;
 
-    if (response.status == 'ROUTE_CONFIRMED' ||
-        response.status == 'FORMAL_SUBMISSION_READY') {
-      _setAi(
-        text: '경로가 확정되었어요.\n증거 제출을 진행해 주세요.',
-        step: DemoStep.evidenceV1,
-        miniType: MiniInterfaceType.optionList,
-      );
-      return;
-    }
-
-    if (response.status == 'CLASSIFIED') {
-      _setAi(
-        text: '분류를 완료했어요.\n추천 경로를 확인해 주세요.',
-        step: DemoStep.pathChooser,
-        miniType: MiniInterfaceType.pathChooser,
-      );
-      return;
-    }
-
-    if (followUp != null &&
-        followUp.interfaceType == 'OPTIONS' &&
-        followUp.options.isNotEmpty) {
-      final options = followUp.options
-          .map(
-            (option) => MiniOption(
-              id: option.optionId.isNotEmpty ? option.optionId : option.label,
-              label: option.label,
-            ),
-          )
-          .toList(growable: false);
-
-      _setAi(
-        text: question,
-        step: DemoStep.backendIntake,
-        miniType: MiniInterfaceType.listPicker,
-        options: options,
-      );
-      return;
-    }
-
-    _setAi(
-      text: question,
-      step: DemoStep.backendIntake,
-      miniType: MiniInterfaceType.none,
-    );
+    _backendSyncQueue = _backendSyncQueue.then((_) async {
+      for (final raw in messages) {
+        final message = raw.trim();
+        if (message.isEmpty) continue;
+        await _sendChatTurnMessage(message);
+      }
+    }).catchError((error) {
+      _showApiErrorSnack(error);
+    });
   }
 
-  Future<void> _fetchBackendRouteRecommendationAndSetAi() async {
-    final traceId = _backendTraceId ?? _bootTraceId;
-    final caseId = await _ensureBackendCase(_data.userIssue ?? '층간소음 민원');
-    await _apiClient.decomposeCase(traceId: traceId, caseId: caseId);
-    final recommendation =
-        await _apiClient.recommendRoute(traceId: traceId, caseId: caseId);
+  void _enqueueBackendSyncMessage(String message) {
+    _enqueueBackendSyncMessages(<String>[message]);
+  }
 
-    final options = recommendation.options
-        .map((option) => MiniOption(id: option.optionId, label: option.label))
-        .toList(growable: false);
-
-    if (options.isEmpty) {
-      _setAi(
-        text: '추천 경로를 불러오지 못했어요.\n다시 시도해 주세요.',
-        step: DemoStep.pathAlternative,
-        miniType: MiniInterfaceType.listPicker,
-        options: const [
-          MiniOption(id: 'path-backend-retry', label: '추천 경로 다시 불러오기'),
-        ],
-      );
+  Future<void> _syncBackendRouteAndAdvance(String selectedLabel) async {
+    if (!_isBackendEnabled) {
+      _data = _data.copyWith(route: selectedLabel);
+      _showThinkingThen(() {
+        _setAi(
+          text: '선택한 경로로 진행할게요.\n증거 제출을 진행해 주세요.',
+          step: DemoStep.evidenceV1,
+          miniType: MiniInterfaceType.optionList,
+        );
+      });
       return;
     }
 
-    _setAi(
-      text: '추천 경로를 준비했어요.\n진행 방식을 선택해 주세요.',
-      step: DemoStep.pathAlternative,
-      miniType: MiniInterfaceType.listPicker,
-      options: options,
-    );
-  }
-
-  Future<void> _confirmBackendRouteAndGoEvidence(
-    String optionId,
-    String selectedLabel,
-  ) async {
     if (_isBackendRequestInFlight) return;
 
     FocusScope.of(context).unfocus();
@@ -778,19 +736,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     });
 
     try {
+      await _backendSyncQueue;
       await Future<void>.delayed(const Duration(milliseconds: 420));
       if (!mounted) return;
 
-      final traceId = _backendTraceId ?? _bootTraceId;
-      final caseId = await _ensureBackendCase(_data.userIssue ?? selectedLabel);
-      final detail = await _apiClient.confirmRouteDecision(
-        traceId: traceId,
-        caseId: caseId,
-        optionId: optionId,
-      );
-      _backendCaseId = detail.caseId;
-      _backendCaseStatus = detail.status;
-      _backendTraceId = traceId;
+      await _sendChatTurnMessage(selectedLabel);
 
       if (!mounted) return;
 
@@ -800,41 +750,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         step: DemoStep.evidenceV1,
         miniType: MiniInterfaceType.optionList,
       );
-    } catch (error) {
-      _showApiErrorSnack(error);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isThinking = false;
-          _isBackendRequestInFlight = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _sendBackendTurn(
-    String message, {
-    Duration thinkingDuration = const Duration(milliseconds: 560),
-  }) async {
-    if (_isBackendRequestInFlight) return;
-
-    FocusScope.of(context).unfocus();
-    setState(() {
-      _isBackendRequestInFlight = true;
-      _isThinking = true;
-    });
-
-    try {
-      await Future<void>.delayed(thinkingDuration);
-      if (!mounted) return;
-
-      final response = await _appendUserMessageToBackend(message);
-      if (!mounted) return;
-      if (_isBackendEnabled && response.status == 'CLASSIFIED') {
-        await _fetchBackendRouteRecommendationAndSetAi();
-        return;
-      }
-      _applyBackendIntakeResponse(response);
     } catch (error) {
       _showApiErrorSnack(error);
     } finally {
@@ -1037,12 +952,24 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   void _submitIntakeBasicMultiForm() {
     if (!_isIntakeBasicReady) return;
 
+    final residenceLabel =
+        _optionLabelById(_residenceOptions, _intakeResidenceId);
+    final managementLabel =
+        _optionLabelById(_managementOptions, _intakeManagementId);
+    final sourceCertaintyLabel =
+        _optionLabelById(_sourceCertaintyOptions, _intakeSourceCertaintyId);
+
     _data = _data.copyWith(
-      residence: _optionLabelById(_residenceOptions, _intakeResidenceId),
-      management: _optionLabelById(_managementOptions, _intakeManagementId),
-      sourceCertainty:
-          _optionLabelById(_sourceCertaintyOptions, _intakeSourceCertaintyId),
+      residence: residenceLabel,
+      management: managementLabel,
+      sourceCertainty: sourceCertaintyLabel,
     );
+
+    _enqueueBackendSyncMessages(<String>[
+      if (residenceLabel != null) residenceLabel,
+      if (managementLabel != null) managementLabel,
+      if (sourceCertaintyLabel != null) sourceCertaintyLabel,
+    ]);
 
     _showThinkingThen(() {
       _setAi(
@@ -1056,13 +983,27 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   void _submitIntakeDetailMultiForm() {
     if (!_isIntakeDetailReady) return;
 
+    final noiseTypeLabel =
+        _optionLabelById(_noiseTypeOptions, _intakeNoiseTypeId);
+    final frequencyLabel =
+        _optionLabelById(_frequencyOptions, _intakeFrequencyId);
+    final timeBandLabel = _optionLabelById(_timeBandOptions, _intakeTimeBandId);
+
     _data = _data.copyWith(
-      noiseType: _optionLabelById(_noiseTypeOptions, _intakeNoiseTypeId),
-      frequency: _optionLabelById(_frequencyOptions, _intakeFrequencyId),
-      timeBand: _optionLabelById(_timeBandOptions, _intakeTimeBandId),
+      noiseType: noiseTypeLabel,
+      frequency: frequencyLabel,
+      timeBand: timeBandLabel,
       startedAtDate: _incidentDate,
       startedAtTime: _incidentTime,
     );
+
+    _enqueueBackendSyncMessages(<String>[
+      if (noiseTypeLabel != null) noiseTypeLabel,
+      if (frequencyLabel != null) frequencyLabel,
+      if (timeBandLabel != null) timeBandLabel,
+      if (_incidentDate != null) _formatDate(_incidentDate!),
+      if (_incidentTime != null) _formatTime(_incidentTime!),
+    ]);
 
     final eligibility = _evaluateEligibility();
     _data = _data.copyWith(eligibilityReason: eligibility.reason);
@@ -1102,6 +1043,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       noiseNow: noiseNowLabel,
       safety: safetyLabel,
     );
+
+    _enqueueBackendSyncMessages(<String>[noiseNowLabel, safetyLabel]);
 
     if (_triageSafetyId == 'safety-danger') {
       _showThinkingThen(() {
@@ -1385,10 +1328,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       final thinkingDuration = input == '1'
           ? const Duration(seconds: 3)
           : const Duration(milliseconds: 560);
-      if (_isBackendEnabled) {
-        unawaited(_sendBackendTurn(input, thinkingDuration: thinkingDuration));
-        return;
-      }
+      _enqueueBackendSyncMessage(input);
       _showThinkingThen(() {
         _triageNoiseNowId = null;
         _triageSafetyId = null;
@@ -1399,13 +1339,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         );
       }, duration: thinkingDuration);
       return;
-    }
-
-    if (_step == DemoStep.backendIntake) {
-      if (_isBackendEnabled) {
-        unawaited(_sendBackendTurn(input));
-        return;
-      }
     }
 
     if (_step == DemoStep.waitingRevision) {
@@ -1440,10 +1373,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     final selectedLabel = _options.firstWhere((e) => e.id == selectedId).label;
 
     switch (_step) {
-      case DemoStep.backendIntake:
-        if (!_isBackendEnabled) return;
-        unawaited(_sendBackendTurn(selectedLabel));
-        return;
       case DemoStep.noiseNow:
         return;
       case DemoStep.safety:
@@ -1461,6 +1390,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           return;
         }
         if (selectedId != 'safety-continue') return;
+        _enqueueBackendSyncMessage('생활소음 접수 계속');
         _goIntakeMultiFormBasic(
           '좋아요. 기본 정보를 입력해 주세요.',
           resetSelections: true,
@@ -1490,27 +1420,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         });
         return;
       case DemoStep.pathAlternative:
-        if (_isBackendEnabled) {
-          if (selectedId == 'path-backend-retry') {
-            unawaited(_prepareBackendRouteSelectionWithThinking());
-            return;
-          }
-          if (selectedId.startsWith('opt-')) {
-            unawaited(
-                _confirmBackendRouteAndGoEvidence(selectedId, selectedLabel));
-            return;
-          }
-        }
-        _data = _data.copyWith(
-          route: selectedLabel,
-        );
-        _showThinkingThen(() {
-          _setAi(
-            text: '선택한 경로로 진행할게요.\n증거 제출을 진행해 주세요.',
-            step: DemoStep.evidenceV1,
-            miniType: MiniInterfaceType.optionList,
-          );
-        });
+        unawaited(_syncBackendRouteAndAdvance(selectedLabel));
         return;
       case DemoStep.complete:
         if (selectedId == 'complete-restart') {
@@ -1523,44 +1433,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
   }
 
-  Future<void> _prepareBackendRouteSelectionWithThinking() async {
-    if (_isBackendRequestInFlight) return;
-
-    FocusScope.of(context).unfocus();
-    setState(() {
-      _isBackendRequestInFlight = true;
-      _isThinking = true;
-    });
-
-    try {
-      await Future<void>.delayed(const Duration(milliseconds: 420));
-      if (!mounted) return;
-      await _fetchBackendRouteRecommendationAndSetAi();
-    } catch (error) {
-      _showApiErrorSnack(error);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isThinking = false;
-          _isBackendRequestInFlight = false;
-        });
-      }
-    }
-  }
-
   void _handlePathChooserSelectionSubmit() {
     if (_selectedOptionIds.isEmpty || _step != DemoStep.pathChooser) return;
     final selectedId = _selectedOptionIds.first;
 
     if (selectedId == 'path-recommended') {
-      _data = _data.copyWith(route: '이웃사이센터 조정 신청');
-      _showThinkingThen(() {
-        _setAi(
-          text: '추천 경로로 진행합니다.\n증거 제출을 진행해 주세요.',
-          step: DemoStep.evidenceV1,
-          miniType: MiniInterfaceType.optionList,
-        );
-      });
+      unawaited(_syncBackendRouteAndAdvance('이웃사이센터 조정 신청'));
       return;
     }
 
@@ -2190,16 +2068,11 @@ class _MiniInterfaceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(KrdsTokens.radiusXl),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x18305A78),
-            blurRadius: 22,
-            offset: Offset(0, 9),
-          ),
-          BoxShadow(
-            color: Color(0x0C305A78),
-            blurRadius: 6,
+            color: Color(0x12000000),
+            blurRadius: 8,
             offset: Offset(0, 2),
           ),
         ],
@@ -2244,13 +2117,23 @@ class _InputBar extends StatelessWidget {
               controller: controller,
               focusNode: focusNode,
               enabled: enabled,
-              decoration: InputDecoration.collapsed(
+              decoration: InputDecoration(
                 hintText: placeholder,
                 hintStyle: const TextStyle(
                   color: Color(0xFF9CA3AF),
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                 ),
+                isDense: true,
+                isCollapsed: true,
+                contentPadding: EdgeInsets.zero,
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
               ),
               style: const TextStyle(
                 color: AppColors.textMain,
@@ -5262,7 +5145,7 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
-    final feedPanelMaxHeight = (screenHeight * 0.38).clamp(292.0, 380.0);
+    final statusFeedHeight = (screenHeight * 0.5).clamp(370.0, 450.0);
     final allEvents = <_StatusEvent>[
       const _StatusEvent(
         code: 'INTAKE_DONE',
@@ -5343,101 +5226,105 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
             .toList(growable: false)
         : allEvents;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '진행 상태',
-          style: TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: feedPanelMaxHeight.toDouble()),
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                _StatusSummaryCard(
-                  statusText: widget.needsSupplementLikely
-                      ? '보완요청 가능성 확인 중'
-                      : '접수 확인 단계',
-                  updatedAtText: '마지막 갱신 5분 전',
-                  etaText: widget.needsSupplementLikely
-                      ? '추가자료 요청 가능'
-                      : '예상 소요 1~2일',
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border),
-                    color: Colors.white,
-                  ),
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < visibleEvents.length; i++)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            bottom: i == visibleEvents.length - 1 ? 0 : 12,
-                          ),
-                          child: _StatusTimelineItem(
-                            code: visibleEvents[i].code,
-                            title: visibleEvents[i].title,
-                            subtitle: visibleEvents[i].subtitle,
-                            stepState: visibleEvents[i].stepState,
-                            highlight:
-                                visibleEvents[i].code == 'SUPPLEMENT_REQUIRED',
-                            isLast: i == visibleEvents.length - 1,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _StatusNextActionCard(
-                    needsSupplementLikely: widget.needsSupplementLikely),
-              ],
+    return SizedBox(
+      height: statusFeedHeight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '진행 상태',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
             ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _StatusFilterChip(
-                label: '중요 업데이트만',
-                selected: _importantOnly,
-                onTap: () => setState(() => _importantOnly = true),
+          const SizedBox(height: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Column(
+                children: [
+                  _StatusSummaryCard(
+                    statusText: widget.needsSupplementLikely
+                        ? '보완요청 가능성 확인 중'
+                        : '접수 확인 단계',
+                    updatedAtText: '마지막 갱신 5분 전',
+                    etaText: widget.needsSupplementLikely
+                        ? '추가자료 요청 가능'
+                        : '예상 소요 1~2일',
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.border),
+                      color: Colors.white,
+                    ),
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < visibleEvents.length; i++)
+                          Padding(
+                            padding: EdgeInsets.only(
+                              bottom: i == visibleEvents.length - 1 ? 0 : 12,
+                            ),
+                            child: _StatusTimelineItem(
+                              code: visibleEvents[i].code,
+                              title: visibleEvents[i].title,
+                              subtitle: visibleEvents[i].subtitle,
+                              stepState: visibleEvents[i].stepState,
+                              highlight: visibleEvents[i].code ==
+                                  'SUPPLEMENT_REQUIRED',
+                              isLast: i == visibleEvents.length - 1,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _StatusNextActionCard(
+                    needsSupplementLikely: widget.needsSupplementLikely,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _StatusFilterChip(
-                label: '단계별 모두',
-                selected: !_importantOnly,
-                onTap: () => setState(() => _importantOnly = false),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _StatusFilterChip(
+                  label: '중요 업데이트만',
+                  selected: _importantOnly,
+                  onTap: () => setState(() => _importantOnly = true),
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _PrimaryButton(
-          label: '케이스 요약 보기',
-          onPressed: widget.onOpenSummary,
-          compact: true,
-        ),
-        const SizedBox(height: 8),
-        _SecondaryButton(
-          label: '추가 증거 업로드',
-          onPressed: widget.onUploadMore,
-          compact: true,
-        ),
-      ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatusFilterChip(
+                  label: '단계별 모두',
+                  selected: !_importantOnly,
+                  onTap: () => setState(() => _importantOnly = false),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _PrimaryButton(
+            label: '케이스 요약 보기',
+            onPressed: widget.onOpenSummary,
+            compact: true,
+          ),
+          const SizedBox(height: 8),
+          _SecondaryButton(
+            label: '추가 증거 업로드',
+            onPressed: widget.onUploadMore,
+            compact: true,
+          ),
+        ],
+      ),
     );
   }
 }

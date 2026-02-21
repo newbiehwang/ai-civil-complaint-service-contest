@@ -35,7 +35,7 @@ class StartFrameOne extends StatelessWidget {
           double sy(double y) => y * (h / designHeight);
 
           final logoSize = sx(88);
-          final titleWidth = sx(210.88);
+          final titleWidth = sx(248);
           final buttonWidth = sx(310);
           final buttonHeight = sx(60);
 
@@ -73,15 +73,32 @@ class StartFrameOne extends StatelessWidget {
                     duration: const Duration(milliseconds: 520),
                     curve: Curves.easeOutCubic,
                     offset: showTitle ? Offset.zero : const Offset(0, 0.02),
-                    child: const Text(
-                      '신속한 처리, 정부 24',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 24,
-                        height: 39 / 24,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1F2937),
+                    child: const Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '신속한 처리,\n',
+                            style: TextStyle(
+                              fontSize: 22,
+                              height: 1.4,
+                              fontWeight: FontWeight.w400,
+                              letterSpacing: -0.3,
+                              color: Color(0xFF2D5D7B),
+                            ),
+                          ),
+                          TextSpan(
+                            text: '정부24',
+                            style: TextStyle(
+                              fontSize: 34,
+                              height: 1.25,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.6,
+                              color: Color(0xFF2D5D7B),
+                            ),
+                          ),
+                        ],
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),

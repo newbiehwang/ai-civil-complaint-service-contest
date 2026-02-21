@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/krds_tokens.dart';
 
 class StartPrimaryButton extends StatefulWidget {
   const StartPrimaryButton({
@@ -59,21 +60,21 @@ class _StartPrimaryButtonState extends State<StartPrimaryButton> {
                 duration: const Duration(milliseconds: 120),
                 curve: Curves.easeOut,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(KrdsTokens.radiusXl),
                   color: _isPressed ? pressedColor : baseColor,
                   boxShadow: _isPressed
                       ? const [
                           BoxShadow(
-                            color: Color(0x24234A64),
-                            blurRadius: 2,
+                            color: Color(0x18000000),
+                            blurRadius: 4,
                             offset: Offset(0, 1),
                           ),
                         ]
                       : const [
                           BoxShadow(
-                            color: Color(0x33234A64),
-                            blurRadius: 2,
-                            offset: Offset(0, 4),
+                            color: Color(0x22000000),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
                           ),
                         ],
                 ),

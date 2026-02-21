@@ -1,4 +1,5 @@
 const Map<String, String> _errorCodeToMessage = {
+  'ENV_MISSING': '환경 설정이 비어 있습니다. API 주소와 토큰을 확인해 주세요.',
   'VALIDATION_ERROR': '입력 내용을 다시 확인해 주세요.',
   'DEMO_LOGIN_INVALID': '아이디와 비밀번호를 입력해 주세요.',
   'DEMO_LOGIN_FAILED': '데모 계정 정보가 올바르지 않습니다.',
@@ -12,6 +13,12 @@ const Map<String, String> _errorCodeToMessage = {
   'INTERNAL_ERROR': '서버 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
   'NETWORK_ERROR':
       '네트워크 연결이 원활하지 않습니다. 실기기에서는 localhost 대신 PC LAN IP를 사용해 주세요.',
+  'NETWORK_TIMEOUT': '서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.',
+  'SSL_ERROR': '보안 연결(SSL)에 실패했습니다. 네트워크 환경을 확인해 주세요.',
+  'HTTP_CLIENT_ERROR': '요청 전송 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+  'INVALID_REQUEST': '요청 형식이 올바르지 않습니다. 설정값을 확인해 주세요.',
+  'INVALID_URL': 'API 주소 형식이 올바르지 않습니다. 실행 옵션을 확인해 주세요.',
+  'RESPONSE_PARSE_ERROR': '서버 응답 형식을 해석하지 못했습니다. 잠시 후 다시 시도해 주세요.',
   'UNKNOWN_ERROR': '요청 처리 중 문제가 발생했습니다. 다시 시도해 주세요.',
 };
 

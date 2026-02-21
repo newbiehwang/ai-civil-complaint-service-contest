@@ -185,6 +185,92 @@ class DemoLoginResponseDto {
   }
 }
 
+class ChatUiOptionDto {
+  const ChatUiOptionDto({required this.id, required this.label});
+
+  final String id;
+  final String label;
+
+  factory ChatUiOptionDto.fromJson(Map<String, dynamic> json) {
+    return ChatUiOptionDto(
+      id: json['id']?.toString() ?? '',
+      label: json['label']?.toString() ?? '',
+    );
+  }
+}
+
+class ChatUiHintDto {
+  const ChatUiHintDto({
+    required this.type,
+    required this.selectionMode,
+    required this.title,
+    required this.subtitle,
+    required this.options,
+    required this.meta,
+  });
+
+  final String type;
+  final String selectionMode;
+  final String? title;
+  final String? subtitle;
+  final List<ChatUiOptionDto> options;
+  final Map<String, dynamic> meta;
+
+  factory ChatUiHintDto.fromJson(Map<String, dynamic> json) {
+    final rawOptions = (json['options'] as List<dynamic>? ?? const <dynamic>[])
+        .whereType<Map<String, dynamic>>()
+        .map(ChatUiOptionDto.fromJson)
+        .toList(growable: false);
+
+    return ChatUiHintDto(
+      type: json['type']?.toString() ?? 'NONE',
+      selectionMode: json['selectionMode']?.toString() ?? 'NONE',
+      title: json['title']?.toString(),
+      subtitle: json['subtitle']?.toString(),
+      options: rawOptions,
+      meta:
+          (json['meta'] as Map<String, dynamic>? ?? const <String, dynamic>{}),
+    );
+  }
+}
+
+class ChatTurnResponseDto {
+  const ChatTurnResponseDto({
+    required this.sessionId,
+    required this.assistantMessage,
+    required this.uiHint,
+    required this.statePatch,
+    required this.nextAction,
+  });
+
+  final String sessionId;
+  final String assistantMessage;
+  final ChatUiHintDto uiHint;
+  final Map<String, dynamic> statePatch;
+  final String nextAction;
+
+  factory ChatTurnResponseDto.fromJson(Map<String, dynamic> json) {
+    final rawUiHint = json['uiHint'];
+    return ChatTurnResponseDto(
+      sessionId: json['sessionId']?.toString() ?? '',
+      assistantMessage: json['assistantMessage']?.toString() ?? '',
+      uiHint: rawUiHint is Map<String, dynamic>
+          ? ChatUiHintDto.fromJson(rawUiHint)
+          : const ChatUiHintDto(
+              type: 'NONE',
+              selectionMode: 'NONE',
+              title: null,
+              subtitle: null,
+              options: <ChatUiOptionDto>[],
+              meta: <String, dynamic>{},
+            ),
+      statePatch:
+          (json['statePatch'] as Map<String, dynamic>? ?? <String, dynamic>{}),
+      nextAction: json['nextAction']?.toString() ?? '',
+    );
+  }
+}
+
 class ApiClient {
   ApiClient({String? baseUrl, String? jwt})
       : _baseUrl =
@@ -222,6 +308,94 @@ class ApiClient {
     return '$prefix-$now-$rand';
   }
 
+  T _parseDto<T>({
+    required String path,
+    required String traceId,
+    required String parserName,
+    required Map<String, dynamic> payload,
+    required T Function(Map<String, dynamic>) parser,
+  }) {
+    try {
+      return parser(payload);
+    } on ApiClientError {
+      rethrow;
+    } catch (error) {
+      throw ApiClientError(
+        code: 'RESPONSE_PARSE_ERROR',
+        message: '서버 응답 형식을 해석하지 못했습니다.',
+        traceId: traceId,
+        details: <String>[
+          'path=$path',
+          'parser=$parserName',
+          'errorType=${error.runtimeType}',
+          'payloadKeys=${payload.keys.join(',')}',
+        ],
+      );
+    }
+  }
+
+  String _previewBody(String rawText) {
+    final normalized = rawText.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.isEmpty) {
+      return '<empty>';
+    }
+    const maxLength = 240;
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+    return '${normalized.substring(0, maxLength)}...';
+  }
+
+  Map<String, dynamic> _decodeJsonMap({
+    required String rawText,
+    required String path,
+    required String traceId,
+    required int status,
+  }) {
+    if (rawText.trim().isEmpty) {
+      return <String, dynamic>{};
+    }
+
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(rawText);
+    } on FormatException {
+      throw ApiClientError(
+        code: 'RESPONSE_PARSE_ERROR',
+        message: '서버 응답을 해석하지 못했습니다.',
+        status: status,
+        traceId: traceId,
+        details: <String>[
+          'path=$path',
+          'reason=invalid-json',
+          'body=${_previewBody(rawText)}',
+        ],
+      );
+    }
+
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    if (decoded is Map) {
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    }
+
+    throw ApiClientError(
+      code: 'RESPONSE_PARSE_ERROR',
+      message: '서버 응답 형식이 예상과 다릅니다.',
+      status: status,
+      traceId: traceId,
+      details: <String>[
+        'path=$path',
+        'reason=expected-map',
+        'actual=${decoded.runtimeType}',
+        'body=${_previewBody(rawText)}',
+      ],
+    );
+  }
+
   Future<CaseDetailDto> createCase({
     required String traceId,
     required String idempotencyKey,
@@ -243,7 +417,13 @@ class ApiClient {
       },
     );
 
-    return CaseDetailDto.fromJson(response);
+    return _parseDto<CaseDetailDto>(
+      path: '/api/v1/cases',
+      traceId: traceId,
+      parserName: 'CaseDetailDto',
+      payload: response,
+      parser: CaseDetailDto.fromJson,
+    );
   }
 
   Future<IntakeUpdateResponseDto> appendIntakeMessage({
@@ -262,7 +442,13 @@ class ApiClient {
       },
     );
 
-    return IntakeUpdateResponseDto.fromJson(response);
+    return _parseDto<IntakeUpdateResponseDto>(
+      path: '/api/v1/cases/$caseId/intake/messages',
+      traceId: traceId,
+      parserName: 'IntakeUpdateResponseDto',
+      payload: response,
+      parser: IntakeUpdateResponseDto.fromJson,
+    );
   }
 
   Future<void> decomposeCase({
@@ -285,7 +471,13 @@ class ApiClient {
       path: '/api/v1/cases/$caseId/routing/recommendation',
       traceId: traceId,
     );
-    return RoutingRecommendationDto.fromJson(response);
+    return _parseDto<RoutingRecommendationDto>(
+      path: '/api/v1/cases/$caseId/routing/recommendation',
+      traceId: traceId,
+      parserName: 'RoutingRecommendationDto',
+      payload: response,
+      parser: RoutingRecommendationDto.fromJson,
+    );
   }
 
   Future<CaseDetailDto> confirmRouteDecision({
@@ -302,7 +494,13 @@ class ApiClient {
         'userConfirmed': true,
       },
     );
-    return CaseDetailDto.fromJson(response);
+    return _parseDto<CaseDetailDto>(
+      path: '/api/v1/cases/$caseId/routing/decision',
+      traceId: traceId,
+      parserName: 'CaseDetailDto',
+      payload: response,
+      parser: CaseDetailDto.fromJson,
+    );
   }
 
   Future<DemoLoginResponseDto> demoLogin({
@@ -328,7 +526,13 @@ class ApiClient {
       includeAuthHeader: false,
     );
 
-    final dto = DemoLoginResponseDto.fromJson(response);
+    final dto = _parseDto<DemoLoginResponseDto>(
+      path: '/api/v1/auth/demo-login',
+      traceId: traceId,
+      parserName: 'DemoLoginResponseDto',
+      payload: response,
+      parser: DemoLoginResponseDto.fromJson,
+    );
     if (dto.accessToken.trim().isEmpty) {
       throw ApiClientError(
         code: 'DEMO_LOGIN_FAILED',
@@ -336,6 +540,42 @@ class ApiClient {
       );
     }
     return dto;
+  }
+
+  Future<ChatTurnResponseDto> chatTurn({
+    required String traceId,
+    required String userMessage,
+    String? caseId,
+    String scenarioType = 'SCENARIO_A',
+    String housingType = 'APARTMENT',
+    bool consentAccepted = true,
+    List<String> uiCapabilities = const <String>[],
+  }) async {
+    final context = <String, dynamic>{
+      if (caseId != null && caseId.trim().isNotEmpty) 'caseId': caseId.trim(),
+      'scenarioType': scenarioType,
+      'housingType': housingType,
+      'consentAccepted': consentAccepted,
+    };
+
+    final response = await _request(
+      method: 'POST',
+      path: '/api/v1/chat/turn',
+      traceId: traceId,
+      body: <String, dynamic>{
+        'userMessage': userMessage,
+        'context': context,
+        'uiCapabilities': uiCapabilities,
+      },
+    );
+
+    return _parseDto<ChatTurnResponseDto>(
+      path: '/api/v1/chat/turn',
+      traceId: traceId,
+      parserName: 'ChatTurnResponseDto',
+      payload: response,
+      parser: ChatTurnResponseDto.fromJson,
+    );
   }
 
   Future<Map<String, dynamic>> _request({
@@ -362,44 +602,58 @@ class ApiClient {
       );
     }
 
-    final uri = Uri.parse('$_baseUrl$path');
     final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 12);
 
     try {
+      final uri = Uri.parse('$_baseUrl$path');
       final request = await client.openUrl(method, uri);
       if (includeAuthHeader && token != null && token.isNotEmpty) {
         request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
       }
       request.headers.set('X-Trace-Id', traceId);
-      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.headers.set(
+        HttpHeaders.contentTypeHeader,
+        'application/json; charset=utf-8',
+      );
       if (idempotencyKey != null && idempotencyKey.trim().isNotEmpty) {
         request.headers.set('Idempotency-Key', idempotencyKey);
       }
 
       if (body != null) {
-        request.write(jsonEncode(body));
+        final encoded = utf8.encode(jsonEncode(body));
+        request.add(encoded);
       }
 
-      final response = await request.close();
+      final response =
+          await request.close().timeout(const Duration(seconds: 20));
       final rawText = await utf8.decodeStream(response);
-      final decoded = rawText.isEmpty
-          ? <String, dynamic>{}
-          : (jsonDecode(rawText) as Map<String, dynamic>);
+      final decoded = _decodeJsonMap(
+        rawText: rawText,
+        path: path,
+        traceId: traceId,
+        status: response.statusCode,
+      );
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        final rawDetails = decoded['details'];
+        final details = rawDetails is List
+            ? rawDetails.map((e) => e.toString()).toList(growable: false)
+            : const <String>[];
+
         throw ApiClientError(
           code: decoded['code']?.toString() ?? 'HTTP_${response.statusCode}',
           message:
               decoded['message']?.toString() ?? '요청 실패(${response.statusCode})',
           status: response.statusCode,
           traceId: decoded['traceId']?.toString(),
-          details: (decoded['details'] as List<dynamic>? ?? const <dynamic>[])
-              .map((e) => e.toString())
-              .toList(growable: false),
+          details: details,
         );
       }
 
       return decoded;
+    } on ApiClientError {
+      rethrow;
     } on SocketException catch (e) {
       throw ApiClientError(
         code: 'NETWORK_ERROR',
@@ -409,9 +663,51 @@ class ApiClient {
       );
     } on TimeoutException {
       throw ApiClientError(
-        code: 'NETWORK_ERROR',
+        code: 'NETWORK_TIMEOUT',
         message: '서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.',
         traceId: traceId,
+      );
+    } on HandshakeException catch (e) {
+      throw ApiClientError(
+        code: 'SSL_ERROR',
+        message: '보안 연결(SSL)에 실패했습니다. 네트워크 환경을 확인해 주세요.',
+        traceId: traceId,
+        details: <String>['type=${e.runtimeType}', 'message=${e.message}'],
+      );
+    } on HttpException catch (e) {
+      throw ApiClientError(
+        code: 'HTTP_CLIENT_ERROR',
+        message: 'HTTP 요청 처리 중 문제가 발생했습니다.',
+        traceId: traceId,
+        details: <String>['message=${e.message}'],
+      );
+    } on ArgumentError catch (e) {
+      throw ApiClientError(
+        code: 'INVALID_REQUEST',
+        message: '요청 형식이 올바르지 않습니다. 설정값을 확인해 주세요.',
+        traceId: traceId,
+        details: <String>['message=${e.message}'],
+      );
+    } on FormatException catch (e) {
+      throw ApiClientError(
+        code: 'INVALID_URL',
+        message: 'API 주소 형식이 올바르지 않습니다.',
+        traceId: traceId,
+        details: <String>['message=${e.message}'],
+      );
+    } on TypeError catch (e) {
+      throw ApiClientError(
+        code: 'RESPONSE_PARSE_ERROR',
+        message: '서버 응답 형식이 예상과 다릅니다.',
+        traceId: traceId,
+        details: <String>['type=${e.runtimeType}'],
+      );
+    } catch (e) {
+      throw ApiClientError(
+        code: 'UNKNOWN_ERROR',
+        message: '요청 처리 중 문제가 발생했습니다. 다시 시도해 주세요.',
+        traceId: traceId,
+        details: <String>['type=${e.runtimeType}', 'message=$e'],
       );
     } finally {
       client.close(force: true);
