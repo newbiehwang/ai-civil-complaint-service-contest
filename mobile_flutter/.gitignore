@@ -6,6 +6,9 @@ ios/Pods/
 ios/.symlinks/
 android/.gradle/
 android/local.properties
+node_modules/
+package-lock.json
+package.json
 .env
 .env.*
 !.env.example
