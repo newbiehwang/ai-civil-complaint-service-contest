@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../config/app_env.dart';
 import '../../services/api_client.dart';
 import '../../services/auth_session.dart';
 import '../../services/error_map.dart';
@@ -13,20 +14,42 @@ class DemoLoginScreen extends StatefulWidget {
 }
 
 class _DemoLoginScreenState extends State<DemoLoginScreen> {
-  final ApiClient _apiClient = ApiClient();
   final TextEditingController _usernameController =
       TextEditingController(text: 'demo');
   final TextEditingController _passwordController =
       TextEditingController(text: '1234');
+  final TextEditingController _serverIpController = TextEditingController();
 
   bool _isSubmitting = false;
   String? _errorText;
+  _LoginMode _mode = _LoginMode.server;
+
+  bool get _isServerMode => _mode == _LoginMode.server;
 
   @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _serverIpController.dispose();
     super.dispose();
+  }
+
+  String? _normalizeServerBaseUrl(String raw) {
+    var value = raw.trim();
+    if (value.isEmpty) return null;
+
+    if (!value.startsWith('http://') && !value.startsWith('https://')) {
+      value = 'http://$value';
+    }
+    if (RegExp(r'^https?://[^/:]+$').hasMatch(value)) {
+      value = '$value:8080';
+    }
+
+    final uri = Uri.tryParse(value);
+    if (uri == null || uri.host.trim().isEmpty) {
+      return null;
+    }
+    return value.replaceAll(RegExp(r'/+$'), '');
   }
 
   Future<void> _submit() async {
@@ -48,18 +71,45 @@ class _DemoLoginScreenState extends State<DemoLoginScreen> {
     });
 
     try {
-      final traceId = _apiClient.createTraceId(prefix: 'demo-login');
-      final response = await _apiClient.demoLogin(
-        traceId: traceId,
-        username: username,
-        password: password,
-      );
+      if (_mode == _LoginMode.local) {
+        AuthSession.configureConnectionMode(
+          useBackend: false,
+          apiBaseUrlOverride: null,
+        );
+        AuthSession.applyToken(
+          'local-demo-token',
+          accountId: username,
+        );
+      } else {
+        final inputBaseUrl = _normalizeServerBaseUrl(_serverIpController.text);
+        if (_serverIpController.text.trim().isNotEmpty &&
+            inputBaseUrl == null) {
+          throw ApiClientError(
+            code: 'INVALID_BASE_URL',
+            message: '서버 IP 형식이 올바르지 않습니다. 예: 172.30.1.22:8080',
+          );
+        }
 
-      AuthSession.applyToken(
-        response.accessToken,
-        expiresAt: response.expiresAt,
-        accountId: username,
-      );
+        final apiClient = ApiClient(
+          baseUrl: inputBaseUrl ?? AppEnv.apiBaseUrl,
+          useBackend: true,
+        );
+        final traceId = apiClient.createTraceId(prefix: 'demo-login');
+        final response = await apiClient.demoLogin(
+          traceId: traceId,
+          username: username,
+          password: password,
+        );
+        AuthSession.configureConnectionMode(
+          useBackend: true,
+          apiBaseUrlOverride: inputBaseUrl,
+        );
+        AuthSession.applyToken(
+          response.accessToken,
+          expiresAt: response.expiresAt,
+          accountId: username,
+        );
+      }
 
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -133,6 +183,28 @@ class _DemoLoginScreenState extends State<DemoLoginScreen> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    _ModeSelector(
+                      mode: _mode,
+                      enabled: !_isSubmitting,
+                      onChanged: (next) {
+                        if (_mode == next) return;
+                        setState(() {
+                          _mode = next;
+                          _errorText = null;
+                        });
+                      },
+                    ),
+                    if (_isServerMode) ...[
+                      const SizedBox(height: 10),
+                      _LabeledField(
+                        label: '서버 IP (선택)',
+                        hintText: '비워두면 .env 값을 사용해요 (예: 172.30.1.22:8080)',
+                        controller: _serverIpController,
+                        enabled: !_isSubmitting,
+                        textInputAction: TextInputAction.next,
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     _LabeledField(
                       label: '아이디',
@@ -207,6 +279,7 @@ class _LabeledField extends StatelessWidget {
     required this.label,
     required this.controller,
     required this.enabled,
+    this.hintText,
     this.obscureText = false,
     this.textInputAction,
     this.onSubmitted,
@@ -215,6 +288,7 @@ class _LabeledField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final bool enabled;
+  final String? hintText;
   final bool obscureText;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onSubmitted;
@@ -245,6 +319,12 @@ class _LabeledField extends StatelessWidget {
             fontWeight: FontWeight.w500,
           ),
           decoration: InputDecoration(
+            hintText: hintText,
+            hintStyle: const TextStyle(
+              color: Color(0xFF9CA3AF),
+              fontSize: 13.5,
+              fontWeight: FontWeight.w500,
+            ),
             isDense: true,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -264,6 +344,64 @@ class _LabeledField extends StatelessWidget {
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+enum _LoginMode { local, server }
+
+class _ModeSelector extends StatelessWidget {
+  const _ModeSelector({
+    required this.mode,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final _LoginMode mode;
+  final bool enabled;
+  final ValueChanged<_LoginMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget buildChip({
+      required _LoginMode value,
+      required String label,
+    }) {
+      final selected = mode == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: enabled ? () => onChanged(value) : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? AppColors.primary : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected ? AppColors.primary : AppColors.border,
+              ),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : AppColors.textMuted,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        buildChip(value: _LoginMode.local, label: '로컬'),
+        const SizedBox(width: 8),
+        buildChip(value: _LoginMode.server, label: '서버'),
       ],
     );
   }
