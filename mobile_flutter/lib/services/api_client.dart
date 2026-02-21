@@ -272,15 +272,19 @@ class ChatTurnResponseDto {
 }
 
 class ApiClient {
-  ApiClient({String? baseUrl, String? jwt})
+  ApiClient({String? baseUrl, String? jwt, bool? useBackend})
       : _baseUrl =
-            (baseUrl ?? AppEnv.apiBaseUrl).replaceAll(RegExp(r'/+$'), ''),
-        _jwt = jwt ?? AppEnv.devJwt;
+            (baseUrl ?? AuthSession.apiBaseUrlOverride ?? AppEnv.apiBaseUrl)
+                .replaceAll(RegExp(r'/+$'), ''),
+        _jwt = jwt ?? AppEnv.devJwt,
+        _useBackend = useBackend ?? AuthSession.useBackend;
 
   final String _baseUrl;
   final String _jwt;
+  final bool _useBackend;
 
   bool get isConfigured {
+    if (!_useBackend) return false;
     final token = _resolvedToken;
     return _baseUrl.isNotEmpty &&
         !_isPlaceholder(_baseUrl) &&
@@ -586,6 +590,14 @@ class ApiClient {
     Map<String, dynamic>? body,
     bool includeAuthHeader = true,
   }) async {
+    if (!_useBackend) {
+      throw ApiClientError(
+        code: 'LOCAL_MODE',
+        message: '로컬 모드에서는 서버 요청을 사용하지 않습니다.',
+        traceId: traceId,
+      );
+    }
+
     if (_baseUrl.isEmpty || _isPlaceholder(_baseUrl)) {
       throw ApiClientError(
         code: 'ENV_MISSING',

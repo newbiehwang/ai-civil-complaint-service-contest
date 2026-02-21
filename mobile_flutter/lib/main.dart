@@ -1,15 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/services.dart';
 
 import 'models/chat_session_summary.dart';
 import 'screens/chat/chatbot_screen.dart';
 import 'screens/chat/chat_list_screen.dart';
+import 'screens/start/guide_screen.dart';
 import 'screens/start/start_flow_screen.dart';
 import 'services/auth_session.dart';
 import 'store/chat_session_store.dart';
 import 'theme/krds_theme.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+    statusBarBrightness: Brightness.light,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.dark,
+  ));
   runApp(const CivilComplaintApp());
 }
 
@@ -22,6 +33,18 @@ class CivilComplaintApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: '층간소음 상담',
       theme: KrdsTheme.light(),
+      builder: (context, child) {
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.dark,
+            statusBarBrightness: Brightness.light,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarIconBrightness: Brightness.dark,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -36,7 +59,7 @@ class CivilComplaintApp extends StatelessWidget {
   }
 }
 
-enum RootPhase { start, chatList, chat }
+enum RootPhase { start, guide, chatList, chat }
 
 class DemoRootScreen extends StatefulWidget {
   const DemoRootScreen({super.key});
@@ -93,6 +116,12 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
   }
 
   void _handleStartCompleted() {
+    setState(() {
+      _phase = RootPhase.guide;
+    });
+  }
+
+  void _handleGuideCompleted() {
     final accountId = _normalizeAccountId(AuthSession.accountId) ?? 'demo';
     _storeForAccount(accountId);
     _snapshotsForAccount(accountId);
@@ -251,6 +280,9 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
           key: ValueKey('start-flow-$_startFlowVersion'),
           onCompleted: _handleStartCompleted,
         ),
+      RootPhase.guide => GuideScreen(
+          onDone: _handleGuideCompleted,
+        ),
       RootPhase.chatList => ChatListScreen(
           sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
           onOpenSession: _openSession,
@@ -277,27 +309,26 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
     };
 
     return Scaffold(
-      body: SafeArea(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 480),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0.02, 0),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            );
-          },
-          child: KeyedSubtree(
-            key: ValueKey(_phase.name),
-            child: content,
-          ),
+      backgroundColor: Colors.white,
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 480),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.02, 0),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            ),
+          );
+        },
+        child: KeyedSubtree(
+          key: ValueKey(_phase.name),
+          child: content,
         ),
       ),
     );

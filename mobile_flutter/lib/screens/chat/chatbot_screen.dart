@@ -63,6 +63,7 @@ const List<String> _kKrFontFallback = <String>[
   'Apple SD Gothic Neo',
   'Noto Sans KR',
 ];
+const Color _kMiniSubtitleColor = Color(0xFF686868);
 
 class MiniOption {
   const MiniOption({
@@ -312,6 +313,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   bool _isThinking = false;
   bool _isAiAnswerReady = false;
+  bool _isMiniInterfaceCollapsed = false;
   int _aiAnimationNonce = 0;
   String _aiText = '안녕하세요. 어떤 소음이 가장\n불편하신가요?';
   DemoStep _step = DemoStep.waitingIssue;
@@ -526,6 +528,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     setState(() {
       _aiAnimationNonce += 1;
       _isAiAnswerReady = false;
+      _isMiniInterfaceCollapsed = false;
       _aiText = text;
       _step = step;
       _miniType = miniType;
@@ -1463,6 +1466,41 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   bool get _shouldShowMiniInterface =>
       _miniType != MiniInterfaceType.none && _isUiReadyAfterAi;
 
+  String get _miniInterfaceCollapsedTitle {
+    switch (_miniType) {
+      case MiniInterfaceType.listPicker:
+        return '단일 선택';
+      case MiniInterfaceType.multiForm:
+        if (_step == DemoStep.dateTime) return '소음 패턴 입력';
+        return '기본 정보 입력';
+      case MiniInterfaceType.optionList:
+        if (_step == DemoStep.evidenceV1 || _step == DemoStep.evidenceV2) {
+          return '증거 제출';
+        }
+        return '날짜 및 시간 선택';
+      case MiniInterfaceType.measureCheck:
+        return '측정 전환 체크';
+      case MiniInterfaceType.datePicker:
+        return '날짜 선택';
+      case MiniInterfaceType.timePicker:
+        return '시간 선택';
+      case MiniInterfaceType.summaryCard:
+        return '요약 확인';
+      case MiniInterfaceType.pathChooser:
+        return '단일 선택';
+      case MiniInterfaceType.noiseDiaryBuilder:
+        return '소음일지 작성';
+      case MiniInterfaceType.draftViewer:
+        return '신청서 초안';
+      case MiniInterfaceType.draftConfirm:
+        return '수정 반영 확인';
+      case MiniInterfaceType.statusFeed:
+        return '진행 상태';
+      case MiniInterfaceType.none:
+        return '';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
@@ -1566,6 +1604,14 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                               key: ValueKey(
                                 'mini-${_miniType.name}-$_aiAnimationNonce',
                               ),
+                              title: _miniInterfaceCollapsedTitle,
+                              collapsed: _isMiniInterfaceCollapsed,
+                              onToggleCollapsed: () {
+                                setState(() {
+                                  _isMiniInterfaceCollapsed =
+                                      !_isMiniInterfaceCollapsed;
+                                });
+                              },
                               child: _buildMiniInterface(context),
                             )
                           : const SizedBox.shrink(
@@ -2056,19 +2102,34 @@ class _MiniInterfaceCard extends StatelessWidget {
   const _MiniInterfaceCard({
     super.key,
     required this.child,
+    required this.title,
+    required this.collapsed,
+    required this.onToggleCollapsed,
   });
 
   final Widget child;
+  final String title;
+  final bool collapsed;
+  final VoidCallback onToggleCollapsed;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 520),
+    final double cardRadius = collapsed
+        ? KrdsTokens.radiusXl + KrdsTokens.space4
+        : KrdsTokens.radiusXl;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeInOutCubic,
+      width: double.infinity,
+      constraints: BoxConstraints(
+        minHeight: 58,
+        maxHeight: collapsed ? 58 : 520,
+      ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(KrdsTokens.radiusXl),
+        borderRadius: BorderRadius.circular(cardRadius),
         boxShadow: const [
           BoxShadow(
             color: Color(0x12000000),
@@ -2077,8 +2138,120 @@ class _MiniInterfaceCard extends StatelessWidget {
           ),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(18, 15, 18, 15),
-      child: child,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 28,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _kMiniSubtitleColor,
+                      fontSize: 12,
+                      height: 16 / 12,
+                      fontWeight: FontWeight.w500,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
+                  ),
+                ),
+                _MiniInterfaceToggleButton(
+                  collapsed: collapsed,
+                  onTap: onToggleCollapsed,
+                ),
+              ],
+            ),
+          ),
+          ClipRect(
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 320),
+              curve: Curves.easeInOutCubic,
+              alignment: Alignment.topCenter,
+              heightFactor: collapsed ? 0 : 1,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                opacity: collapsed ? 0 : 1,
+                child: AnimatedScale(
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeInOutCubic,
+                  alignment: Alignment.topCenter,
+                  scale: collapsed ? 0.9 : 1,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: child,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniInterfaceToggleButton extends StatefulWidget {
+  const _MiniInterfaceToggleButton({
+    required this.collapsed,
+    required this.onTap,
+  });
+
+  final bool collapsed;
+  final VoidCallback onTap;
+
+  @override
+  State<_MiniInterfaceToggleButton> createState() =>
+      _MiniInterfaceToggleButtonState();
+}
+
+class _MiniInterfaceToggleButtonState
+    extends State<_MiniInterfaceToggleButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOutCubic,
+        scale: _pressed ? 0.96 : 1,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.collapsed ? '펼치기' : '접기',
+                style: TextStyle(
+                  color: _pressed ? AppColors.primary : AppColors.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                widget.collapsed
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                color: _pressed ? AppColors.primary : AppColors.textMuted,
+                size: 16,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2208,16 +2381,6 @@ class _ListPickerWidget extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '단일 선택',
-          style: TextStyle(
-            color: Color(0xFF9CA3AF),
-            fontSize: 12,
-            height: 16 / 12,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 12),
         if (options.length > maxVisibleOptions)
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: maxOptionsHeight),
@@ -2366,16 +2529,6 @@ class _TriageMultiFormWidget extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    '기본 정보 입력',
-                    style: TextStyle(
-                      color: Color(0xFF9CA3AF),
-                      fontSize: 12,
-                      height: 16 / 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
                     '현재 소음 상태',
                     style: TextStyle(
                       color: AppColors.textMuted,
@@ -2470,16 +2623,6 @@ class _IntakeMultiFormBasicWidget extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '기본 정보 입력',
-                    style: TextStyle(
-                      color: Color(0xFF9CA3AF),
-                      fontSize: 12,
-                      height: 16 / 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
                   const Text(
                     '거주 형태',
                     style: TextStyle(
@@ -2600,16 +2743,6 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '소음 패턴 입력',
-                    style: TextStyle(
-                      color: Color(0xFF9CA3AF),
-                      fontSize: 12,
-                      height: 16 / 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
                   const Text(
                     '소음 유형',
                     style: TextStyle(
@@ -2748,16 +2881,6 @@ class _MultiFormWidget extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '기본 정보 입력',
-                    style: TextStyle(
-                      color: Color(0xFF9CA3AF),
-                      fontSize: 12,
-                      height: 16 / 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
                   const Text(
                     '거주 형태',
                     style: TextStyle(
@@ -3176,17 +3299,6 @@ class _OptionListWidget extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '날짜 및 시간 선택',
-          style: TextStyle(
-            color: Color(0xFF8B99AC),
-            fontSize: 13,
-            height: 18 / 13,
-            fontWeight: FontWeight.w600,
-            fontFamilyFallback: _kKrFontFallback,
-          ),
-        ),
-        const SizedBox(height: 10),
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
@@ -3255,20 +3367,9 @@ class _EvidenceOptionListWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          '증거 제출',
-          style: TextStyle(
-            color: Color(0xFF8B99AC),
-            fontSize: 13,
-            height: 18 / 13,
-            fontWeight: FontWeight.w600,
-            fontFamilyFallback: _kKrFontFallback,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
           '상담 단계에서 필요한 자료를 선택해 주세요. (선택사항)',
           style: TextStyle(
-            color: Color(0xFF9CA3AF),
+            color: _kMiniSubtitleColor,
             fontSize: 12,
             height: 1.3,
             fontWeight: FontWeight.w500,
@@ -3360,20 +3461,9 @@ class _EvidencePackV2Widget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          '증거 제출',
-          style: TextStyle(
-            color: Color(0xFF8B99AC),
-            fontSize: 13,
-            height: 18 / 13,
-            fontWeight: FontWeight.w600,
-            fontFamilyFallback: _kKrFontFallback,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
           '측정 단계 제출에 필요한 2개 서류를 첨부해 주세요. (필수)',
           style: TextStyle(
-            color: Color(0xFF9CA3AF),
+            color: _kMiniSubtitleColor,
             fontSize: 12,
             height: 1.3,
             fontWeight: FontWeight.w500,
@@ -3462,17 +3552,6 @@ class _MeasureTransitionCheckWidget extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '측정 전환 체크',
-            style: TextStyle(
-              color: Color(0xFF8B99AC),
-              fontSize: 13,
-              height: 18 / 13,
-              fontWeight: FontWeight.w600,
-              fontFamilyFallback: _kKrFontFallback,
-            ),
-          ),
-          const SizedBox(height: 8),
           Expanded(
             child: SingleChildScrollView(
               child: Column(
@@ -3795,16 +3874,6 @@ class _MiniDatePickerWidget extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '날짜 선택',
-          style: TextStyle(
-            color: Color(0xFF9CA3AF),
-            fontSize: 12,
-            height: 16 / 12,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 8),
         _MiniBackButton(onTap: onBack),
         const SizedBox(height: 8),
         Row(
@@ -4044,16 +4113,6 @@ class _MiniTimePickerWidgetState extends State<_MiniTimePickerWidget> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '시간 선택',
-          style: TextStyle(
-            color: Color(0xFF9CA3AF),
-            fontSize: 12,
-            height: 16 / 12,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 8),
         _MiniBackButton(onTap: widget.onBack),
         const SizedBox(height: 10),
         Row(
@@ -4512,17 +4571,6 @@ class _SummaryCardWidget extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '요약 확인',
-                style: TextStyle(
-                  color: Color(0xFF8B99AC),
-                  fontSize: 13,
-                  height: 18 / 13,
-                  fontWeight: FontWeight.w600,
-                  fontFamilyFallback: _kKrFontFallback,
-                ),
-              ),
-              const SizedBox(height: 10),
               Expanded(
                 child: Scrollbar(
                   thumbVisibility: true,
@@ -4647,14 +4695,6 @@ class _PathChooserWidgetState extends State<_PathChooserWidget> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '단일 선택',
-              style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: _SelectableCardButton(
@@ -4928,17 +4968,6 @@ class _DraftViewerWidget extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '신청서 초안',
-          style: TextStyle(
-            color: Color(0xFF8B99AC),
-            fontSize: 13,
-            height: 18 / 13,
-            fontWeight: FontWeight.w600,
-            fontFamilyFallback: _kKrFontFallback,
-          ),
-        ),
-        const SizedBox(height: 10),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 410),
           child: Column(
@@ -5231,15 +5260,6 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '진행 상태',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.only(bottom: 2),
