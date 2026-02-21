@@ -109,6 +109,19 @@ public final class ApiModels {
         INSTITUTION
     }
 
+    public record DemoLoginRequest(
+            @NotBlank String username,
+            @NotBlank String password
+    ) {
+    }
+
+    public record DemoLoginResponse(
+            String accessToken,
+            String tokenType,
+            Instant expiresAt
+    ) {
+    }
+
     public record CreateCaseRequest(
             @NotBlank String scenarioType,
             @NotBlank String housingType,

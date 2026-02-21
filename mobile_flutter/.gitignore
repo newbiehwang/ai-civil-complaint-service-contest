@@ -6,3 +6,7 @@ ios/Pods/
 ios/.symlinks/
 android/.gradle/
 android/local.properties
+.env
+.env.*
+!.env.example
+!.env.*.example

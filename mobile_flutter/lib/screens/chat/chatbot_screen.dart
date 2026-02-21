@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../services/api_client.dart';
+import '../../services/error_map.dart';
 import '../../theme/app_colors.dart';
+
 enum MiniInterfaceType {
   none,
   listPicker,
@@ -26,6 +31,7 @@ enum _PickerOwner {
 
 enum DemoStep {
   waitingIssue,
+  backendIntake,
   noiseNow,
   safety,
   residence,
@@ -179,6 +185,10 @@ class ChatbotScreenSnapshot {
     required this.intakeNoiseTypeId,
     required this.intakeFrequencyId,
     required this.intakeTimeBandId,
+    required this.backendCaseId,
+    required this.backendCaseStatus,
+    required this.backendTraceId,
+    required this.backendEnabled,
   });
 
   final bool isThinking;
@@ -221,6 +231,10 @@ class ChatbotScreenSnapshot {
   final String? intakeNoiseTypeId;
   final String? intakeFrequencyId;
   final String? intakeTimeBandId;
+  final String? backendCaseId;
+  final String? backendCaseStatus;
+  final String? backendTraceId;
+  final bool backendEnabled;
 }
 
 class ChatbotDemoScreen extends StatefulWidget {
@@ -292,6 +306,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ScrollController _multiFormScrollController = ScrollController();
+  final ApiClient _apiClient = ApiClient();
+  final String _bootTraceId = ApiClient().createTraceId();
 
   bool _isThinking = false;
   bool _isAiAnswerReady = false;
@@ -335,6 +351,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String? _intakeNoiseTypeId;
   String? _intakeFrequencyId;
   String? _intakeTimeBandId;
+  String? _backendCaseId;
+  String? _backendCaseStatus;
+  String? _backendTraceId;
+  bool _isBackendRequestInFlight = false;
 
   @override
   void initState() {
@@ -342,6 +362,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     if (widget.initialSnapshot != null) {
       _restoreFromSnapshot(widget.initialSnapshot!);
     }
+    _backendTraceId ??= _bootTraceId;
     _inputController.addListener(_handleInputControllerChanged);
   }
 
@@ -397,7 +418,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _measureVisitDone = snapshot.measureVisitDone;
     _measureWithin30Days = snapshot.measureWithin30Days;
     _measureReceivingUnit = snapshot.measureReceivingUnit;
-    _pickerOwner = snapshot.pickerOwnerIsNoiseDiary ? _PickerOwner.noiseDiary : _PickerOwner.incident;
+    _pickerOwner = snapshot.pickerOwnerIsNoiseDiary
+        ? _PickerOwner.noiseDiary
+        : _PickerOwner.incident;
     _pickerMonth = snapshot.pickerMonth;
     _pickerDateSelection = snapshot.pickerDateSelection;
     _pickerIsAm = snapshot.pickerIsAm;
@@ -411,6 +434,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _intakeNoiseTypeId = snapshot.intakeNoiseTypeId;
     _intakeFrequencyId = snapshot.intakeFrequencyId;
     _intakeTimeBandId = snapshot.intakeTimeBandId;
+    _backendCaseId = snapshot.backendCaseId;
+    _backendCaseStatus = snapshot.backendCaseStatus;
+    _backendTraceId = snapshot.backendTraceId;
   }
 
   ChatbotScreenSnapshot _buildSnapshot() {
@@ -435,9 +461,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       noiseDiaryType: _noiseDiaryType,
       noiseDiaryImpact: _noiseDiaryImpact,
       evidenceAttachmentIds: Set<String>.from(_evidenceAttachmentIds),
-      evidenceAttachmentNames: Map<String, String>.from(_evidenceAttachmentNames),
+      evidenceAttachmentNames:
+          Map<String, String>.from(_evidenceAttachmentNames),
       evidenceV2AttachmentIds: Set<String>.from(_evidenceV2AttachmentIds),
-      evidenceV2AttachmentNames: Map<String, String>.from(_evidenceV2AttachmentNames),
+      evidenceV2AttachmentNames:
+          Map<String, String>.from(_evidenceV2AttachmentNames),
       isPickingEvidence: _isPickingEvidence,
       measureVisitDone: _measureVisitDone,
       measureWithin30Days: _measureWithin30Days,
@@ -456,6 +484,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       intakeNoiseTypeId: _intakeNoiseTypeId,
       intakeFrequencyId: _intakeFrequencyId,
       intakeTimeBandId: _intakeTimeBandId,
+      backendCaseId: _backendCaseId,
+      backendCaseStatus: _backendCaseStatus,
+      backendTraceId: _backendTraceId ?? _bootTraceId,
+      backendEnabled: _isBackendEnabled,
     );
   }
 
@@ -522,7 +554,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   String _formatTime(TimeOfDay time) {
     final meridiem = time.hour < 12 ? '오전' : '오후';
-    final hour12 = time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
+    final hour12 =
+        time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
     return '$meridiem ${hour12.toString().padLeft(2, '0')}시 ${time.minute.toString().padLeft(2, '0')}분';
   }
 
@@ -575,6 +608,245 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _measureReceivingUnit == true;
   }
 
+  bool get _isBackendEnabled => _apiClient.isConfigured;
+
+  String _housingTypeForBackend() {
+    final residence = (_data.residence ?? '').trim();
+    switch (residence) {
+      case '아파트':
+        return 'APARTMENT';
+      case '빌라':
+        return 'VILLA';
+      case '오피스텔':
+        return 'OFFICETEL';
+      default:
+        return 'OTHER';
+    }
+  }
+
+  String _fallbackQuestionByStatus(String status) {
+    switch (status) {
+      case 'RECEIVED':
+        return '추가 정보를 알려 주세요.';
+      case 'CLASSIFIED':
+        return '분류가 완료되었어요.';
+      case 'ROUTE_CONFIRMED':
+        return '경로가 확정되었어요.';
+      default:
+        return '계속 진행해 볼게요.';
+    }
+  }
+
+  Future<String> _ensureBackendCase(String initialSummary) async {
+    if (_backendCaseId != null && _backendCaseId!.isNotEmpty) {
+      return _backendCaseId!;
+    }
+
+    final traceId = _backendTraceId ?? _bootTraceId;
+    final created = await _apiClient.createCase(
+      traceId: traceId,
+      idempotencyKey: 'flutter-create-$traceId',
+      initialSummary: initialSummary,
+      housingType: _housingTypeForBackend(),
+    );
+
+    _backendCaseId = created.caseId;
+    _backendCaseStatus = created.status;
+    _backendTraceId = traceId;
+    return created.caseId;
+  }
+
+  Future<IntakeUpdateResponseDto> _appendUserMessageToBackend(
+      String message) async {
+    final traceId = _backendTraceId ?? _bootTraceId;
+    final caseId = await _ensureBackendCase(_data.userIssue ?? message);
+    final response = await _apiClient.appendIntakeMessage(
+      traceId: traceId,
+      caseId: caseId,
+      role: 'USER',
+      message: message,
+    );
+    _backendCaseId = response.caseId;
+    _backendCaseStatus = response.status;
+    _backendTraceId = traceId;
+    return response;
+  }
+
+  void _showApiErrorSnack(Object error) {
+    final message = toKoreanErrorMessage(error);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  void _applyBackendIntakeResponse(IntakeUpdateResponseDto response) {
+    final followUp = response.followUpInterface;
+    final question = response.recommendedFollowUpQuestion.trim().isNotEmpty
+        ? response.recommendedFollowUpQuestion.trim()
+        : _fallbackQuestionByStatus(response.status);
+
+    if (response.status == 'ROUTE_CONFIRMED' ||
+        response.status == 'FORMAL_SUBMISSION_READY') {
+      _setAi(
+        text: '경로가 확정되었어요.\n증거 제출을 진행해 주세요.',
+        step: DemoStep.evidenceV1,
+        miniType: MiniInterfaceType.optionList,
+      );
+      return;
+    }
+
+    if (response.status == 'CLASSIFIED') {
+      _setAi(
+        text: '분류를 완료했어요.\n추천 경로를 확인해 주세요.',
+        step: DemoStep.pathChooser,
+        miniType: MiniInterfaceType.pathChooser,
+      );
+      return;
+    }
+
+    if (followUp != null &&
+        followUp.interfaceType == 'OPTIONS' &&
+        followUp.options.isNotEmpty) {
+      final options = followUp.options
+          .map(
+            (option) => MiniOption(
+              id: option.optionId.isNotEmpty ? option.optionId : option.label,
+              label: option.label,
+            ),
+          )
+          .toList(growable: false);
+
+      _setAi(
+        text: question,
+        step: DemoStep.backendIntake,
+        miniType: MiniInterfaceType.listPicker,
+        options: options,
+      );
+      return;
+    }
+
+    _setAi(
+      text: question,
+      step: DemoStep.backendIntake,
+      miniType: MiniInterfaceType.none,
+    );
+  }
+
+  Future<void> _fetchBackendRouteRecommendationAndSetAi() async {
+    final traceId = _backendTraceId ?? _bootTraceId;
+    final caseId = await _ensureBackendCase(_data.userIssue ?? '층간소음 민원');
+    await _apiClient.decomposeCase(traceId: traceId, caseId: caseId);
+    final recommendation =
+        await _apiClient.recommendRoute(traceId: traceId, caseId: caseId);
+
+    final options = recommendation.options
+        .map((option) => MiniOption(id: option.optionId, label: option.label))
+        .toList(growable: false);
+
+    if (options.isEmpty) {
+      _setAi(
+        text: '추천 경로를 불러오지 못했어요.\n다시 시도해 주세요.',
+        step: DemoStep.pathAlternative,
+        miniType: MiniInterfaceType.listPicker,
+        options: const [
+          MiniOption(id: 'path-backend-retry', label: '추천 경로 다시 불러오기'),
+        ],
+      );
+      return;
+    }
+
+    _setAi(
+      text: '추천 경로를 준비했어요.\n진행 방식을 선택해 주세요.',
+      step: DemoStep.pathAlternative,
+      miniType: MiniInterfaceType.listPicker,
+      options: options,
+    );
+  }
+
+  Future<void> _confirmBackendRouteAndGoEvidence(
+    String optionId,
+    String selectedLabel,
+  ) async {
+    if (_isBackendRequestInFlight) return;
+
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isBackendRequestInFlight = true;
+      _isThinking = true;
+    });
+
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 420));
+      if (!mounted) return;
+
+      final traceId = _backendTraceId ?? _bootTraceId;
+      final caseId = await _ensureBackendCase(_data.userIssue ?? selectedLabel);
+      final detail = await _apiClient.confirmRouteDecision(
+        traceId: traceId,
+        caseId: caseId,
+        optionId: optionId,
+      );
+      _backendCaseId = detail.caseId;
+      _backendCaseStatus = detail.status;
+      _backendTraceId = traceId;
+
+      if (!mounted) return;
+
+      _data = _data.copyWith(route: selectedLabel);
+      _setAi(
+        text: '선택한 경로로 진행할게요.\n증거 제출을 진행해 주세요.',
+        step: DemoStep.evidenceV1,
+        miniType: MiniInterfaceType.optionList,
+      );
+    } catch (error) {
+      _showApiErrorSnack(error);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isThinking = false;
+          _isBackendRequestInFlight = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _sendBackendTurn(
+    String message, {
+    Duration thinkingDuration = const Duration(milliseconds: 560),
+  }) async {
+    if (_isBackendRequestInFlight) return;
+
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isBackendRequestInFlight = true;
+      _isThinking = true;
+    });
+
+    try {
+      await Future<void>.delayed(thinkingDuration);
+      if (!mounted) return;
+
+      final response = await _appendUserMessageToBackend(message);
+      if (!mounted) return;
+      if (_isBackendEnabled && response.status == 'CLASSIFIED') {
+        await _fetchBackendRouteRecommendationAndSetAi();
+        return;
+      }
+      _applyBackendIntakeResponse(response);
+    } catch (error) {
+      _showApiErrorSnack(error);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isThinking = false;
+          _isBackendRequestInFlight = false;
+        });
+      }
+    }
+  }
+
   String? _optionLabelById(List<MiniOption> options, String? id) {
     if (id == null) return null;
     for (final option in options) {
@@ -592,7 +864,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
 
     final residence = _data.residence ?? '';
-    final isJointHousing = residence == '아파트' || residence == '빌라' || residence == '오피스텔';
+    final isJointHousing =
+        residence == '아파트' || residence == '빌라' || residence == '오피스텔';
     if (!isJointHousing) {
       return (
         eligible: false,
@@ -618,8 +891,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   void _openDatePicker(_PickerOwner owner) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final selected = owner == _PickerOwner.noiseDiary ? _noiseDiaryDate : _incidentDate;
-    final seed = (selected != null && selected.isAfter(today)) ? today : (selected ?? now);
+    final selected =
+        owner == _PickerOwner.noiseDiary ? _noiseDiaryDate : _incidentDate;
+    final seed = (selected != null && selected.isAfter(today))
+        ? today
+        : (selected ?? now);
     setState(() {
       _pickerOwner = owner;
       _pickerMonth = DateTime(seed.year, seed.month, 1);
@@ -742,9 +1018,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   }
 
   void _confirmTimePicker() {
-    final hour24 = _pickerIsAm
-        ? (_pickerHour12 % 12)
-        : ((_pickerHour12 % 12) + 12);
+    final hour24 =
+        _pickerIsAm ? (_pickerHour12 % 12) : ((_pickerHour12 % 12) + 12);
     final selected = TimeOfDay(hour: hour24, minute: _pickerMinute);
     setState(() {
       if (_pickerOwner == _PickerOwner.noiseDiary) {
@@ -765,7 +1040,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _data = _data.copyWith(
       residence: _optionLabelById(_residenceOptions, _intakeResidenceId),
       management: _optionLabelById(_managementOptions, _intakeManagementId),
-      sourceCertainty: _optionLabelById(_sourceCertaintyOptions, _intakeSourceCertaintyId),
+      sourceCertainty:
+          _optionLabelById(_sourceCertaintyOptions, _intakeSourceCertaintyId),
     );
 
     _showThinkingThen(() {
@@ -817,7 +1093,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   void _submitTriageMultiForm() {
     if (_triageNoiseNowId == null || _triageSafetyId == null) return;
 
-    final noiseNowLabel = _optionLabelById(_triageNoiseNowOptions, _triageNoiseNowId);
+    final noiseNowLabel =
+        _optionLabelById(_triageNoiseNowOptions, _triageNoiseNowId);
     final safetyLabel = _optionLabelById(_triageSafetyOptions, _triageSafetyId);
     if (noiseNowLabel == null || safetyLabel == null) return;
 
@@ -862,7 +1139,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _incidentTime = null;
     } else {
       _intakeResidenceId = _optionIdByLabel(_residenceOptions, _data.residence);
-      _intakeManagementId = _optionIdByLabel(_managementOptions, _data.management);
+      _intakeManagementId =
+          _optionIdByLabel(_managementOptions, _data.management);
       _intakeSourceCertaintyId =
           _optionIdByLabel(_sourceCertaintyOptions, _data.sourceCertainty);
       _intakeNoiseTypeId = _optionIdByLabel(_noiseTypeOptions, _data.noiseType);
@@ -1107,6 +1385,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       final thinkingDuration = input == '1'
           ? const Duration(seconds: 3)
           : const Duration(milliseconds: 560);
+      if (_isBackendEnabled) {
+        unawaited(_sendBackendTurn(input, thinkingDuration: thinkingDuration));
+        return;
+      }
       _showThinkingThen(() {
         _triageNoiseNowId = null;
         _triageSafetyId = null;
@@ -1117,6 +1399,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         );
       }, duration: thinkingDuration);
       return;
+    }
+
+    if (_step == DemoStep.backendIntake) {
+      if (_isBackendEnabled) {
+        unawaited(_sendBackendTurn(input));
+        return;
+      }
     }
 
     if (_step == DemoStep.waitingRevision) {
@@ -1151,6 +1440,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     final selectedLabel = _options.firstWhere((e) => e.id == selectedId).label;
 
     switch (_step) {
+      case DemoStep.backendIntake:
+        if (!_isBackendEnabled) return;
+        unawaited(_sendBackendTurn(selectedLabel));
+        return;
       case DemoStep.noiseNow:
         return;
       case DemoStep.safety:
@@ -1197,6 +1490,17 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         });
         return;
       case DemoStep.pathAlternative:
+        if (_isBackendEnabled) {
+          if (selectedId == 'path-backend-retry') {
+            unawaited(_prepareBackendRouteSelectionWithThinking());
+            return;
+          }
+          if (selectedId.startsWith('opt-')) {
+            unawaited(
+                _confirmBackendRouteAndGoEvidence(selectedId, selectedLabel));
+            return;
+          }
+        }
         _data = _data.copyWith(
           route: selectedLabel,
         );
@@ -1216,6 +1520,31 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         return;
       default:
         return;
+    }
+  }
+
+  Future<void> _prepareBackendRouteSelectionWithThinking() async {
+    if (_isBackendRequestInFlight) return;
+
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isBackendRequestInFlight = true;
+      _isThinking = true;
+    });
+
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 420));
+      if (!mounted) return;
+      await _fetchBackendRouteRecommendationAndSetAi();
+    } catch (error) {
+      _showApiErrorSnack(error);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isThinking = false;
+          _isBackendRequestInFlight = false;
+        });
+      }
     }
   }
 
@@ -1271,11 +1600,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         ? '답변을 준비하고 있어요.'
         : !_isAiAnswerReady
             ? 'AI 답변을 출력하고 있어요.'
-        : _miniType == MiniInterfaceType.none
-            ? (_step == DemoStep.waitingRevision
-                ? '수정 내용을 입력해 주세요.'
-                : '답변 입력 또는 음성으로 말하기')
-            : '항목을 선택해 주세요.';
+            : _miniType == MiniInterfaceType.none
+                ? (_step == DemoStep.waitingRevision
+                    ? '수정 내용을 입력해 주세요.'
+                    : '답변 입력 또는 음성으로 말하기')
+                : '항목을 선택해 주세요.';
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -1316,7 +1645,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                                 child: _AiCharFadeText(
                                   text: _aiText,
                                   charStep: const Duration(milliseconds: 40),
-                                  fadeDuration: const Duration(milliseconds: 180),
+                                  fadeDuration:
+                                      const Duration(milliseconds: 180),
                                   style: aiTextStyle,
                                   onCompleted: _handleAiTextAnimationCompleted,
                                 ),
@@ -1436,7 +1766,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             onSelectResidence: (id) => setState(() => _intakeResidenceId = id),
             managementOptions: _managementOptions,
             selectedManagementId: _intakeManagementId,
-            onSelectManagement: (id) => setState(() => _intakeManagementId = id),
+            onSelectManagement: (id) =>
+                setState(() => _intakeManagementId = id),
             sourceCertaintyOptions: _sourceCertaintyOptions,
             selectedSourceCertaintyId: _intakeSourceCertaintyId,
             onSelectSourceCertainty: (id) =>
@@ -1457,8 +1788,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             timeBandOptions: _timeBandOptions,
             selectedTimeBandId: _intakeTimeBandId,
             onSelectTimeBand: (id) => setState(() => _intakeTimeBandId = id),
-            dateLabel: _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
-            timeLabel: _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
+            dateLabel:
+                _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
+            timeLabel:
+                _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
             onPickDate: _openIncidentDatePicker,
             onPickTime: _openIncidentTimePicker,
             canSubmit: _isIntakeDetailReady,
@@ -1473,8 +1806,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           timeBandOptions: _timeBandOptions,
           selectedTimeBandId: _multiTimeBandId,
           onSelectTimeBand: (id) => setState(() => _multiTimeBandId = id),
-          dateLabel: _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
-          timeLabel: _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
+          dateLabel:
+              _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
+          timeLabel:
+              _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
           onPickDate: _openIncidentDatePicker,
           onPickTime: _openIncidentTimePicker,
           canSubmit: _isMultiFormReady,
@@ -1510,8 +1845,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           );
         }
         return _OptionListWidget(
-          dateLabel: _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
-          timeLabel: _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
+          dateLabel:
+              _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
+          timeLabel:
+              _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
           onPickDate: _openIncidentDatePicker,
           onPickTime: _openIncidentTimePicker,
           onSubmit: _submitIntakeDetailMultiForm,
@@ -1522,9 +1859,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           visitDone: _measureVisitDone,
           within30Days: _measureWithin30Days,
           receivingUnit: _measureReceivingUnit,
-          onSelectVisitDone: (value) => setState(() => _measureVisitDone = value),
-          onSelectWithin30Days: (value) => setState(() => _measureWithin30Days = value),
-          onSelectReceivingUnit: (value) => setState(() => _measureReceivingUnit = value),
+          onSelectVisitDone: (value) =>
+              setState(() => _measureVisitDone = value),
+          onSelectWithin30Days: (value) =>
+              setState(() => _measureWithin30Days = value),
+          onSelectReceivingUnit: (value) =>
+              setState(() => _measureReceivingUnit = value),
           canSubmit: _isMeasureCheckReady,
           onSubmit: _submitMeasureCheck,
         );
@@ -1555,7 +1895,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           onSelectMinute: (minute) => setState(() => _pickerMinute = minute),
           selectedTimeLabel: _formatTime(
             TimeOfDay(
-              hour: _pickerIsAm ? (_pickerHour12 % 12) : ((_pickerHour12 % 12) + 12),
+              hour: _pickerIsAm
+                  ? (_pickerHour12 % 12)
+                  : ((_pickerHour12 % 12) + 12),
               minute: _pickerMinute,
             ),
           ),
@@ -1590,7 +1932,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         );
       case MiniInterfaceType.pathChooser:
         return _PathChooserWidget(
-          selectedId: _selectedOptionIds.isEmpty ? null : _selectedOptionIds.first,
+          selectedId:
+              _selectedOptionIds.isEmpty ? null : _selectedOptionIds.first,
           onSelect: (id) {
             setState(() {
               _selectedOptionIds
@@ -1603,14 +1946,19 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         );
       case MiniInterfaceType.noiseDiaryBuilder:
         return _NoiseDiaryBuilderWidget(
-          dateLabel: _noiseDiaryDate == null ? '선택해 주세요' : _formatDate(_noiseDiaryDate!),
-          timeLabel: _noiseDiaryTime == null ? '선택해 주세요' : _formatTime(_noiseDiaryTime!),
+          dateLabel: _noiseDiaryDate == null
+              ? '선택해 주세요'
+              : _formatDate(_noiseDiaryDate!),
+          timeLabel: _noiseDiaryTime == null
+              ? '선택해 주세요'
+              : _formatTime(_noiseDiaryTime!),
           onPickDate: _openNoiseDiaryDatePicker,
           onPickTime: _openNoiseDiaryTimePicker,
           selectedDuration: _noiseDiaryDuration,
           selectedType: _noiseDiaryType,
           selectedImpact: _noiseDiaryImpact,
-          onSelectDuration: (value) => setState(() => _noiseDiaryDuration = value),
+          onSelectDuration: (value) =>
+              setState(() => _noiseDiaryDuration = value),
           onSelectType: (value) => setState(() => _noiseDiaryType = value),
           onSelectImpact: (value) => setState(() => _noiseDiaryImpact = value),
           durations: _durations,
@@ -1665,7 +2013,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
               text: '종결 요약입니다.\n처음으로 돌아가 새 케이스를 시작할 수 있어요.',
               step: DemoStep.complete,
               miniType: MiniInterfaceType.listPicker,
-              options: const [MiniOption(id: 'complete-restart', label: '처음으로 돌아가기')],
+              options: const [
+                MiniOption(id: 'complete-restart', label: '처음으로 돌아가기')
+              ],
             );
           },
         );
@@ -1689,15 +2039,18 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     ];
 
     if (_isNoiseDiaryReady) {
-      lines.add('소음일지: ${_formatDate(_noiseDiaryDate!)} ${_formatTime(_noiseDiaryTime!)} · $_noiseDiaryDuration · $_noiseDiaryType · $_noiseDiaryImpact');
+      lines.add(
+          '소음일지: ${_formatDate(_noiseDiaryDate!)} ${_formatTime(_noiseDiaryTime!)} · $_noiseDiaryDuration · $_noiseDiaryType · $_noiseDiaryImpact');
     }
     if (_evidenceAttachmentIds.isNotEmpty) {
       final labels = <String>[];
       if (_evidenceAttachmentIds.contains('evidence-audio')) {
-        labels.add('녹음 파일(${_evidenceAttachmentNames['evidence-audio'] ?? '첨부됨'})');
+        labels.add(
+            '녹음 파일(${_evidenceAttachmentNames['evidence-audio'] ?? '첨부됨'})');
       }
       if (_evidenceAttachmentIds.contains('evidence-video')) {
-        labels.add('동영상(${_evidenceAttachmentNames['evidence-video'] ?? '첨부됨'})');
+        labels
+            .add('동영상(${_evidenceAttachmentNames['evidence-video'] ?? '첨부됨'})');
       }
       if (labels.isNotEmpty) {
         lines.add('증거 제출: ${labels.join(', ')}');
@@ -1707,10 +2060,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     if (_evidenceV2AttachmentIds.isNotEmpty) {
       final labels = <String>[];
       if (_evidenceV2AttachmentIds.contains('evidence-v2-form')) {
-        labels.add('측정 신청서(${_evidenceV2AttachmentNames['evidence-v2-form'] ?? '첨부됨'})');
+        labels.add(
+            '측정 신청서(${_evidenceV2AttachmentNames['evidence-v2-form'] ?? '첨부됨'})');
       }
       if (_evidenceV2AttachmentIds.contains('evidence-v2-diary')) {
-        labels.add('발생일지(${_evidenceV2AttachmentNames['evidence-v2-diary'] ?? '첨부됨'})');
+        labels.add(
+            '발생일지(${_evidenceV2AttachmentNames['evidence-v2-diary'] ?? '첨부됨'})');
       }
       if (labels.isNotEmpty) {
         lines.add('측정 서류 제출: ${labels.join(', ')}');
@@ -1914,9 +2269,11 @@ class _InputBar extends StatelessWidget {
               height: 42,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: sendEnabled ? AppColors.primary : const Color(0xFFCFE0EC),
+                color:
+                    sendEnabled ? AppColors.primary : const Color(0xFFCFE0EC),
               ),
-              child: const Icon(Icons.arrow_forward_ios_rounded, size: 18, color: Colors.white),
+              child: const Icon(Icons.arrow_forward_ios_rounded,
+                  size: 18, color: Colors.white),
             ),
           ),
         ],
@@ -1945,14 +2302,15 @@ class _ListPickerWidget extends StatelessWidget {
     const maxVisibleOptions = 5;
     const optionHeight = 58.0;
     const optionGap = 12.0;
-    const maxOptionsHeight =
-        (optionHeight * maxVisibleOptions) + (optionGap * (maxVisibleOptions - 1));
+    const maxOptionsHeight = (optionHeight * maxVisibleOptions) +
+        (optionGap * (maxVisibleOptions - 1));
     final optionsColumn = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         for (var i = 0; i < options.length; i++) ...[
           Padding(
-            padding: EdgeInsets.only(bottom: i == options.length - 1 ? 0 : optionGap),
+            padding: EdgeInsets.only(
+                bottom: i == options.length - 1 ? 0 : optionGap),
             child: _ListPickerOptionButton(
               selected: selectedIds.contains(options[i].id),
               label: options[i].label,
@@ -2007,7 +2365,8 @@ class _ListPickerOptionButton extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_ListPickerOptionButton> createState() => _ListPickerOptionButtonState();
+  State<_ListPickerOptionButton> createState() =>
+      _ListPickerOptionButtonState();
 }
 
 class _ListPickerOptionButtonState extends State<_ListPickerOptionButton> {
@@ -2608,7 +2967,8 @@ class _MultiFormButtonGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         const spacing = 12.0;
-        final width = ((constraints.maxWidth - spacing) / 2).clamp(120.0, 200.0);
+        final width =
+            ((constraints.maxWidth - spacing) / 2).clamp(120.0, 200.0);
 
         return Wrap(
           spacing: spacing,
@@ -3458,7 +3818,9 @@ class _OptionDateTimeRow extends StatelessWidget {
                 border: Border.all(
                   color: selected ? AppColors.primary : const Color(0xFFE6EEF5),
                 ),
-                color: selected ? const Color(0xFFEAF3FF) : const Color(0xFFF4F8FC),
+                color: selected
+                    ? const Color(0xFFEAF3FF)
+                    : const Color(0xFFF4F8FC),
               ),
               child: Icon(icon, color: AppColors.primary, size: 26),
             ),
@@ -3493,7 +3855,9 @@ class _OptionDateTimeRow extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Icon(
-              selected ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
+              selected
+                  ? Icons.check_circle_rounded
+                  : Icons.chevron_right_rounded,
               size: selected ? 21 : 22,
               color: selected ? AppColors.primary : const Color(0xFF9AA9BB),
             ),
@@ -3663,7 +4027,9 @@ class _MiniDatePickerWidget extends StatelessWidget {
                           width: 27,
                           height: 27,
                           decoration: BoxDecoration(
-                            color: selected ? AppColors.primary : Colors.transparent,
+                            color: selected
+                                ? AppColors.primary
+                                : Colors.transparent,
                             shape: BoxShape.circle,
                           ),
                           alignment: Alignment.center,
@@ -3674,11 +4040,12 @@ class _MiniDatePickerWidget extends StatelessWidget {
                                   ? Colors.white
                                   : isFuture
                                       ? const Color(0xFFD6DEE8)
-                                  : inMonth
-                                      ? AppColors.textMain
-                                      : const Color(0xFFCBD5E1),
+                                      : inMonth
+                                          ? AppColors.textMain
+                                          : const Color(0xFFCBD5E1),
                               fontSize: 12.5,
-                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                              fontWeight:
+                                  selected ? FontWeight.w700 : FontWeight.w500,
                               fontFamilyFallback: _kKrFontFallback,
                             ),
                           ),
@@ -4004,7 +4371,8 @@ class _MeridiemToggleButtonState extends State<_MeridiemToggleButton> {
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 140),
               style: TextStyle(
-                color: widget.selected ? AppColors.primary : AppColors.textMuted,
+                color:
+                    widget.selected ? AppColors.primary : AppColors.textMuted,
                 fontSize: widget.selected ? 17 : 16,
                 fontWeight: widget.selected ? FontWeight.w800 : FontWeight.w600,
                 fontFamilyFallback: _kKrFontFallback,
@@ -4252,9 +4620,8 @@ class _SummaryCardWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxHeight = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : 420.0;
+        final maxHeight =
+            constraints.maxHeight.isFinite ? constraints.maxHeight : 420.0;
         final containerHeight = maxHeight.clamp(310.0, 420.0).toDouble();
 
         return SizedBox(
@@ -4290,7 +4657,8 @@ class _SummaryCardWidget extends StatelessWidget {
                           if (i < rows.length - 1)
                             const Padding(
                               padding: EdgeInsets.fromLTRB(18, 14, 0, 14),
-                              child: Divider(height: 1, color: AppColors.border),
+                              child:
+                                  Divider(height: 1, color: AppColors.border),
                             ),
                         ],
                         const SizedBox(height: 4),
@@ -4300,7 +4668,8 @@ class _SummaryCardWidget extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              _PrimaryButton(label: '계속하기', onPressed: onContinue, compact: true),
+              _PrimaryButton(
+                  label: '계속하기', onPressed: onContinue, compact: true),
               const SizedBox(height: 8),
               _SecondaryButton(
                 label: '수정',
@@ -4397,7 +4766,10 @@ class _PathChooserWidgetState extends State<_PathChooserWidget> {
           children: [
             const Text(
               '단일 선택',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 10),
             SizedBox(
@@ -4414,7 +4786,8 @@ class _PathChooserWidgetState extends State<_PathChooserWidget> {
                   child: SizedBox(
                     width: 118,
                     child: TextButton(
-                      onPressed: () => setState(() => _openReason = !_openReason),
+                      onPressed: () =>
+                          setState(() => _openReason = !_openReason),
                       child: Text(_openReason ? '추천 이유 접기' : '추천 이유 보기'),
                     ),
                   ),
@@ -4470,12 +4843,15 @@ class _ReasonText extends StatelessWidget {
       children: [
         const Padding(
           padding: EdgeInsets.only(top: 2),
-          child: Text('• ', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
+          child: Text('• ',
+              style: TextStyle(
+                  color: AppColors.primary, fontWeight: FontWeight.w700)),
         ),
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.35),
+            style: const TextStyle(
+                color: Color(0xFF475569), fontSize: 12.5, height: 1.35),
           ),
         ),
       ],
@@ -4526,7 +4902,10 @@ class _NoiseDiaryBuilderWidget extends StatelessWidget {
       children: [
         const Text(
           '소음일지를 작성해 주세요.',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w700),
+          style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 10),
         ConstrainedBox(
@@ -4604,7 +4983,10 @@ class _ChoiceSection extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -4616,7 +4998,8 @@ class _ChoiceSection extends StatelessWidget {
                 onTap: () => onSelect(value),
                 borderRadius: BorderRadius.circular(12),
                 child: Ink(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     color: selected ? AppColors.blueTint : Colors.white,
@@ -4694,12 +5077,19 @@ class _DraftViewerWidget extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('수정 포인트', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
+                            const Text('수정 포인트',
+                                style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w700)),
                             const SizedBox(height: 6),
                             ...guidePoints.map(
                               (point) => Padding(
                                 padding: const EdgeInsets.only(bottom: 4),
-                                child: Text('• $point', style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5, height: 1.35)),
+                                child: Text('• $point',
+                                    style: const TextStyle(
+                                        color: Color(0xFF475569),
+                                        fontSize: 12.5,
+                                        height: 1.35)),
                               ),
                             ),
                           ],
@@ -4710,7 +5100,8 @@ class _DraftViewerWidget extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              _PrimaryButton(label: '좋아요, 접수', onPressed: onApprove, compact: true),
+              _PrimaryButton(
+                  label: '좋아요, 접수', onPressed: onApprove, compact: true),
               const SizedBox(height: 8),
               _SecondaryButton(
                 label: '수정 요청',
@@ -4744,7 +5135,11 @@ class _DraftConfirmWidget extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('수정 반영 확인', style: TextStyle(color: AppColors.textMain, fontSize: 18, fontWeight: FontWeight.w700)),
+        const Text('수정 반영 확인',
+            style: TextStyle(
+                color: AppColors.textMain,
+                fontSize: 18,
+                fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 360),
@@ -4765,7 +5160,8 @@ class _DraftConfirmWidget extends StatelessWidget {
                         Container(
                           margin: const EdgeInsets.only(bottom: 4),
                           padding: highlightIndexes.contains(i)
-                              ? const EdgeInsets.symmetric(horizontal: 6, vertical: 2)
+                              ? const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2)
                               : EdgeInsets.zero,
                           decoration: highlightIndexes.contains(i)
                               ? BoxDecoration(
@@ -4776,10 +5172,14 @@ class _DraftConfirmWidget extends StatelessWidget {
                           child: Text(
                             previewLines[i],
                             style: TextStyle(
-                              color: highlightIndexes.contains(i) ? const Color(0xFF1D4ED8) : const Color(0xFF334155),
+                              color: highlightIndexes.contains(i)
+                                  ? const Color(0xFF1D4ED8)
+                                  : const Color(0xFF334155),
                               fontSize: 13,
                               height: 1.42,
-                              fontWeight: highlightIndexes.contains(i) ? FontWeight.w700 : FontWeight.w600,
+                              fontWeight: highlightIndexes.contains(i)
+                                  ? FontWeight.w700
+                                  : FontWeight.w600,
                             ),
                           ),
                         ),
@@ -4787,7 +5187,8 @@ class _DraftConfirmWidget extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                _PrimaryButton(label: '좋아요, 접수해주세요', onPressed: onApprove, compact: true),
+                _PrimaryButton(
+                    label: '좋아요, 접수해주세요', onPressed: onApprove, compact: true),
                 const SizedBox(height: 8),
                 _SecondaryButton(
                   label: '다시 수정',
@@ -4824,7 +5225,11 @@ class _TextCard extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
                   line,
-                  style: const TextStyle(color: Color(0xFF334155), fontSize: 13, fontWeight: FontWeight.w600, height: 1.4),
+                  style: const TextStyle(
+                      color: Color(0xFF334155),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4),
                 ),
               ),
             )
@@ -4933,7 +5338,8 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
     ];
     final visibleEvents = _importantOnly
         ? allEvents
-            .where((event) => event.important || event.stepState == _StatusStepState.active)
+            .where((event) =>
+                event.important || event.stepState == _StatusStepState.active)
             .toList(growable: false)
         : allEvents;
 
@@ -4955,9 +5361,13 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
             child: Column(
               children: [
                 _StatusSummaryCard(
-                  statusText: widget.needsSupplementLikely ? '보완요청 가능성 확인 중' : '접수 확인 단계',
+                  statusText: widget.needsSupplementLikely
+                      ? '보완요청 가능성 확인 중'
+                      : '접수 확인 단계',
                   updatedAtText: '마지막 갱신 5분 전',
-                  etaText: widget.needsSupplementLikely ? '추가자료 요청 가능' : '예상 소요 1~2일',
+                  etaText: widget.needsSupplementLikely
+                      ? '추가자료 요청 가능'
+                      : '예상 소요 1~2일',
                 ),
                 const SizedBox(height: 12),
                 Container(
@@ -4980,7 +5390,8 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
                             title: visibleEvents[i].title,
                             subtitle: visibleEvents[i].subtitle,
                             stepState: visibleEvents[i].stepState,
-                            highlight: visibleEvents[i].code == 'SUPPLEMENT_REQUIRED',
+                            highlight:
+                                visibleEvents[i].code == 'SUPPLEMENT_REQUIRED',
                             isLast: i == visibleEvents.length - 1,
                           ),
                         ),
@@ -4988,7 +5399,8 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                _StatusNextActionCard(needsSupplementLikely: widget.needsSupplementLikely),
+                _StatusNextActionCard(
+                    needsSupplementLikely: widget.needsSupplementLikely),
               ],
             ),
           ),
@@ -5086,7 +5498,8 @@ class _StatusSummaryCard extends StatelessWidget {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: const Color(0xFFE6F1FF),
                         borderRadius: BorderRadius.circular(999),
@@ -5269,41 +5682,43 @@ class _StatusTimelineItem extends StatelessWidget {
                   )
                 : null,
             child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                code,
-                style: TextStyle(
-                  color: highlight ? const Color(0xFFB45309) : const Color(0xFF94A3B8),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  code,
+                  style: TextStyle(
+                    color: highlight
+                        ? const Color(0xFFB45309)
+                        : const Color(0xFF94A3B8),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                title,
-                style: TextStyle(
-                  color: stepState == _StatusStepState.pending
-                      ? const Color(0xFF475569)
-                      : AppColors.textMain,
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(height: 2),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: stepState == _StatusStepState.pending
+                        ? const Color(0xFF475569)
+                        : AppColors.textMain,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 13,
-                  height: 1.35,
-                  fontWeight: FontWeight.w500,
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 13,
+                    height: 1.35,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
         ),
       ],
     );
@@ -5402,7 +5817,8 @@ class _SelectableCardButtonState extends State<_SelectableCardButton> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           curve: Curves.easeOut,
-          padding: EdgeInsets.symmetric(horizontal: 14, vertical: verticalPadding),
+          padding:
+              EdgeInsets.symmetric(horizontal: 14, vertical: verticalPadding),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             color: widget.selected ? AppColors.blueTint : Colors.white,
@@ -5427,27 +5843,34 @@ class _SelectableCardButtonState extends State<_SelectableCardButton> {
                   ],
           ),
           child: Column(
-            crossAxisAlignment:
-                widget.centerContent ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+            crossAxisAlignment: widget.centerContent
+                ? CrossAxisAlignment.center
+                : CrossAxisAlignment.start,
             children: [
               if (widget.leadingBadge != null)
                 Container(
                   margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: AppColors.blueTint,
                     borderRadius: BorderRadius.circular(99),
                   ),
                   child: Text(
                     widget.leadingBadge!,
-                    style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700),
                   ),
                 ),
               Text(
                 widget.title,
-                textAlign: widget.centerContent ? TextAlign.center : TextAlign.left,
+                textAlign:
+                    widget.centerContent ? TextAlign.center : TextAlign.left,
                 style: TextStyle(
-                  color: widget.selected ? AppColors.primary : AppColors.textMain,
+                  color:
+                      widget.selected ? AppColors.primary : AppColors.textMain,
                   fontSize: titleSize,
                   height: 1.25,
                   fontWeight: FontWeight.w700,
@@ -5457,8 +5880,10 @@ class _SelectableCardButtonState extends State<_SelectableCardButton> {
                 const SizedBox(height: 6),
                 Text(
                   widget.subtitle!,
-                  textAlign: widget.centerContent ? TextAlign.center : TextAlign.left,
-                  style: const TextStyle(color: Color(0xFF475569), fontSize: 13, height: 1.35),
+                  textAlign:
+                      widget.centerContent ? TextAlign.center : TextAlign.left,
+                  style: const TextStyle(
+                      color: Color(0xFF475569), fontSize: 13, height: 1.35),
                 ),
               ],
               if (widget.trailing != null) widget.trailing!,
@@ -5589,7 +6014,8 @@ class _AiCharFadeTextState extends State<_AiCharFadeText>
     _controller = AnimationController(
       vsync: this,
       duration: widget.fadeDuration,
-    )..addListener(() {
+    )
+      ..addListener(() {
         if (mounted) {
           setState(() {});
         }
@@ -5713,7 +6139,8 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
     final height = widget.compact ? 52.0 : 60.0;
     final radius = widget.compact ? 16.0 : 20.0;
     final baseColor = _enabled ? AppColors.primary : const Color(0xFFE6EBF0);
-    final pressedColor = _enabled ? AppColors.primaryDeep : const Color(0xFFE6EBF0);
+    final pressedColor =
+        _enabled ? AppColors.primaryDeep : const Color(0xFFE6EBF0);
 
     return SizedBox(
       width: double.infinity,

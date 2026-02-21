@@ -16,22 +16,22 @@ class RuleBasedIntakeFollowUpAdvisorTest {
     void returnsEmptySuggestionWhenMissingSlotsAreEmpty() {
         IntakeFollowUpSuggestion suggestion = advisor.suggest(requestFor(List.of()));
 
-        assertThat(suggestion.question()).isNull();
+        assertThat(suggestion.question()).isEqualTo("기본 정보가 충분해요. 추천 경로를 확인해 주세요.");
         assertThat(suggestion.followUpInterface()).isNull();
     }
 
     @Test
-    void returnsIncidentTimeQuestionAndMultipleChoiceInterface() {
-        IntakeFollowUpSuggestion suggestion = advisor.suggest(requestFor(List.of("incidentTime", "frequency")));
+    void returnsNoiseNowQuestionAndSingleChoiceInterface() {
+        IntakeFollowUpSuggestion suggestion = advisor.suggest(requestFor(List.of("noiseNow", "safety")));
 
-        assertThat(suggestion.question()).isEqualTo("소음이 주로 발생하는 시간대를 알려주세요.");
+        assertThat(suggestion.question()).isEqualTo("지금도 소음이 나나요?");
         assertThat(suggestion.followUpInterface()).isNotNull();
         assertThat(suggestion.followUpInterface().interfaceType()).isEqualTo(ApiModels.FollowUpInterfaceType.OPTIONS);
-        assertThat(suggestion.followUpInterface().selectionMode()).isEqualTo(ApiModels.FollowUpSelectionMode.MULTIPLE);
+        assertThat(suggestion.followUpInterface().selectionMode()).isEqualTo(ApiModels.FollowUpSelectionMode.SINGLE);
         assertThat(suggestion.followUpInterface().options())
-                .hasSize(4)
+                .hasSize(3)
                 .extracting(ApiModels.FollowUpOption::label)
-                .containsExactly("새벽(00~06시)", "아침/낮(06~18시)", "저녁(18~22시)", "심야(22~24시)");
+                .containsExactly("지금 진행 중", "방금 멈춤", "자주 반복");
     }
 
     @Test

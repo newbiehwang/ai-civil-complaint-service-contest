@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../auth/demo_login_screen.dart';
 import 'frames/start_frame_four.dart';
 import 'frames/start_frame_one.dart';
 import 'frames/start_frame_three.dart';
@@ -20,6 +21,7 @@ class StartFlowScreen extends StatefulWidget {
 
 class _StartFlowScreenState extends State<StartFlowScreen> {
   StartFlowPhase _phase = StartFlowPhase.frame1;
+  bool _showStartLogo = false;
   bool _showStartTitle = false;
   bool _showStartButton = false;
   final List<Timer> _timers = [];
@@ -39,11 +41,30 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
   }
 
   void _playFrameOneReveal() {
-    _showStartTitle = true;
+    _showStartLogo = false;
+    _showStartTitle = false;
     _showStartButton = false;
 
     _timers.add(
-      Timer(const Duration(milliseconds: 980), () {
+      Timer(const Duration(milliseconds: 180), () {
+        if (!mounted || _phase != StartFlowPhase.frame1) return;
+        setState(() {
+          _showStartLogo = true;
+        });
+      }),
+    );
+
+    _timers.add(
+      Timer(const Duration(milliseconds: 760), () {
+        if (!mounted || _phase != StartFlowPhase.frame1) return;
+        setState(() {
+          _showStartTitle = true;
+        });
+      }),
+    );
+
+    _timers.add(
+      Timer(const Duration(milliseconds: 1320), () {
         if (!mounted || _phase != StartFlowPhase.frame1) return;
         setState(() {
           _showStartButton = true;
@@ -58,7 +79,15 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
     });
   }
 
-  void _goToFrame3() {
+  Future<void> _goToFrame3() async {
+    final loginOk = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => const DemoLoginScreen(),
+      ),
+    );
+
+    if (!mounted || loginOk != true) return;
+
     setState(() {
       _phase = StartFlowPhase.frame3;
     });
@@ -77,11 +106,16 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
   Widget build(BuildContext context) {
     final content = switch (_phase) {
       StartFlowPhase.frame1 => StartFrameOne(
+          showLogo: _showStartLogo,
           showTitle: _showStartTitle,
           showButton: _showStartButton,
           onStart: _goToFrame2,
         ),
-      StartFlowPhase.frame2 => StartFrameTwo(onContinue: _goToFrame3),
+      StartFlowPhase.frame2 => StartFrameTwo(
+          onContinue: () {
+            _goToFrame3();
+          },
+        ),
       StartFlowPhase.frame3 => const StartFrameThree(),
       StartFlowPhase.frame4 => StartFrameFour(onContinue: widget.onCompleted),
     };

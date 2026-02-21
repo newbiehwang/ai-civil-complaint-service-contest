@@ -6,12 +6,14 @@ import '../widgets/start_primary_button.dart';
 
 class StartFrameOne extends StatelessWidget {
   const StartFrameOne({
+    required this.showLogo,
     required this.showTitle,
     required this.showButton,
     required this.onStart,
     super.key,
   });
 
+  final bool showLogo;
   final bool showTitle;
   final bool showButton;
   final VoidCallback onStart;
@@ -23,7 +25,7 @@ class StartFrameOne extends StatelessWidget {
         builder: (context, constraints) {
           const designWidth = 390.0;
           const designHeight = 884.0;
-          const heroCenterY = 315.0;
+          const heroTopY = 270.0;
           const titleTopY = 381.0;
           const buttonTopY = 677.695;
           const captionTopY = 753.695;
@@ -32,8 +34,7 @@ class StartFrameOne extends StatelessWidget {
           double sx(double x) => x * (w / designWidth);
           double sy(double y) => y * (h / designHeight);
 
-          final logoWidth = sx(128);
-          final logoHeight = sx(168);
+          final logoSize = sx(88);
           final titleWidth = sx(210.88);
           final buttonWidth = sx(310);
           final buttonHeight = sx(60);
@@ -41,31 +42,49 @@ class StartFrameOne extends StatelessWidget {
           return Stack(
             children: [
               Positioned(
-                left: (w - logoWidth) / 2,
-                top: sy(heroCenterY) - (logoHeight / 2),
-                width: logoWidth,
-                height: logoHeight,
-                child: Image.asset(
-                  'assets/korea_gov24.transparent.png',
-                  fit: BoxFit.contain,
+                left: (w - logoSize) / 2,
+                top: sy(heroTopY),
+                width: logoSize,
+                height: logoSize,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 520),
+                  curve: Curves.easeOutCubic,
+                  opacity: showLogo ? 1 : 0,
+                  child: AnimatedSlide(
+                    duration: const Duration(milliseconds: 520),
+                    curve: Curves.easeOutCubic,
+                    offset: showLogo ? Offset.zero : const Offset(0, 0.02),
+                    child: Image.asset(
+                      'assets/korea_gov24.transparent.png',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                 ),
               ),
               Positioned(
                 left: (w - titleWidth) / 2,
                 top: sy(titleTopY),
                 width: titleWidth,
-                child: showTitle
-                    ? const Text(
-                        '신속한 처리, 정부 24',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 24,
-                          height: 39 / 24,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1F2937),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 520),
+                  curve: Curves.easeOutCubic,
+                  opacity: showTitle ? 1 : 0,
+                  child: AnimatedSlide(
+                    duration: const Duration(milliseconds: 520),
+                    curve: Curves.easeOutCubic,
+                    offset: showTitle ? Offset.zero : const Offset(0, 0.02),
+                    child: const Text(
+                      '신속한 처리, 정부 24',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 24,
+                        height: 39 / 24,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                  ),
+                ),
               ),
               Positioned(
                 left: (w - buttonWidth) / 2,

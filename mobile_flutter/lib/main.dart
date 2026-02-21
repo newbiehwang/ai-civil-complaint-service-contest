@@ -5,6 +5,7 @@ import 'models/chat_session_summary.dart';
 import 'screens/chat/chatbot_screen.dart';
 import 'screens/chat/chat_list_screen.dart';
 import 'screens/start/start_flow_screen.dart';
+import 'services/auth_session.dart';
 import 'store/chat_session_store.dart';
 import 'theme/app_colors.dart';
 
@@ -52,38 +53,104 @@ class DemoRootScreen extends StatefulWidget {
 class _DemoRootScreenState extends State<DemoRootScreen> {
   RootPhase _phase = RootPhase.start;
   int _startFlowVersion = 0;
-  final ChatSessionStore _sessionStore = ChatSessionStore();
-  final Map<String, ChatbotScreenSnapshot> _sessionSnapshots = <String, ChatbotScreenSnapshot>{};
+  final Map<String, ChatSessionStore> _sessionStoresByAccount =
+      <String, ChatSessionStore>{};
+  final Map<String, Map<String, ChatbotScreenSnapshot>>
+      _sessionSnapshotsByAccount =
+      <String, Map<String, ChatbotScreenSnapshot>>{};
+  String? _activeAccountId;
   String? _activeSessionId;
+
+  String? _normalizeAccountId(String? value) {
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) return null;
+    return normalized.toLowerCase();
+  }
+
+  String? get _currentAccountId {
+    final stateAccount = _normalizeAccountId(_activeAccountId);
+    if (stateAccount != null) return stateAccount;
+    return _normalizeAccountId(AuthSession.accountId);
+  }
+
+  ChatSessionStore _storeForAccount(String accountId) {
+    return _sessionStoresByAccount.putIfAbsent(
+      accountId,
+      () => ChatSessionStore(),
+    );
+  }
+
+  Map<String, ChatbotScreenSnapshot> _snapshotsForAccount(String accountId) {
+    return _sessionSnapshotsByAccount.putIfAbsent(
+      accountId,
+      () => <String, ChatbotScreenSnapshot>{},
+    );
+  }
 
   void _restart() {
     setState(() {
       _phase = RootPhase.start;
       _startFlowVersion += 1;
+      _activeAccountId = null;
       _activeSessionId = null;
-      _sessionSnapshots.clear();
-      _sessionStore.clear();
+      AuthSession.clear();
+    });
+  }
+
+  void _handleStartCompleted() {
+    final accountId = _normalizeAccountId(AuthSession.accountId) ?? 'demo';
+    _storeForAccount(accountId);
+    _snapshotsForAccount(accountId);
+
+    setState(() {
+      _activeAccountId = accountId;
+      _activeSessionId = null;
+      _phase = RootPhase.chatList;
     });
   }
 
   void _openChatList() {
+    final accountId = _currentAccountId;
+    if (accountId == null) {
+      setState(() {
+        _phase = RootPhase.start;
+      });
+      return;
+    }
+
     setState(() {
+      _activeAccountId = accountId;
+      _activeSessionId = null;
       _phase = RootPhase.chatList;
     });
   }
 
   void _createAndOpenSession() {
-    final session = _sessionStore.createSession();
+    final accountId = _currentAccountId;
+    if (accountId == null) {
+      setState(() {
+        _phase = RootPhase.start;
+      });
+      return;
+    }
+
+    final session = _storeForAccount(accountId).createSession();
     setState(() {
+      _activeAccountId = accountId;
       _activeSessionId = session.sessionId;
       _phase = RootPhase.chat;
     });
   }
 
   void _openSession(String sessionId) {
-    if (_sessionStore.findById(sessionId) == null) return;
-    _sessionStore.markRead(sessionId);
+    final accountId = _currentAccountId;
+    if (accountId == null) return;
+
+    final store = _storeForAccount(accountId);
+    if (store.findById(sessionId) == null) return;
+    store.markRead(sessionId);
     setState(() {
+      _activeAccountId = accountId;
       _activeSessionId = sessionId;
       _phase = RootPhase.chat;
     });
@@ -92,6 +159,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
   String _stepLabel(DemoStep step) {
     switch (step) {
       case DemoStep.waitingIssue:
+      case DemoStep.backendIntake:
       case DemoStep.noiseNow:
       case DemoStep.safety:
         return '접수';
@@ -132,28 +200,33 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
     if (snapshot.step == DemoStep.complete) {
       return ChatSessionStatus.completed;
     }
-    if (snapshot.step == DemoStep.waitingIssue || snapshot.step == DemoStep.waitingRevision) {
+    if (snapshot.step == DemoStep.waitingIssue ||
+        snapshot.step == DemoStep.waitingRevision) {
       return ChatSessionStatus.awaitingInput;
     }
     return ChatSessionStatus.inProgress;
   }
 
   String _normalizeLastMessage(String text) {
-    final normalized = text.replaceAll('\n', ' ').replaceAll(RegExp(r'\\s+'), ' ').trim();
+    final normalized =
+        text.replaceAll('\n', ' ').replaceAll(RegExp(r'\\s+'), ' ').trim();
     if (normalized.isEmpty) return '메시지가 없습니다.';
     return normalized;
   }
 
-  void _handleSessionSnapshot(String sessionId, ChatbotScreenSnapshot snapshot) {
-    _sessionSnapshots[sessionId] = snapshot;
+  void _handleSessionSnapshot(
+      String accountId, String sessionId, ChatbotScreenSnapshot snapshot) {
+    final snapshots = _snapshotsForAccount(accountId);
+    snapshots[sessionId] = snapshot;
 
-    final previous = _sessionStore.findById(sessionId);
+    final store = _storeForAccount(accountId);
+    final previous = store.findById(sessionId);
     final issue = snapshot.data.userIssue?.trim();
     final title = (issue != null && issue.isNotEmpty)
         ? (issue.length > 18 ? '${issue.substring(0, 18)}…' : issue)
         : (previous?.title ?? '상담');
 
-    _sessionStore.upsertSummary(
+    store.upsertSummary(
       ChatSessionSummary(
         sessionId: sessionId,
         title: title,
@@ -162,29 +235,36 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
         status: _statusForSnapshot(snapshot),
         stepLabel: _stepLabel(snapshot.step),
         unreadCount: 0,
-        caseId: previous?.caseId,
+        caseId: snapshot.backendCaseId ?? previous?.caseId,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final accountId = _currentAccountId;
+    final sessionStore = accountId == null ? null : _storeForAccount(accountId);
+    final sessionSnapshots =
+        accountId == null ? null : _snapshotsForAccount(accountId);
+
     final activeSessionId = _activeSessionId;
-    final activeSession = activeSessionId == null ? null : _sessionStore.findById(activeSessionId);
+    final activeSession = activeSessionId == null
+        ? null
+        : sessionStore?.findById(activeSessionId);
 
     final content = switch (_phase) {
       RootPhase.start => StartFlowScreen(
           key: ValueKey('start-flow-$_startFlowVersion'),
-          onCompleted: _createAndOpenSession,
+          onCompleted: _handleStartCompleted,
         ),
       RootPhase.chatList => ChatListScreen(
-          sessions: _sessionStore.sessions,
+          sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
           onOpenSession: _openSession,
           onCreateSession: _createAndOpenSession,
         ),
       RootPhase.chat => activeSession == null
           ? ChatListScreen(
-              sessions: _sessionStore.sessions,
+              sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
               onOpenSession: _openSession,
               onCreateSession: _createAndOpenSession,
             )
@@ -192,8 +272,13 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
               key: ValueKey('chat-${activeSession.sessionId}'),
               onRestart: _restart,
               onBackToList: _openChatList,
-              initialSnapshot: _sessionSnapshots[activeSession.sessionId],
-              onSnapshotChanged: (snapshot) => _handleSessionSnapshot(activeSession.sessionId, snapshot),
+              initialSnapshot: sessionSnapshots?[activeSession.sessionId],
+              onSnapshotChanged: (snapshot) {
+                final current = _currentAccountId;
+                if (current == null) return;
+                _handleSessionSnapshot(
+                    current, activeSession.sessionId, snapshot);
+              },
             ),
     };
 

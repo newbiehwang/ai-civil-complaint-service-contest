@@ -78,7 +78,7 @@ class InstitutionGatewayErrorApiControllerTest {
                         .content("""
                                 {
                                   "role":"USER",
-                                  "message":"밤마다 매일 쿵쿵 소음이 반복됩니다."
+                                  "message":"지금 진행 중이고 위협 징후 없음입니다. 아파트이며 관리사무소 있음. 충격 소음(쿵쿵)이 거의 매일 심야에 발생하고 호수까지 확실합니다."
                                 }
                                 """))
                 .andExpect(status().isOk())
