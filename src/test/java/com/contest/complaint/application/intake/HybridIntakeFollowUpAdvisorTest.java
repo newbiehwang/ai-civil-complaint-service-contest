@@ -19,7 +19,7 @@ class HybridIntakeFollowUpAdvisorTest {
 
         IntakeFollowUpSuggestion suggestion = advisor.suggest(defaultRequest());
 
-        assertThat(suggestion.question()).isEqualTo("소음이 주로 발생하는 시간대를 알려주세요.");
+        assertThat(suggestion.question()).isEqualTo("지금도 소음이 나나요?");
         assertThat(suggestion.followUpInterface()).isNotNull();
         assertThat(llmClient.called).isFalse();
     }
@@ -55,7 +55,7 @@ class HybridIntakeFollowUpAdvisorTest {
 
         IntakeFollowUpSuggestion suggestion = advisor.suggest(defaultRequest());
 
-        assertThat(suggestion.question()).isEqualTo("소음이 주로 발생하는 시간대를 알려주세요.");
+        assertThat(suggestion.question()).isEqualTo("지금도 소음이 나나요?");
         assertThat(suggestion.followUpInterface()).isNotNull();
         assertThat(llmClient.called).isTrue();
     }
@@ -63,7 +63,7 @@ class HybridIntakeFollowUpAdvisorTest {
     private IntakeFollowUpRequest defaultRequest() {
         return new IntakeFollowUpRequest(
                 "소음이 너무 심합니다.",
-                List.of("incidentTime", "frequency", "noiseType"),
+                List.of("noiseNow", "safety", "residence"),
                 Map.of(),
                 ApiModels.CaseStatus.RECEIVED,
                 false

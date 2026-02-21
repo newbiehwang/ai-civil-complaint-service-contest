@@ -16,7 +16,7 @@ class StartFrameTwo extends StatelessWidget {
         builder: (context, constraints) {
           const designWidth = 390.0;
           const designHeight = 884.0;
-          const heroCenterY = 315.0;
+          const heroTopY = 270.0;
           const titleTopY = 381.0;
           const buttonTopY = 677.695;
           const captionTopY = 753.695;
@@ -27,17 +27,16 @@ class StartFrameTwo extends StatelessWidget {
 
           final buttonWidth = sx(310);
           final buttonHeight = sx(60);
-          final logoWidth = sx(128);
-          final logoHeight = sx(168);
+          final logoSize = sx(88);
           final titleWidth = sx(247.68);
 
           return Stack(
             children: [
               Positioned(
-                left: (w - logoWidth) / 2,
-                top: sy(heroCenterY) - (logoHeight / 2),
-                width: logoWidth,
-                height: logoHeight,
+                left: (w - logoSize) / 2,
+                top: sy(heroTopY),
+                width: logoSize,
+                height: logoSize,
                 child: Image.asset(
                   'assets/korea_gov24.transparent.png',
                   fit: BoxFit.contain,

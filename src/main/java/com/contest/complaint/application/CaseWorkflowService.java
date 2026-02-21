@@ -30,7 +30,19 @@ import java.util.UUID;
 @Service
 public class CaseWorkflowService {
 
-    private static final List<String> REQUIRED_SLOTS = List.of("incidentTime", "frequency", "noiseType");
+    private static final String SAFETY_DANGER = "위협 징후 있음";
+    private static final String DEFAULT_SCENARIO_TYPE = "SCENARIO_A";
+    private static final String DEFAULT_HOUSING_TYPE = "APARTMENT";
+    private static final List<String> REQUIRED_SLOTS = List.of(
+            "noiseNow",
+            "safety",
+            "residence",
+            "management",
+            "noiseType",
+            "frequency",
+            "timeBand",
+            "sourceCertainty"
+    );
 
     private static final Map<ApiModels.CaseStatus, Set<ApiModels.CaseStatus>> ALLOWED_TRANSITIONS =
             new EnumMap<>(ApiModels.CaseStatus.class);
@@ -144,7 +156,7 @@ public class CaseWorkflowService {
         }
 
         if (aggregate.caseEntity.getStatus() == ApiModels.CaseStatus.RECEIVED
-                && REQUIRED_SLOTS.stream().allMatch(aggregate.filledSlots::containsKey)) {
+                && isIntakeComplete(aggregate.filledSlots)) {
             transition(aggregate.caseEntity, ApiModels.CaseStatus.CLASSIFIED);
             appendTimeline(
                     aggregate,
@@ -175,6 +187,40 @@ public class CaseWorkflowService {
                 new ApiModels.IntakeSnapshot(REQUIRED_SLOTS, Map.copyOf(aggregate.filledSlots), aggregate.caseEntity.isRiskSignalDetected()),
                 followUpSuggestion.question(),
                 followUpSuggestion.followUpInterface()
+        );
+    }
+
+    @Transactional
+    public ApiModels.ChatTurnResponse chatTurn(String traceId, ApiModels.ChatTurnRequest request) {
+        String userMessage = request.userMessage().trim();
+        UUID caseId = resolveCaseIdForChatTurn(request, userMessage);
+
+        ApiModels.IntakeUpdateResponse intakeUpdate = appendIntakeMessage(
+                caseId,
+                new ApiModels.AppendIntakeMessageRequest(ApiModels.MessageRole.USER, userMessage)
+        );
+        ApiModels.CaseDetail detail = getCase(caseId);
+
+        String assistantMessage = resolveAssistantMessage(intakeUpdate, detail.status());
+        ApiModels.ChatUiHint uiHint = toChatUiHint(intakeUpdate.followUpInterface(), detail.status());
+
+        Map<String, Object> statePatch = new HashMap<>();
+        statePatch.put("caseId", detail.caseId().toString());
+        statePatch.put("status", detail.status().name());
+        statePatch.put("riskLevel", detail.riskLevel().name());
+        statePatch.put("currentActionRequired", detail.currentActionRequired());
+        if (detail.intake() != null) {
+            statePatch.put("requiredSlots", detail.intake().requiredSlots());
+            statePatch.put("filledSlots", detail.intake().filledSlots());
+            statePatch.put("riskSignalDetected", detail.intake().riskSignalDetected());
+        }
+
+        return new ApiModels.ChatTurnResponse(
+                detail.caseId().toString(),
+                assistantMessage,
+                uiHint,
+                statePatch,
+                resolveNextAction(detail)
         );
     }
 
@@ -576,6 +622,120 @@ public class CaseWorkflowService {
         return new ApiModels.TimelineResponse(caseId, events);
     }
 
+    private UUID resolveCaseIdForChatTurn(ApiModels.ChatTurnRequest request, String userMessage) {
+        ApiModels.ChatTurnContext context = request.context();
+        String rawCaseId = context == null ? null : context.caseId();
+        if (rawCaseId != null && !rawCaseId.isBlank()) {
+            try {
+                return UUID.fromString(rawCaseId.trim());
+            } catch (IllegalArgumentException ex) {
+                throw ApiException.badRequest(
+                        "VALIDATION_ERROR",
+                        "Invalid context.caseId format.",
+                        List.of("context.caseId must be UUID")
+                );
+            }
+        }
+
+        String scenarioType = context == null || context.scenarioType() == null || context.scenarioType().isBlank()
+                ? DEFAULT_SCENARIO_TYPE
+                : context.scenarioType().trim();
+        String housingType = context == null || context.housingType() == null || context.housingType().isBlank()
+                ? DEFAULT_HOUSING_TYPE
+                : context.housingType().trim();
+        boolean consentAccepted = context == null || !Boolean.FALSE.equals(context.consentAccepted());
+
+        ApiModels.CaseDetail created = createCase(new ApiModels.CreateCaseRequest(
+                scenarioType,
+                housingType,
+                consentAccepted,
+                userMessage
+        ));
+
+        return created.caseId();
+    }
+
+    private String resolveAssistantMessage(ApiModels.IntakeUpdateResponse intakeUpdate, ApiModels.CaseStatus status) {
+        String followUp = intakeUpdate.recommendedFollowUpQuestion();
+        if (followUp != null && !followUp.isBlank()) {
+            return followUp;
+        }
+
+        return switch (status) {
+            case RECEIVED -> "추가 정보를 입력해 주세요.";
+            case CLASSIFIED -> "기본 정보가 확인되었어요. 추천 경로를 확인해 주세요.";
+            case ROUTE_CONFIRMED, EVIDENCE_COLLECTING, FORMAL_SUBMISSION_READY -> "다음 단계를 진행해 주세요.";
+            case INSTITUTION_PROCESSING -> "기관 처리 중입니다. 진행 상태를 확인해 주세요.";
+            case SUPPLEMENT_REQUIRED -> "보완자료 요청이 있습니다. 응답을 등록해 주세요.";
+            case COMPLETED, CLOSED -> "처리가 완료되었습니다.";
+            default -> "다음 단계를 진행해 주세요.";
+        };
+    }
+
+    private ApiModels.ChatUiHint toChatUiHint(ApiModels.FollowUpInterface followUpInterface, ApiModels.CaseStatus status) {
+        if (followUpInterface == null) {
+            if (status == ApiModels.CaseStatus.CLASSIFIED) {
+                Map<String, Object> meta = new HashMap<>();
+                meta.put("hint", "call:/api/v1/cases/{caseId}/routing/recommendation");
+                return new ApiModels.ChatUiHint(
+                        ApiModels.ChatUiType.PATH_CHOOSER,
+                        ApiModels.ChatUiSelectionMode.SINGLE,
+                        "추천 경로",
+                        "추천 경로를 선택해 주세요.",
+                        List.of(),
+                        meta
+                );
+            }
+            return new ApiModels.ChatUiHint(
+                    ApiModels.ChatUiType.NONE,
+                    ApiModels.ChatUiSelectionMode.NONE,
+                    null,
+                    null,
+                    List.of(),
+                    Map.of()
+            );
+        }
+
+        List<ApiModels.ChatUiOption> options = new ArrayList<>();
+        if (followUpInterface.options() != null) {
+            for (ApiModels.FollowUpOption option : followUpInterface.options()) {
+                options.add(new ApiModels.ChatUiOption(option.optionId(), option.label()));
+            }
+        }
+
+        return new ApiModels.ChatUiHint(
+                followUpInterface.interfaceType() == ApiModels.FollowUpInterfaceType.DATE
+                        ? ApiModels.ChatUiType.OPTION_LIST
+                        : ApiModels.ChatUiType.LIST_PICKER,
+                switch (followUpInterface.selectionMode()) {
+                    case MULTIPLE -> ApiModels.ChatUiSelectionMode.MULTIPLE;
+                    case SINGLE -> ApiModels.ChatUiSelectionMode.SINGLE;
+                },
+                null,
+                null,
+                options,
+                Map.of()
+        );
+    }
+
+    private String resolveNextAction(ApiModels.CaseDetail detail) {
+        if (detail.currentActionRequired() != null && !detail.currentActionRequired().isBlank()) {
+            return detail.currentActionRequired();
+        }
+
+        return switch (detail.status()) {
+            case RECEIVED -> "INTAKE_REQUIRED";
+            case CLASSIFIED -> "REQUEST_DECOMPOSITION";
+            case ROUTE_CONFIRMED, EVIDENCE_COLLECTING -> "OPTIONAL_EVIDENCE_OR_SUBMIT";
+            case FORMAL_SUBMISSION_READY -> "SUBMIT_CASE";
+            case INSTITUTION_PROCESSING -> "WAIT_INSTITUTION_RESULT";
+            case SUPPLEMENT_REQUIRED -> "RESPOND_SUPPLEMENT";
+            case COMPLETED -> "CLOSE_CASE";
+            case CLOSED -> "DONE";
+            default -> "NONE";
+        };
+    }
+
     private CaseAggregate loadAggregate(UUID caseId) {
         CaseEntity caseEntity = caseRepository.findById(caseId)
                 .orElseThrow(() -> ApiException.notFound("CASE_NOT_FOUND", "Case not found: " + caseId));
@@ -602,22 +762,113 @@ public class CaseWorkflowService {
     }
 
     private void extractSlots(Map<String, Object> filledSlots, String message) {
-        if (containsAny(message, "밤", "새벽", "저녁", "아침", "낮", "오전", "오후")) {
-            filledSlots.put("incidentTime", "야간");
+        String trimmed = message == null ? "" : message.trim();
+        if (trimmed.isEmpty()) {
+            return;
         }
-        if (containsAny(message, "매일", "자주", "반복", "매주", "주 ", "회", "가끔", "불규칙")) {
-            filledSlots.put("frequency", "반복 발생");
+
+        if (equalsAny(trimmed, "생활소음 접수 계속")
+                || containsAny(trimmed, "접수 계속", "계속 진행")) {
+            filledSlots.put("safetyContinue", true);
         }
-        if (containsAny(message, "쿵", "발망치", "소음", "끌", "뛰", "발걸음", "가구", "tv", "음악", "의자")) {
-            filledSlots.put("noiseType", "충격/생활 소음");
+
+        if (equalsAny(trimmed, "지금 진행 중")) {
+            filledSlots.put("noiseNow", "지금 진행 중");
+        } else if (equalsAny(trimmed, "방금 멈춤")) {
+            filledSlots.put("noiseNow", "방금 멈춤");
+        } else if (equalsAny(trimmed, "자주 반복")) {
+            filledSlots.put("noiseNow", "자주 반복");
+        } else if (containsAny(trimmed, "지금도", "현재도", "진행 중")) {
+            filledSlots.put("noiseNow", "지금 진행 중");
         }
-        if (containsAny(message, "관리사무소", "조정", "중재")) {
+
+        if (equalsAny(trimmed, "위협 징후 없음", "없음(생활소음)")) {
+            filledSlots.put("safety", "위협 징후 없음");
+        } else if (containsAny(trimmed, "위협 징후 없음", "안전 문제 없음")) {
+            filledSlots.put("safety", "위협 징후 없음");
+        } else if (equalsAny(trimmed, "잘 모르겠음")) {
+            filledSlots.put("safety", "잘 모르겠음");
+        } else if (containsAny(trimmed, "안전은 잘 모르겠", "위험 여부는 잘 모르겠")) {
+            filledSlots.put("safety", "잘 모르겠음");
+        } else if (equalsAny(trimmed, "위협 징후 있음", "있음(위험)")) {
+            filledSlots.put("safety", SAFETY_DANGER);
+        } else if (containsAny(trimmed, "폭행", "스토킹", "칼", "죽이", "협박", "기물파손")
+                || containsAny(trimmed, "위협 징후 있음")) {
+            filledSlots.put("safety", SAFETY_DANGER);
+        }
+
+        if (equalsAny(trimmed, "아파트", "빌라", "오피스텔", "기타")) {
+            filledSlots.put("residence", trimmed);
+        } else if (containsAny(trimmed, "아파트")) {
+            filledSlots.put("residence", "아파트");
+        } else if (containsAny(trimmed, "빌라", "다세대", "연립")) {
+            filledSlots.put("residence", "빌라");
+        } else if (containsAny(trimmed, "오피스텔")) {
+            filledSlots.put("residence", "오피스텔");
+        }
+
+        if (equalsAny(trimmed, "있음", "없음", "모름")) {
+            filledSlots.put("management", trimmed);
+        } else if (containsAny(trimmed, "관리사무소")) {
+            if (containsAny(trimmed, "관리사무소 없음", "관리사무소가 없", "관리주체 없음", "관리주체가 없")) {
+                filledSlots.put("management", "없음");
+            } else if (containsAny(trimmed, "관리사무소 모름", "관리주체 모름", "불명")) {
+                filledSlots.put("management", "모름");
+            } else if (containsAny(trimmed, "관리사무소 있음", "관리사무소가 있", "관리주체 있음", "관리주체가 있")) {
+                filledSlots.put("management", "있음");
+            } else {
+                filledSlots.put("management", "있음");
+            }
+        }
+
+        if (equalsAny(trimmed, "충격 소음(쿵쿵)", "공기전달 소음(TV/음악)", "둘 다", "잘 모르겠음")) {
+            filledSlots.put("noiseType", trimmed);
+        } else if (containsAny(trimmed, "쿵", "발망치", "뛰", "의자", "가구")) {
+            filledSlots.put("noiseType", "충격 소음(쿵쿵)");
+        } else if (containsAny(trimmed, "tv", "음악", "오디오", "스피커")) {
+            filledSlots.put("noiseType", "공기전달 소음(TV/음악)");
+        }
+
+        if (equalsAny(trimmed, "거의 매일", "주 2~3회", "주 1회 이하", "불규칙")) {
+            filledSlots.put("frequency", trimmed);
+        } else if (containsAny(trimmed, "거의 매일", "매일")) {
+            filledSlots.put("frequency", "거의 매일");
+        } else if (containsAny(trimmed, "주 2", "주2", "주 3", "주3")) {
+            filledSlots.put("frequency", "주 2~3회");
+        } else if (containsAny(trimmed, "주 1", "주1", "가끔")) {
+            filledSlots.put("frequency", "주 1회 이하");
+        } else if (containsAny(trimmed, "불규칙")) {
+            filledSlots.put("frequency", "불규칙");
+        }
+
+        if (equalsAny(trimmed, "저녁", "심야", "새벽", "불규칙")) {
+            filledSlots.put("timeBand", trimmed);
+        } else if (containsAny(trimmed, "심야")) {
+            filledSlots.put("timeBand", "심야");
+        } else if (containsAny(trimmed, "새벽")) {
+            filledSlots.put("timeBand", "새벽");
+        } else if (containsAny(trimmed, "저녁", "밤")) {
+            filledSlots.put("timeBand", "저녁");
+        }
+
+        if (equalsAny(trimmed, "호수까지 확실", "층은 확실(호수 불명)", "모름")) {
+            filledSlots.put("sourceCertainty", trimmed);
+        } else if (containsAny(trimmed, "호수", "몇 호", "동 ")) {
+            filledSlots.put("sourceCertainty", "호수까지 확실");
+        } else if (containsAny(trimmed, "층", "윗집")) {
+            filledSlots.put("sourceCertainty", "층은 확실(호수 불명)");
+        }
+
+        if (containsAny(trimmed, "관리사무소", "조정", "중재")) {
             filledSlots.put("priorMediation", true);
         }
     }
 
     private void evaluateRiskSignal(CaseAggregate aggregate, String message) {
-        if (!aggregate.caseEntity.isRiskSignalDetected() && containsAny(message, "폭행", "위협", "스토킹", "죽", "칼")) {
+        boolean dangerDetected = containsAny(message, "폭행", "스토킹", "죽", "칼", "협박", "기물파손")
+                || SAFETY_DANGER.equals(aggregate.filledSlots.get("safety"));
+
+        if (!aggregate.caseEntity.isRiskSignalDetected() && dangerDetected) {
             aggregate.caseEntity.setRiskSignalDetected(true);
             aggregate.caseEntity.setRiskLevel(ApiModels.RiskLevel.CRITICAL);
             appendTimeline(
@@ -630,6 +881,10 @@ public class CaseWorkflowService {
         }
     }
 
+    private boolean isIntakeComplete(Map<String, Object> filledSlots) {
+        return missingSlots(filledSlots).isEmpty();
+    }
+
     private static boolean containsAny(String text, String... keywords) {
         String normalizedText = text.toLowerCase();
         for (String keyword : keywords) {
@@ -640,10 +895,33 @@ public class CaseWorkflowService {
         return false;
     }
 
+    private static boolean equalsAny(String text, String... candidates) {
+        if (text == null) {
+            return false;
+        }
+        String normalized = text.trim();
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        for (String candidate : candidates) {
+            if (normalized.equals(candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private List<String> missingSlots(Map<String, Object> filledSlots) {
-        return REQUIRED_SLOTS.stream()
+        List<String> missing = REQUIRED_SLOTS.stream()
                 .filter(slot -> !filledSlots.containsKey(slot))
-                .toList();
+                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+
+        if (SAFETY_DANGER.equals(filledSlots.get("safety"))
+                && !Boolean.TRUE.equals(filledSlots.get("safetyContinue"))) {
+            missing.add(0, "safetyContinue");
+        }
+
+        return List.copyOf(missing);
     }
 
     private double adequacyScore(ApiModels.EvidenceType type) {

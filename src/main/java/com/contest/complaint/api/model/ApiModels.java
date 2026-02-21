@@ -51,6 +51,21 @@ public final class ApiModels {
         MULTIPLE
     }
 
+    public enum ChatUiType {
+        NONE,
+        LIST_PICKER,
+        OPTION_LIST,
+        SUMMARY_CARD,
+        PATH_CHOOSER,
+        STATUS_FEED
+    }
+
+    public enum ChatUiSelectionMode {
+        NONE,
+        SINGLE,
+        MULTIPLE
+    }
+
     public enum DecompositionNodeType {
         LIVING_NOISE,
         IMMEDIATE_RISK,
@@ -107,6 +122,19 @@ public final class ApiModels {
         SYSTEM,
         USER,
         INSTITUTION
+    }
+
+    public record DemoLoginRequest(
+            @NotBlank String username,
+            @NotBlank String password
+    ) {
+    }
+
+    public record DemoLoginResponse(
+            String accessToken,
+            String tokenType,
+            Instant expiresAt
+    ) {
     }
 
     public record CreateCaseRequest(
@@ -172,6 +200,46 @@ public final class ApiModels {
             IntakeSnapshot intake,
             String recommendedFollowUpQuestion,
             FollowUpInterface followUpInterface
+    ) {
+    }
+
+    public record ChatTurnContext(
+            String caseId,
+            String scenarioType,
+            String housingType,
+            Boolean consentAccepted
+    ) {
+    }
+
+    public record ChatTurnRequest(
+            @NotBlank @Size(max = 5000) String userMessage,
+            ChatTurnContext context,
+            List<String> uiCapabilities
+    ) {
+    }
+
+    public record ChatUiOption(
+            String id,
+            String label
+    ) {
+    }
+
+    public record ChatUiHint(
+            ChatUiType type,
+            ChatUiSelectionMode selectionMode,
+            String title,
+            String subtitle,
+            List<ChatUiOption> options,
+            Map<String, Object> meta
+    ) {
+    }
+
+    public record ChatTurnResponse(
+            String sessionId,
+            String assistantMessage,
+            ChatUiHint uiHint,
+            Map<String, Object> statePatch,
+            String nextAction
     ) {
     }
 

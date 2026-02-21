@@ -88,7 +88,7 @@ class SecurityIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.caseId").value(caseId))
                 .andExpect(jsonPath("$.status").value("RECEIVED"))
-                .andExpect(jsonPath("$.recommendedFollowUpQuestion").value("소음이 주로 발생하는 시간대를 알려주세요."));
+                .andExpect(jsonPath("$.recommendedFollowUpQuestion").value("지금도 소음이 나나요?"));
     }
 
     @Test
@@ -152,7 +152,7 @@ class SecurityIntegrationTest {
                         .content("""
                                 {
                                   "role":"USER",
-                                  "message":"밤마다 매일 쿵쿵 소음이 반복돼요."
+                                  "message":"지금 진행 중이고 위협 징후 없음입니다. 아파트이며 관리사무소 있음. 충격 소음(쿵쿵)이 거의 매일 심야에 발생하고 호수까지 확실합니다."
                                 }
                                 """))
                 .andExpect(status().isOk())
