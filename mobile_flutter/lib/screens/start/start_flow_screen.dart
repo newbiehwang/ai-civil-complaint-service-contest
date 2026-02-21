@@ -43,7 +43,7 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
     _showStartButton = false;
 
     _timers.add(
-      Timer(const Duration(milliseconds: 740), () {
+      Timer(const Duration(milliseconds: 980), () {
         if (!mounted || _phase != StartFlowPhase.frame1) return;
         setState(() {
           _showStartButton = true;
@@ -87,7 +87,7 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
     };
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 340),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
       layoutBuilder: (currentChild, _) {
