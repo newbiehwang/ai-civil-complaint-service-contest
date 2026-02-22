@@ -21,6 +21,10 @@ class StartFlowScreen extends StatefulWidget {
 
 class _StartFlowScreenState extends State<StartFlowScreen> {
   StartFlowPhase _phase = StartFlowPhase.frame1;
+  Duration _transitionDuration = const Duration(milliseconds: 340);
+  Curve _transitionInCurve = Curves.easeOut;
+  Curve _transitionOutCurve = Curves.easeIn;
+  bool _useFadeTransition = true;
   bool _showStartLogo = false;
   bool _showStartTitle = false;
   bool _showStartButton = false;
@@ -75,6 +79,10 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
 
   void _goToFrame2() {
     setState(() {
+      _transitionDuration = const Duration(milliseconds: 560);
+      _transitionInCurve = Curves.easeInOutCubic;
+      _transitionOutCurve = Curves.easeInOutCubic;
+      _useFadeTransition = true;
       _phase = StartFlowPhase.frame2;
     });
   }
@@ -89,6 +97,10 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
     if (!mounted || loginOk != true) return;
 
     setState(() {
+      _transitionDuration = const Duration(milliseconds: 340);
+      _transitionInCurve = Curves.easeOut;
+      _transitionOutCurve = Curves.easeIn;
+      _useFadeTransition = true;
       _phase = StartFlowPhase.frame3;
     });
 
@@ -96,6 +108,10 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
       Timer(const Duration(milliseconds: 2200), () {
         if (!mounted || _phase != StartFlowPhase.frame3) return;
         setState(() {
+          _transitionDuration = const Duration(milliseconds: 220);
+          _transitionInCurve = Curves.linear;
+          _transitionOutCurve = Curves.linear;
+          _useFadeTransition = false;
           _phase = StartFlowPhase.frame4;
         });
       }),
@@ -121,13 +137,16 @@ class _StartFlowScreenState extends State<StartFlowScreen> {
     };
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 340),
-      switchInCurve: Curves.easeOut,
-      switchOutCurve: Curves.easeIn,
+      duration: _transitionDuration,
+      switchInCurve: _transitionInCurve,
+      switchOutCurve: _transitionOutCurve,
       layoutBuilder: (currentChild, _) {
         return currentChild ?? const SizedBox.shrink();
       },
       transitionBuilder: (child, animation) {
+        if (!_useFadeTransition) {
+          return child;
+        }
         final fadeIn = CurvedAnimation(
           parent: animation,
           curve: Curves.easeOutCubic,

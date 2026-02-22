@@ -287,12 +287,16 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
           sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
           onOpenSession: _openSession,
           onCreateSession: _createAndOpenSession,
+          onLogout: _restart,
+          accountId: accountId ?? 'demo',
         ),
       RootPhase.chat => activeSession == null
           ? ChatListScreen(
               sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
               onOpenSession: _openSession,
               onCreateSession: _createAndOpenSession,
+              onLogout: _restart,
+              accountId: accountId ?? 'demo',
             )
           : ChatbotDemoScreen(
               key: ValueKey('chat-${activeSession.sessionId}'),

@@ -10,6 +10,12 @@ enum ChatListFilter {
   completed,
 }
 
+enum _ChatListBottomTab {
+  home,
+  list,
+  menu,
+}
+
 extension on ChatListFilter {
   String get label {
     switch (this) {
@@ -28,12 +34,16 @@ class ChatListScreen extends StatefulWidget {
     required this.sessions,
     required this.onOpenSession,
     required this.onCreateSession,
+    required this.onLogout,
+    required this.accountId,
     super.key,
   });
 
   final List<ChatSessionSummary> sessions;
   final ValueChanged<String> onOpenSession;
   final VoidCallback onCreateSession;
+  final VoidCallback onLogout;
+  final String accountId;
 
   @override
   State<ChatListScreen> createState() => _ChatListScreenState();
@@ -41,6 +51,29 @@ class ChatListScreen extends StatefulWidget {
 
 class _ChatListScreenState extends State<ChatListScreen> {
   ChatListFilter _filter = ChatListFilter.all;
+  _ChatListBottomTab _tab = _ChatListBottomTab.list;
+  int _tabDirection = 1;
+
+  int _tabIndex(_ChatListBottomTab tab) {
+    switch (tab) {
+      case _ChatListBottomTab.home:
+        return 0;
+      case _ChatListBottomTab.list:
+        return 1;
+      case _ChatListBottomTab.menu:
+        return 2;
+    }
+  }
+
+  void _switchTab(_ChatListBottomTab next) {
+    if (next == _tab) return;
+    final current = _tabIndex(_tab);
+    final target = _tabIndex(next);
+    setState(() {
+      _tabDirection = target >= current ? 1 : -1;
+      _tab = next;
+    });
+  }
 
   List<ChatSessionSummary> get _visibleSessions {
     switch (_filter) {
@@ -60,6 +93,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   Widget build(BuildContext context) {
     final sessions = _visibleSessions;
+    final tabContent = switch (_tab) {
+      _ChatListBottomTab.home => const _HomeTab(),
+      _ChatListBottomTab.list => _buildListContent(sessions),
+      _ChatListBottomTab.menu => _MenuTab(
+          accountId: widget.accountId,
+          onLogout: widget.onLogout,
+        ),
+    };
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -67,47 +108,37 @@ class _ChatListScreenState extends State<ChatListScreen> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 448),
-            child: Stack(
+            child: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 36, 20, 34),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _Header(
-                        selected: _filter,
-                        onSelected: (filter) =>
-                            setState(() => _filter = filter),
+                Expanded(
+                  child: ClipRect(
+                    child: TweenAnimationBuilder<double>(
+                      key: ValueKey(_tab),
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      tween: Tween<double>(begin: 0, end: 1),
+                      child: Container(
+                        color: Colors.white,
+                        child: tabContent,
                       ),
-                      const SizedBox(height: 24),
-                      Expanded(
-                        child: sessions.isEmpty
-                            ? _EmptyState(
-                                filter: _filter,
-                                onCreateSession: widget.onCreateSession)
-                            : ListView.separated(
-                                padding: const EdgeInsets.only(bottom: 110),
-                                itemCount: sessions.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 24),
-                                itemBuilder: (context, index) {
-                                  final session = sessions[index];
-                                  return _SessionCard(
-                                    session: session,
-                                    onTap: () =>
-                                        widget.onOpenSession(session.sessionId),
-                                  );
-                                },
-                              ),
-                      ),
-                    ],
+                      builder: (context, value, child) {
+                        final slideX = (1 - value) * 0.06 * _tabDirection;
+                        return Opacity(
+                          opacity: value,
+                          child: FractionalTranslation(
+                            translation: Offset(slideX, 0),
+                            child: child,
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
-                Positioned(
-                  right: 24,
-                  bottom: 40,
-                  child: _FloatingCreateButton(
-                    onTap: widget.onCreateSession,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                  child: _BottomTabBar(
+                    selected: _tab,
+                    onSelected: _switchTab,
                   ),
                 ),
               ],
@@ -115,6 +146,53 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildListContent(List<ChatSessionSummary> sessions) {
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 36, 20, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _Header(
+                selected: _filter,
+                onSelected: (filter) => setState(() => _filter = filter),
+              ),
+              const SizedBox(height: 24),
+              Expanded(
+                child: sessions.isEmpty
+                    ? _EmptyState(
+                        filter: _filter,
+                        onCreateSession: widget.onCreateSession,
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.only(bottom: 96),
+                        itemCount: sessions.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 24),
+                        itemBuilder: (context, index) {
+                          final session = sessions[index];
+                          return _SessionCard(
+                            session: session,
+                            onTap: () =>
+                                widget.onOpenSession(session.sessionId),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          right: 24,
+          bottom: 28,
+          child: _FloatingCreateButton(
+            onTap: widget.onCreateSession,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -574,16 +652,39 @@ class _EmptyState extends StatelessWidget {
         ),
     };
 
+    return _CenteredStateContent(
+      icon: Icons.forum_outlined,
+      title: title,
+      description: description,
+    );
+  }
+}
+
+class _CenteredStateContent extends StatelessWidget {
+  const _CenteredStateContent({
+    required this.icon,
+    required this.title,
+    required this.description,
+    this.iconColor = const Color(0xFF457EAC),
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final Color iconColor;
+
+  @override
+  Widget build(BuildContext context) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.forum_outlined,
+            Icon(
+              icon,
               size: 42,
-              color: Color(0xFF457EAC),
+              color: iconColor,
             ),
             const SizedBox(height: 12),
             Text(
@@ -608,6 +709,380 @@ class _EmptyState extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeTab extends StatelessWidget {
+  const _HomeTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(20, 36, 20, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '홈',
+            style: TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 30,
+              height: 1.2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.75,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            '서비스 주요 기능과 안내를 확인할 수 있어요.',
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 14,
+              height: 20 / 14,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          SizedBox(height: 24),
+          Expanded(
+            child: _CenteredStateContent(
+              icon: Icons.home_outlined,
+              iconColor: AppColors.secondary,
+              title: '홈 화면 준비 중입니다.',
+              description: '곧 개인화 요약과 추천 기능이 제공됩니다.',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MenuTab extends StatelessWidget {
+  const _MenuTab({
+    required this.accountId,
+    required this.onLogout,
+  });
+
+  final String accountId;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 36, 20, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '메뉴',
+            style: TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 30,
+              height: 1.2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.75,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '계정 및 서비스 설정을 확인하세요.',
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 14,
+              height: 20 / 14,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _MenuCard(
+                    title: '로그인 계정',
+                    subtitle: accountId,
+                    icon: Icons.verified_user_rounded,
+                  ),
+                  const SizedBox(height: 12),
+                  const _MenuCard(
+                    title: '알림 설정',
+                    subtitle: '중요 업데이트만 알림 받기',
+                    icon: Icons.notifications_active_rounded,
+                  ),
+                  const SizedBox(height: 12),
+                  const _MenuCard(
+                    title: '문의 및 도움말',
+                    subtitle: '서비스 사용 방법과 문의 채널 안내',
+                    icon: Icons.help_outline_rounded,
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: onLogout,
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFB91C1C),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: const Color(0xFFFFF1F2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            KrdsTokens.radiusXl,
+                          ),
+                          side: const BorderSide(color: Color(0xFFFECACA)),
+                        ),
+                      ),
+                      icon: const Icon(Icons.logout_rounded),
+                      label: const Text(
+                        '로그아웃',
+                        style: TextStyle(
+                          fontSize: 16,
+                          height: 1.3,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MenuCard extends StatelessWidget {
+  const _MenuCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE6EDF5)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x11000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF3FF),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 26),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 15,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomTabBar extends StatelessWidget {
+  const _BottomTabBar({
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final _ChatListBottomTab selected;
+  final ValueChanged<_ChatListBottomTab> onSelected;
+
+  double get _selectorAlignmentX {
+    switch (selected) {
+      case _ChatListBottomTab.home:
+        return -1;
+      case _ChatListBottomTab.list:
+        return 0;
+      case _ChatListBottomTab.menu:
+        return 1;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: const Color(0xFFE6EDF5)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final selectorWidth = constraints.maxWidth / 3;
+          return Stack(
+            children: [
+              IgnorePointer(
+                child: AnimatedAlign(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment(_selectorAlignmentX, 0),
+                  child: Container(
+                    width: selectorWidth,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF3FF),
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x142D5D7B),
+                          blurRadius: 12,
+                          offset: Offset(0, 3),
+                          spreadRadius: -4,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _BottomTabButton(
+                      label: '홈',
+                      icon: Icons.home_rounded,
+                      selected: selected == _ChatListBottomTab.home,
+                      onTap: () => onSelected(_ChatListBottomTab.home),
+                    ),
+                  ),
+                  Expanded(
+                    child: _BottomTabButton(
+                      label: '민원 목록',
+                      icon: Icons.forum_rounded,
+                      selected: selected == _ChatListBottomTab.list,
+                      onTap: () => onSelected(_ChatListBottomTab.list),
+                    ),
+                  ),
+                  Expanded(
+                    child: _BottomTabButton(
+                      label: '메뉴',
+                      icon: Icons.menu_rounded,
+                      selected: selected == _ChatListBottomTab.menu,
+                      onTap: () => onSelected(_ChatListBottomTab.menu),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _BottomTabButton extends StatefulWidget {
+  const _BottomTabButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_BottomTabButton> createState() => _BottomTabButtonState();
+}
+
+class _BottomTabButtonState extends State<_BottomTabButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.selected;
+    return AnimatedScale(
+      scale: _pressed ? 0.97 : 1,
+      duration: const Duration(milliseconds: 110),
+      curve: Curves.easeOutCubic,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: widget.onTap,
+        onHighlightChanged: (value) {
+          if (!mounted) return;
+          setState(() => _pressed = value);
+        },
+        child: SizedBox(
+          height: 48,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                widget.icon,
+                size: 18,
+                color: selected ? AppColors.primary : const Color(0xFF94A3B8),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  color: selected ? AppColors.primary : const Color(0xFF94A3B8),
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
