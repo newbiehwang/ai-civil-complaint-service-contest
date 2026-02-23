@@ -34,6 +34,7 @@ class ChatListScreen extends StatefulWidget {
     required this.sessions,
     required this.onOpenSession,
     required this.onCreateSession,
+    required this.onDeleteSession,
     required this.onLogout,
     required this.accountId,
     super.key,
@@ -42,6 +43,7 @@ class ChatListScreen extends StatefulWidget {
   final List<ChatSessionSummary> sessions;
   final ValueChanged<String> onOpenSession;
   final VoidCallback onCreateSession;
+  final ValueChanged<String> onDeleteSession;
   final VoidCallback onLogout;
   final String accountId;
 
@@ -88,6 +90,48 @@ class _ChatListScreenState extends State<ChatListScreen> {
             .where((session) => session.status == ChatSessionStatus.completed)
             .toList(growable: false);
     }
+  }
+
+  Future<bool> _confirmDeleteSession(ChatSessionSummary session) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            '채팅방 삭제',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: Text(
+            '"${session.title}" 채팅방을 삭제할까요?\n삭제 후에는 복구할 수 없어요.',
+            style: const TextStyle(
+              fontSize: 14,
+              height: 1.4,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('취소'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFCC2E2E),
+              ),
+              child: const Text(
+                '삭제',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    return result == true;
   }
 
   @override
@@ -174,10 +218,43 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         separatorBuilder: (_, __) => const SizedBox(height: 24),
                         itemBuilder: (context, index) {
                           final session = sessions[index];
-                          return _SessionCard(
-                            session: session,
-                            onTap: () =>
-                                widget.onOpenSession(session.sessionId),
+                          return Dismissible(
+                            key: ValueKey('dismiss-${session.sessionId}'),
+                            direction: DismissDirection.endToStart,
+                            dismissThresholds: const {
+                              DismissDirection.endToStart: 0.35,
+                            },
+                            movementDuration: const Duration(milliseconds: 220),
+                            resizeDuration: const Duration(milliseconds: 180),
+                            background: const SizedBox.shrink(),
+                            secondaryBackground: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE14949),
+                                borderRadius:
+                                    BorderRadius.circular(KrdsTokens.radiusXl),
+                              ),
+                              alignment: Alignment.centerRight,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 24),
+                              child: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                            confirmDismiss: (_) async {
+                              final approved =
+                                  await _confirmDeleteSession(session);
+                              if (approved) {
+                                widget.onDeleteSession(session.sessionId);
+                              }
+                              return approved;
+                            },
+                            child: _SessionCard(
+                              session: session,
+                              onTap: () =>
+                                  widget.onOpenSession(session.sessionId),
+                            ),
                           );
                         },
                       ),
@@ -588,37 +665,86 @@ class _StepNode extends StatelessWidget {
   }
 }
 
-class _FloatingCreateButton extends StatelessWidget {
+class _FloatingCreateButton extends StatefulWidget {
   const _FloatingCreateButton({required this.onTap});
 
   final VoidCallback onTap;
 
   @override
+  State<_FloatingCreateButton> createState() => _FloatingCreateButtonState();
+}
+
+class _FloatingCreateButtonState extends State<_FloatingCreateButton> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(9999),
-        child: Ink(
+    return AnimatedScale(
+      scale: _pressed ? 0.965 : 1.0,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+      child: AnimatedSlide(
+        offset: _pressed ? const Offset(0, 0.01) : Offset.zero,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        child: Container(
           width: 56,
           height: 56,
-          decoration: BoxDecoration(
-            color: AppColors.primary,
-            borderRadius: BorderRadius.circular(9999),
-            boxShadow: const [
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF4D86B3),
+                Color(0xFF2D5D7B),
+              ],
+            ),
+            boxShadow: [
               BoxShadow(
-                color: Color(0x26000000),
-                blurRadius: 24,
-                offset: Offset(0, 10),
-                spreadRadius: -6,
+                color: Color(0x332D5D7B),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+                spreadRadius: -3,
+              ),
+              BoxShadow(
+                color: Color(0x1A457EAC),
+                blurRadius: 8,
+                offset: Offset(0, 2),
               ),
             ],
+            border: Border.fromBorderSide(
+              BorderSide(color: Color(0x55FFFFFF), width: 0.8),
+            ),
           ),
-          child: const Icon(
-            Icons.add_rounded,
-            color: Colors.white,
-            size: 24,
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: widget.onTap,
+              onHighlightChanged: (value) {
+                if (!mounted) return;
+                setState(() => _pressed = value);
+              },
+              customBorder: const CircleBorder(),
+              splashColor: const Color(0x22FFFFFF),
+              highlightColor: const Color(0x12000000),
+              child: const Center(
+                child: Icon(
+                  Icons.add_rounded,
+                  color: Colors.white,
+                  size: 24,
+                  shadows: [
+                    Shadow(
+                      color: Color(0x26000000),
+                      offset: Offset(0, 1),
+                      blurRadius: 1.5,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),

@@ -21,6 +21,9 @@ public class CaseEntity {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "owner_subject", length = 120)
+    private String ownerSubject;
+
     @Column(name = "scenario_type", nullable = false, length = 100)
     private String scenarioType;
 
@@ -89,6 +92,14 @@ public class CaseEntity {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public String getOwnerSubject() {
+        return ownerSubject;
+    }
+
+    public void setOwnerSubject(String ownerSubject) {
+        this.ownerSubject = ownerSubject;
     }
 
     public String getScenarioType() {

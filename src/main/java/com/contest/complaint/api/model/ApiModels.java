@@ -154,6 +154,11 @@ public final class ApiModels {
     ) {
     }
 
+    public record CaseListResponse(
+            List<CaseSummary> items
+    ) {
+    }
+
     public record CaseDetail(
             UUID caseId,
             CaseStatus status,

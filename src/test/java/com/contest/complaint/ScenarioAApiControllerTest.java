@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -306,6 +307,32 @@ class ScenarioAApiControllerTest {
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+    }
+
+    @Test
+    void deleteCaseRemovesCase() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v1/cases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scenarioType":"INTER_FLOOR_NOISE",
+                                  "housingType":"APARTMENT",
+                                  "consentAccepted":true
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String caseId = objectMapper.readTree(createResponse).get("caseId").asText();
+
+        mockMvc.perform(delete("/api/v1/cases/{caseId}", caseId))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/cases/{caseId}", caseId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CASE_NOT_FOUND"));
     }
 
     private String prepareCaseReadyForSubmission() throws Exception {

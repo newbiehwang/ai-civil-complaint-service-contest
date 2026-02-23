@@ -82,4 +82,46 @@ class ChatSessionSummary {
       caseId: caseId ?? this.caseId,
     );
   }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'sessionId': sessionId,
+      'title': title,
+      'lastMessage': lastMessage,
+      'updatedAt': updatedAt.toIso8601String(),
+      'status': status.name,
+      'stepLabel': stepLabel,
+      'unreadCount': unreadCount,
+      'caseId': caseId,
+    };
+  }
+
+  factory ChatSessionSummary.fromJson(Map<String, Object?> json) {
+    final statusRaw = json['status']?.toString();
+    final status = ChatSessionStatus.values.firstWhere(
+      (value) => value.name == statusRaw,
+      orElse: () => ChatSessionStatus.awaitingInput,
+    );
+
+    final updatedAtRaw = json['updatedAt']?.toString();
+    final updatedAt = updatedAtRaw == null
+        ? DateTime.now()
+        : (DateTime.tryParse(updatedAtRaw) ?? DateTime.now());
+
+    final unreadCountRaw = json['unreadCount'];
+    final unreadCount = unreadCountRaw is int
+        ? unreadCountRaw
+        : int.tryParse(unreadCountRaw?.toString() ?? '') ?? 0;
+
+    return ChatSessionSummary(
+      sessionId: json['sessionId']?.toString() ?? '',
+      title: json['title']?.toString() ?? '상담',
+      lastMessage: json['lastMessage']?.toString() ?? '메시지가 없습니다.',
+      updatedAt: updatedAt,
+      status: status,
+      stepLabel: json['stepLabel']?.toString() ?? '시작 전',
+      unreadCount: unreadCount,
+      caseId: json['caseId']?.toString(),
+    );
+  }
 }

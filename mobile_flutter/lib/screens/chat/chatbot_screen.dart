@@ -65,6 +65,18 @@ const List<String> _kKrFontFallback = <String>[
 ];
 const Color _kMiniSubtitleColor = Color(0xFF686868);
 
+class ChatHistoryEntry {
+  const ChatHistoryEntry({
+    required this.text,
+    required this.isAi,
+    this.fromMiniInterface = false,
+  });
+
+  final String text;
+  final bool isAi;
+  final bool fromMiniInterface;
+}
+
 class MiniOption {
   const MiniOption({
     required this.id,
@@ -191,6 +203,11 @@ class ChatbotScreenSnapshot {
     required this.backendCaseStatus,
     required this.backendTraceId,
     required this.backendEnabled,
+    required this.backendUiHintDriven,
+    required this.backendUiHintType,
+    required this.backendUiSelectionMode,
+    required this.historyEntries,
+    required this.hasIntroBridgeShown,
   });
 
   final bool isThinking;
@@ -237,6 +254,11 @@ class ChatbotScreenSnapshot {
   final String? backendCaseStatus;
   final String? backendTraceId;
   final bool backendEnabled;
+  final bool backendUiHintDriven;
+  final String backendUiHintType;
+  final String backendUiSelectionMode;
+  final List<ChatHistoryEntry> historyEntries;
+  final bool hasIntroBridgeShown;
 }
 
 class ChatbotDemoScreen extends StatefulWidget {
@@ -244,6 +266,8 @@ class ChatbotDemoScreen extends StatefulWidget {
     required this.onRestart,
     required this.onBackToList,
     this.initialSnapshot,
+    this.initialBackendCaseId,
+    this.initialBackendCaseStatus,
     this.onSnapshotChanged,
     super.key,
   });
@@ -251,6 +275,8 @@ class ChatbotDemoScreen extends StatefulWidget {
   final VoidCallback onRestart;
   final VoidCallback onBackToList;
   final ChatbotScreenSnapshot? initialSnapshot;
+  final String? initialBackendCaseId;
+  final String? initialBackendCaseStatus;
   final ValueChanged<ChatbotScreenSnapshot>? onSnapshotChanged;
 
   @override
@@ -308,14 +334,17 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ScrollController _multiFormScrollController = ScrollController();
+  final ScrollController _conversationScrollController = ScrollController();
+  final GlobalKey _currentAiAnchorKey = GlobalKey();
   final ApiClient _apiClient = ApiClient();
   final String _bootTraceId = ApiClient().createTraceId();
 
   bool _isThinking = false;
   bool _isAiAnswerReady = false;
   bool _isMiniInterfaceCollapsed = false;
+  bool _hasIntroBridgeShown = false;
   int _aiAnimationNonce = 0;
-  String _aiText = '안녕하세요. 어떤 소음이 가장\n불편하신가요?';
+  String _aiText = '안녕하세요. 정부24 민원 서비스 도우미입니다.\n무엇을 도와드릴까요?';
   DemoStep _step = DemoStep.waitingIssue;
   MiniInterfaceType _miniType = MiniInterfaceType.none;
   List<MiniOption> _options = const [];
@@ -357,17 +386,37 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String? _backendCaseId;
   String? _backendCaseStatus;
   String? _backendTraceId;
+  bool _isBackendUiHintDriven = false;
+  String _backendUiHintType = 'NONE';
+  String _backendUiSelectionMode = 'NONE';
+  bool _forceLocalDemoMode = false;
   bool _isBackendRequestInFlight = false;
   Future<void> _backendSyncQueue = Future<void>.value();
+  final List<ChatHistoryEntry> _historyEntries = <ChatHistoryEntry>[];
 
   @override
   void initState() {
     super.initState();
     if (widget.initialSnapshot != null) {
       _restoreFromSnapshot(widget.initialSnapshot!);
+    } else {
+      final initialCaseId = widget.initialBackendCaseId?.trim();
+      if (initialCaseId != null && initialCaseId.isNotEmpty) {
+        _backendCaseId = initialCaseId;
+      }
+      final initialCaseStatus = widget.initialBackendCaseStatus?.trim();
+      if (initialCaseStatus != null && initialCaseStatus.isNotEmpty) {
+        _backendCaseStatus = initialCaseStatus;
+      }
     }
     _backendTraceId ??= _bootTraceId;
     _inputController.addListener(_handleInputControllerChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_isAiAnswerReady) {
+        _pinCurrentAiToTop();
+      }
+    });
   }
 
   void _handleInputControllerChanged() {
@@ -382,6 +431,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _inputController.dispose();
     _focusNode.dispose();
     _multiFormScrollController.dispose();
+    _conversationScrollController.dispose();
     super.dispose();
   }
 
@@ -441,6 +491,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _backendCaseId = snapshot.backendCaseId;
     _backendCaseStatus = snapshot.backendCaseStatus;
     _backendTraceId = snapshot.backendTraceId;
+    _isBackendUiHintDriven = snapshot.backendUiHintDriven;
+    _backendUiHintType = snapshot.backendUiHintType;
+    _backendUiSelectionMode = snapshot.backendUiSelectionMode;
+    _historyEntries
+      ..clear()
+      ..addAll(snapshot.historyEntries);
+    _hasIntroBridgeShown = snapshot.hasIntroBridgeShown;
   }
 
   ChatbotScreenSnapshot _buildSnapshot() {
@@ -492,6 +549,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       backendCaseStatus: _backendCaseStatus,
       backendTraceId: _backendTraceId ?? _bootTraceId,
       backendEnabled: _isBackendEnabled,
+      backendUiHintDriven: _isBackendUiHintDriven,
+      backendUiHintType: _backendUiHintType,
+      backendUiSelectionMode: _backendUiSelectionMode,
+      historyEntries: List<ChatHistoryEntry>.from(_historyEntries),
+      hasIntroBridgeShown: _hasIntroBridgeShown,
     );
   }
 
@@ -500,11 +562,67 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     widget.onBackToList();
   }
 
+  void _appendHistory({
+    required String text,
+    required bool isAi,
+    bool fromMiniInterface = false,
+  }) {
+    final normalized = text.trim();
+    if (normalized.isEmpty) return;
+    if (_historyEntries.isNotEmpty) {
+      final last = _historyEntries.last;
+      if (last.text == normalized &&
+          last.isAi == isAi &&
+          last.fromMiniInterface == fromMiniInterface) {
+        return;
+      }
+    }
+    _historyEntries.add(
+      ChatHistoryEntry(
+        text: normalized,
+        isAi: isAi,
+        fromMiniInterface: fromMiniInterface,
+      ),
+    );
+  }
+
+  void _archiveCurrentAiToHistory() {
+    _appendHistory(text: _aiText, isAi: true);
+  }
+
+  void _recordUserChatInput(String text) {
+    _collapseHistoryToCurrent(immediate: true);
+    _archiveCurrentAiToHistory();
+    _appendHistory(text: text, isAi: false);
+  }
+
+  void _recordMiniResponse(String text) {
+    _collapseHistoryToCurrent(immediate: true);
+    _archiveCurrentAiToHistory();
+    _appendHistory(text: text, isAi: false, fromMiniInterface: true);
+  }
+
+  void _collapseHistoryToCurrent({bool immediate = false}) {
+    _pinCurrentAiToTop(animate: !immediate);
+  }
+
+  void _pinCurrentAiToTop({bool animate = false}) {
+    final context = _currentAiAnchorKey.currentContext;
+    if (context == null) return;
+    Scrollable.ensureVisible(
+      context,
+      alignment: 0,
+      duration: animate ? const Duration(milliseconds: 220) : Duration.zero,
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   Future<void> _showThinkingThen(
     VoidCallback done, {
     Duration duration = const Duration(milliseconds: 560),
   }) async {
     FocusScope.of(context).unfocus();
+    _collapseHistoryToCurrent(immediate: true);
     setState(() {
       _isThinking = true;
     });
@@ -521,6 +639,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     required DemoStep step,
     MiniInterfaceType miniType = MiniInterfaceType.none,
     List<MiniOption> options = const [],
+    bool backendUiHintDriven = false,
+    String backendUiHintType = 'NONE',
+    String backendUiSelectionMode = 'NONE',
   }) {
     if (miniType != MiniInterfaceType.none) {
       FocusScope.of(context).unfocus();
@@ -533,6 +654,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _step = step;
       _miniType = miniType;
       _options = options;
+      _isBackendUiHintDriven = backendUiHintDriven;
+      _backendUiHintType = backendUiHintType;
+      _backendUiSelectionMode = backendUiSelectionMode;
       _selectedOptionIds.clear();
       if (step == DemoStep.evidenceV1) {
         _evidenceAttachmentIds.clear();
@@ -549,6 +673,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     if (!mounted || _isThinking || _isAiAnswerReady) return;
     setState(() {
       _isAiAnswerReady = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _pinCurrentAiToTop();
     });
   }
 
@@ -613,7 +741,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _measureReceivingUnit == true;
   }
 
-  bool get _isBackendEnabled => _apiClient.isConfigured;
+  bool get _isBackendEnabled => _apiClient.isConfigured && !_forceLocalDemoMode;
 
   String _housingTypeForBackend() {
     final residence = (_data.residence ?? '').trim();
@@ -653,6 +781,347 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
     _backendTraceId = traceId;
     return response;
+  }
+
+  String _normalizeBackendSelectionMode(String raw) {
+    final normalized = raw.trim().toUpperCase();
+    if (normalized == 'MULTIPLE') return 'MULTIPLE';
+    if (normalized == 'SINGLE') return 'SINGLE';
+    return 'NONE';
+  }
+
+  MiniInterfaceType _miniTypeFromBackendUiHint({
+    required String uiType,
+    required List<MiniOption> options,
+  }) {
+    final normalized = uiType.trim().toUpperCase();
+    switch (normalized) {
+      case 'LIST_PICKER':
+        return options.isEmpty
+            ? MiniInterfaceType.none
+            : MiniInterfaceType.listPicker;
+      case 'OPTION_LIST':
+        return options.isEmpty
+            ? MiniInterfaceType.optionList
+            : MiniInterfaceType.listPicker;
+      case 'PATH_CHOOSER':
+        return options.isEmpty
+            ? MiniInterfaceType.none
+            : MiniInterfaceType.listPicker;
+      case 'SUMMARY_CARD':
+        return MiniInterfaceType.summaryCard;
+      case 'STATUS_FEED':
+        return MiniInterfaceType.statusFeed;
+      default:
+        return MiniInterfaceType.none;
+    }
+  }
+
+  DemoStep _stepFromBackendTurn(
+    ChatTurnResponseDto response,
+    MiniInterfaceType miniType,
+    List<MiniOption> options,
+  ) {
+    final nextAction = response.nextAction.trim().toUpperCase();
+    final uiType = response.uiHint.type.trim().toUpperCase();
+
+    if (miniType == MiniInterfaceType.pathChooser || uiType == 'PATH_CHOOSER') {
+      return DemoStep.pathChooser;
+    }
+    if (miniType == MiniInterfaceType.statusFeed || uiType == 'STATUS_FEED') {
+      return DemoStep.statusFeed;
+    }
+    if (miniType == MiniInterfaceType.summaryCard || uiType == 'SUMMARY_CARD') {
+      return DemoStep.summary;
+    }
+    if (miniType == MiniInterfaceType.optionList || uiType == 'OPTION_LIST') {
+      if (nextAction == 'UPLOAD_EVIDENCE' ||
+          nextAction == 'OPTIONAL_EVIDENCE_OR_SUBMIT' ||
+          nextAction == 'SUBMIT_CASE') {
+        return DemoStep.evidenceV1;
+      }
+      return DemoStep.dateTime;
+    }
+    if (nextAction == 'CLOSE_CASE' || nextAction == 'DONE') {
+      return DemoStep.complete;
+    }
+    if (nextAction == 'WAIT_INSTITUTION_RESULT' ||
+        nextAction == 'RESPOND_SUPPLEMENT') {
+      return DemoStep.statusFeed;
+    }
+    if (nextAction == 'CONFIRM_ROUTE') {
+      return DemoStep.pathChooser;
+    }
+    if (nextAction == 'UPLOAD_EVIDENCE' ||
+        nextAction == 'OPTIONAL_EVIDENCE_OR_SUBMIT') {
+      return DemoStep.evidenceV1;
+    }
+    if (nextAction == 'REQUEST_DECOMPOSITION' ||
+        nextAction == 'REQUEST_ROUTING_RECOMMENDATION') {
+      return DemoStep.pathChooser;
+    }
+
+    if (miniType == MiniInterfaceType.listPicker && options.isNotEmpty) {
+      final labels = options.map((option) => option.label).toSet();
+      if (labels.contains('지금 진행 중') && labels.contains('방금 멈춤')) {
+        return DemoStep.noiseNow;
+      }
+      if (labels.contains('위협 징후 없음')) {
+        return DemoStep.safety;
+      }
+      if (labels.contains('아파트')) {
+        return DemoStep.residence;
+      }
+      if (labels.contains('있음') &&
+          labels.contains('없음') &&
+          labels.contains('모름')) {
+        return DemoStep.management;
+      }
+      if (labels.contains('충격 소음(쿵쿵)')) {
+        return DemoStep.noiseType;
+      }
+      if (labels.contains('거의 매일')) {
+        return DemoStep.frequency;
+      }
+      if (labels.contains('저녁')) {
+        return DemoStep.timeBand;
+      }
+      if (labels.contains('호수까지 확실')) {
+        return DemoStep.sourceCertainty;
+      }
+    }
+
+    return _step;
+  }
+
+  Future<List<MiniOption>> _resolveBackendUiOptions(ChatUiHintDto hint) async {
+    final options = hint.options
+        .map((option) => MiniOption(
+              id: option.id.trim(),
+              label: option.label.trim(),
+            ))
+        .where((option) => option.id.isNotEmpty && option.label.isNotEmpty)
+        .toList(growable: false);
+
+    final hintType = hint.type.trim().toUpperCase();
+    if (hintType != 'PATH_CHOOSER' || options.isNotEmpty) {
+      return options;
+    }
+
+    final caseId = _backendCaseId?.trim();
+    if (caseId == null || caseId.isEmpty) return options;
+
+    try {
+      final traceId = _backendTraceId ?? _bootTraceId;
+      final recommendation =
+          await _apiClient.recommendRoute(traceId: traceId, caseId: caseId);
+      return recommendation.options
+          .where((option) =>
+              option.optionId.trim().isNotEmpty &&
+              option.label.trim().isNotEmpty)
+          .map(
+            (option) => MiniOption(
+              id: option.optionId.trim(),
+              label: option.label.trim(),
+              description:
+                  option.reason.trim().isEmpty ? null : option.reason.trim(),
+            ),
+          )
+          .toList(growable: false);
+    } catch (error) {
+      _showApiErrorSnack(error);
+      return options;
+    }
+  }
+
+  Future<void> _applyBackendTurn(ChatTurnResponseDto response) async {
+    final hint = response.uiHint;
+    final options = await _resolveBackendUiOptions(hint);
+    final miniType = _miniTypeFromBackendUiHint(
+      uiType: hint.type,
+      options: options,
+    );
+    final nextStep = _stepFromBackendTurn(response, miniType, options);
+    final assistantMessage = response.assistantMessage.trim().isEmpty
+        ? '다음 단계를 진행해 주세요.'
+        : response.assistantMessage.trim();
+
+    if (!mounted) return;
+    _setAi(
+      text: assistantMessage,
+      step: nextStep,
+      miniType: miniType,
+      options: options,
+      backendUiHintDriven: miniType != MiniInterfaceType.none,
+      backendUiHintType: hint.type.trim().toUpperCase(),
+      backendUiSelectionMode:
+          _normalizeBackendSelectionMode(hint.selectionMode),
+    );
+  }
+
+  Future<void> _runBackendTurnRequest({
+    required Future<ChatTurnResponseDto> Function() request,
+    Duration thinkingDuration = const Duration(milliseconds: 560),
+    VoidCallback? onFailureContinueLocal,
+    bool allowLocalFallback = true,
+  }) async {
+    if (!_isBackendEnabled || _isBackendRequestInFlight) return;
+
+    FocusScope.of(context).unfocus();
+    _collapseHistoryToCurrent(immediate: true);
+    setState(() {
+      _isThinking = true;
+      _isAiAnswerReady = true;
+      _isBackendRequestInFlight = true;
+    });
+
+    VoidCallback? localFallback;
+    try {
+      await Future<void>.delayed(thinkingDuration);
+      final response = await request();
+      if (mounted && _forceLocalDemoMode) {
+        setState(() {
+          _forceLocalDemoMode = false;
+        });
+      }
+      await _applyBackendTurn(response);
+    } catch (error) {
+      _showAiRequestFailureSnack(
+        error,
+        onRetry: () {
+          if (!mounted) return;
+          setState(() {
+            _forceLocalDemoMode = false;
+          });
+          unawaited(
+            _runBackendTurnRequest(
+              request: request,
+              thinkingDuration: thinkingDuration,
+              onFailureContinueLocal: null,
+              allowLocalFallback: false,
+            ),
+          );
+        },
+      );
+      if (allowLocalFallback) {
+        localFallback = onFailureContinueLocal;
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isThinking = false;
+          _isBackendRequestInFlight = false;
+        });
+      }
+    }
+    if (mounted && localFallback != null) {
+      localFallback();
+    }
+  }
+
+  Future<void> _requestBackendTurnForText(
+    String userMessage, {
+    Duration thinkingDuration = const Duration(milliseconds: 560),
+    VoidCallback? onFailureContinueLocal,
+    bool allowLocalFallback = true,
+  }) async {
+    final message = userMessage.trim();
+    if (message.isEmpty) return;
+
+    await _runBackendTurnRequest(
+      request: () => _sendChatTurnMessage(message),
+      thinkingDuration: thinkingDuration,
+      onFailureContinueLocal: onFailureContinueLocal,
+      allowLocalFallback: allowLocalFallback,
+    );
+  }
+
+  Future<void> _requestBackendTurnForSelection({
+    VoidCallback? onFailureContinueLocal,
+    bool allowLocalFallback = true,
+  }) async {
+    final selected = _options
+        .where((option) => _selectedOptionIds.contains(option.id))
+        .toList(growable: false);
+    if (selected.isEmpty) return;
+
+    if (_backendUiHintType == 'PATH_CHOOSER') {
+      final caseId = _backendCaseId?.trim();
+      if (caseId == null || caseId.isEmpty) return;
+
+      await _runBackendTurnRequest(
+        request: () async {
+          final traceId = _backendTraceId ?? _bootTraceId;
+          await _apiClient.confirmRouteDecision(
+            traceId: traceId,
+            caseId: caseId,
+            optionId: selected.first.id,
+          );
+          return _sendChatTurnMessage(selected.first.label);
+        },
+        thinkingDuration: const Duration(milliseconds: 420),
+        onFailureContinueLocal: onFailureContinueLocal,
+        allowLocalFallback: allowLocalFallback,
+      );
+      return;
+    }
+
+    final message = _backendUiSelectionMode == 'MULTIPLE'
+        ? selected.map((option) => option.label).join(', ')
+        : selected.first.label;
+
+    await _requestBackendTurnForText(
+      message,
+      thinkingDuration: const Duration(milliseconds: 420),
+      onFailureContinueLocal: onFailureContinueLocal,
+      allowLocalFallback: allowLocalFallback,
+    );
+  }
+
+  void _showAiRequestFailureSnack(
+    Object error, {
+    required VoidCallback onRetry,
+  }) {
+    final fallbackTraceId = _backendTraceId ?? _bootTraceId;
+    var code = 'UNKNOWN_ERROR';
+    var traceId = fallbackTraceId;
+    if (error is ApiClientErrorLike) {
+      final rawCode = error.code?.trim();
+      if (rawCode != null && rawCode.isNotEmpty) {
+        code = rawCode;
+      }
+    }
+    if (error is ApiClientError) {
+      final rawTrace = error.traceId?.trim();
+      if (rawTrace != null && rawTrace.isNotEmpty) {
+        traceId = rawTrace;
+      }
+      debugPrint(
+        '[chat-ai-request-failed] code=$code traceId=$traceId details=${error.details.join(' || ')}',
+      );
+    } else {
+      debugPrint(
+        '[chat-ai-request-failed] code=$code traceId=$traceId type=${error.runtimeType} value=$error',
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _forceLocalDemoMode = true;
+      _isBackendUiHintDriven = false;
+      _backendUiHintType = 'NONE';
+      _backendUiSelectionMode = 'NONE';
+    });
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('서버 연결이 원활하지 않아요. 인터넷 연결을 확인해주세요.'),
+        action: SnackBarAction(
+          label: '재시도',
+          onPressed: onRetry,
+        ),
+      ),
+    );
   }
 
   String? _buildErrorDiagnostic(Object error) {
@@ -746,6 +1215,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       await _sendChatTurnMessage(selectedLabel);
 
       if (!mounted) return;
+      if (_forceLocalDemoMode) {
+        setState(() {
+          _forceLocalDemoMode = false;
+        });
+      }
+
+      if (!mounted) return;
 
       _data = _data.copyWith(route: selectedLabel);
       _setAi(
@@ -754,7 +1230,23 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         miniType: MiniInterfaceType.optionList,
       );
     } catch (error) {
-      _showApiErrorSnack(error);
+      _showAiRequestFailureSnack(
+        error,
+        onRetry: () {
+          if (!mounted) return;
+          setState(() {
+            _forceLocalDemoMode = false;
+          });
+          unawaited(_syncBackendRouteAndAdvance(selectedLabel));
+        },
+      );
+      if (!mounted) return;
+      _data = _data.copyWith(route: selectedLabel);
+      _setAi(
+        text: '선택한 경로로 진행할게요.\n증거 제출을 진행해 주세요.',
+        step: DemoStep.evidenceV1,
+        miniType: MiniInterfaceType.optionList,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -967,6 +1459,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       management: managementLabel,
       sourceCertainty: sourceCertaintyLabel,
     );
+    _recordMiniResponse(
+      '기본 정보 입력: ${residenceLabel ?? '미입력'}, ${managementLabel ?? '미입력'}, ${sourceCertaintyLabel ?? '미입력'}',
+    );
 
     _enqueueBackendSyncMessages(<String>[
       if (residenceLabel != null) residenceLabel,
@@ -998,6 +1493,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       timeBand: timeBandLabel,
       startedAtDate: _incidentDate,
       startedAtTime: _incidentTime,
+    );
+    _recordMiniResponse(
+      '소음 패턴 입력: ${noiseTypeLabel ?? '미입력'}, ${frequencyLabel ?? '미입력'}, ${timeBandLabel ?? '미입력'}',
     );
 
     _enqueueBackendSyncMessages(<String>[
@@ -1046,6 +1544,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       noiseNow: noiseNowLabel,
       safety: safetyLabel,
     );
+    _recordMiniResponse('현재 소음 상태: $noiseNowLabel / 안전 긴급도: $safetyLabel');
 
     _enqueueBackendSyncMessages(<String>[noiseNowLabel, safetyLabel]);
 
@@ -1207,6 +1706,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _submitEvidenceAttachments() {
     if (_evidenceAttachmentIds.isEmpty) return;
+    _recordMiniResponse('증거 제출 완료');
     _showThinkingThen(_goMeasureCheck);
   }
 
@@ -1215,6 +1715,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _evidenceAttachmentIds.clear();
       _evidenceAttachmentNames.clear();
     });
+    _recordMiniResponse('증거 제출 건너뛰기');
     _showThinkingThen(_goMeasureCheck);
   }
 
@@ -1288,6 +1789,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _submitMeasureCheck() {
     if (!_isMeasureCheckReady) return;
+    _recordMiniResponse('측정 전환 체크 완료');
 
     if (_isMeasureEligible) {
       _data = _data.copyWith(eligibilityReason: '측정 전환 조건 충족');
@@ -1313,10 +1815,18 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _submitEvidenceV2Attachments() {
     if (_evidenceV2AttachmentIds.length < 2) return;
+    _recordMiniResponse('측정 단계 증거 제출 완료');
     _showThinkingThen(_startDraftViewer);
   }
 
   void _skipEvidenceV2Attachments() {
+    _recordMiniResponse('측정 단계 증거 제출 건너뛰기');
+    _showThinkingThen(_startDraftViewer);
+  }
+
+  void _submitNoiseDiaryBuilder() {
+    if (!_isNoiseDiaryReady) return;
+    _recordMiniResponse('소음일지 작성 완료');
     _showThinkingThen(_startDraftViewer);
   }
 
@@ -1325,8 +1835,22 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     if (input.isEmpty || !_isUiReadyAfterAi) return;
 
     _inputController.clear();
+    _recordUserChatInput(input);
 
     if (_step == DemoStep.waitingIssue) {
+      if (!_hasIntroBridgeShown) {
+        _showThinkingThen(() {
+          _hasIntroBridgeShown = true;
+          _setAi(
+            text:
+                '말씀해 주셔서 감사합니다.\n접수에 필요한 정보를 단계별로 정리해 드릴게요.\n접수를 도와드릴 수 있어요. 진행할까요?',
+            step: DemoStep.waitingIssue,
+            miniType: MiniInterfaceType.none,
+          );
+        }, duration: const Duration(milliseconds: 640));
+        return;
+      }
+
       _data = _data.copyWith(userIssue: input);
       final thinkingDuration = input == '1'
           ? const Duration(seconds: 3)
@@ -1345,6 +1869,28 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
 
     if (_step == DemoStep.waitingRevision) {
+      if (_isBackendEnabled && _isBackendUiHintDriven) {
+        unawaited(
+          _requestBackendTurnForText(
+            input,
+            thinkingDuration: const Duration(milliseconds: 560),
+            onFailureContinueLocal: () {
+              _data = _data.copyWith(revisionNote: input);
+              _setAi(
+                text: '반영했습니다. 추가된 문장을 표시했어요.\n이대로 접수할까요?',
+                step: DemoStep.draftConfirm,
+                miniType: MiniInterfaceType.draftConfirm,
+                options: const [
+                  MiniOption(id: 'draft-confirm-submit', label: '좋아요, 접수해주세요'),
+                  MiniOption(id: 'draft-confirm-edit', label: '다시 수정'),
+                ],
+              );
+            },
+          ),
+        );
+        return;
+      }
+
       _data = _data.copyWith(revisionNote: input);
       _showThinkingThen(() {
         _setAi(
@@ -1357,6 +1903,24 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           ],
         );
       });
+      return;
+    }
+
+    if (_isBackendEnabled) {
+      unawaited(
+        _requestBackendTurnForText(
+          input,
+          thinkingDuration: const Duration(milliseconds: 420),
+          onFailureContinueLocal: () {
+            _setAi(
+              text: '현재 단계는 아래 선택지로 진행해 주세요.',
+              step: _step,
+              miniType: _miniType,
+              options: _options,
+            );
+          },
+        ),
+      );
       return;
     }
 
@@ -1374,7 +1938,32 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     if (_selectedOptionIds.isEmpty) return;
     final selectedId = _selectedOptionIds.first;
     final selectedLabel = _options.firstWhere((e) => e.id == selectedId).label;
+    _recordMiniResponse(selectedLabel);
 
+    if (_isBackendEnabled && _isBackendUiHintDriven) {
+      unawaited(
+        _requestBackendTurnForSelection(
+          onFailureContinueLocal: () {
+            _handleLocalListSelectionSubmit(
+              selectedId: selectedId,
+              selectedLabel: selectedLabel,
+            );
+          },
+        ),
+      );
+      return;
+    }
+
+    _handleLocalListSelectionSubmit(
+      selectedId: selectedId,
+      selectedLabel: selectedLabel,
+    );
+  }
+
+  void _handleLocalListSelectionSubmit({
+    required String selectedId,
+    required String selectedLabel,
+  }) {
     switch (_step) {
       case DemoStep.noiseNow:
         return;
@@ -1432,6 +2021,17 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         }
         return;
       default:
+        if (_step == DemoStep.waitingIssue) {
+          _data = _data.copyWith(userIssue: selectedLabel);
+          _triageNoiseNowId = null;
+          _triageSafetyId = null;
+          _setAi(
+            text: '힘드셨겠어요.\n현재 소음 상태와 안전 긴급도를 함께 선택해 주세요.',
+            step: DemoStep.noiseNow,
+            miniType: MiniInterfaceType.multiForm,
+          );
+          return;
+        }
         return;
     }
   }
@@ -1439,6 +2039,41 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   void _handlePathChooserSelectionSubmit() {
     if (_selectedOptionIds.isEmpty || _step != DemoStep.pathChooser) return;
     final selectedId = _selectedOptionIds.first;
+    final selectedLabel = _options
+        .firstWhere(
+          (option) => option.id == selectedId,
+          orElse: () => const MiniOption(id: 'unknown', label: '선택'),
+        )
+        .label;
+    _recordMiniResponse(selectedLabel);
+
+    if (_isBackendEnabled && _isBackendUiHintDriven) {
+      unawaited(
+        _requestBackendTurnForSelection(
+          onFailureContinueLocal: () {
+            if (selectedId == 'path-recommended') {
+              unawaited(_syncBackendRouteAndAdvance('이웃사이센터 조정 신청'));
+              return;
+            }
+            if (selectedId == 'path-alternative') {
+              _showThinkingThen(() {
+                _setAi(
+                  text: '원하시는 기관을 선택해 주세요.',
+                  step: DemoStep.pathAlternative,
+                  miniType: MiniInterfaceType.listPicker,
+                  options: const [
+                    MiniOption(id: 'path-epeople', label: '국민신문고'),
+                    MiniOption(id: 'path-management', label: '관리사무소 공식 민원'),
+                    MiniOption(id: 'path-local', label: '지자체 소음 민원'),
+                  ],
+                );
+              });
+            }
+          },
+        ),
+      );
+      return;
+    }
 
     if (selectedId == 'path-recommended') {
       unawaited(_syncBackendRouteAndAdvance('이웃사이센터 조정 신청'));
@@ -1501,14 +2136,123 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
   }
 
+  Duration _charStepForAiText(String text) {
+    final length = text.runes.length;
+    if (length >= 140) return const Duration(milliseconds: 14);
+    if (length >= 95) return const Duration(milliseconds: 18);
+    if (length >= 65) return const Duration(milliseconds: 22);
+    if (length >= 45) return const Duration(milliseconds: 28);
+    if (length >= 30) return const Duration(milliseconds: 34);
+    return const Duration(milliseconds: 40);
+  }
+
+  Duration _charFadeForAiText(String text) {
+    final length = text.runes.length;
+    if (length >= 95) return const Duration(milliseconds: 145);
+    if (length >= 45) return const Duration(milliseconds: 160);
+    return const Duration(milliseconds: 180);
+  }
+
+  Widget _buildCurrentAiMessageWidget(TextStyle aiTextStyle) {
+    final charStep = _charStepForAiText(_aiText);
+    final fadeDuration = _charFadeForAiText(_aiText);
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 260),
+      layoutBuilder: (currentChild, _) {
+        return currentChild ?? const SizedBox.shrink();
+      },
+      transitionBuilder: (child, animation) {
+        final fadeIn = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(opacity: fadeIn, child: child);
+      },
+      child: _isThinking
+          ? Align(
+              key: const ValueKey('thinking'),
+              alignment: Alignment.topLeft,
+              child: _ThinkingWaveText(
+                text: '답변을 준비하고 있어요.',
+                style: aiTextStyle.copyWith(color: AppColors.textMuted),
+              ),
+            )
+          : _isAiAnswerReady
+              ? Align(
+                  key: const ValueKey('ai-text-static'),
+                  alignment: Alignment.topLeft,
+                  child: Text(
+                    _aiText,
+                    style: aiTextStyle,
+                  ),
+                )
+              : Align(
+                  key: ValueKey('ai-text-$_aiAnimationNonce'),
+                  alignment: Alignment.topLeft,
+                  child: _AiCharFadeText(
+                    text: _aiText,
+                    charStep: charStep,
+                    fadeDuration: fadeDuration,
+                    style: aiTextStyle,
+                    onCompleted: _handleAiTextAnimationCompleted,
+                  ),
+                ),
+    );
+  }
+
+  Widget _buildConversationArea(
+    TextStyle aiTextStyle,
+    double viewportHeight,
+  ) {
+    final isScrollLocked = _isThinking || !_isAiAnswerReady;
+    final currentMessage = KeyedSubtree(
+      key: const ValueKey('current-ai-message'),
+      child: Container(
+        key: _currentAiAnchorKey,
+        alignment: Alignment.topLeft,
+        child: _buildCurrentAiMessageWidget(aiTextStyle),
+      ),
+    );
+
+    if (isScrollLocked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_conversationScrollController.hasClients) return;
+        if (_conversationScrollController.offset > 1) {
+          _conversationScrollController.jumpTo(0);
+        }
+      });
+
+      return ListView(
+        controller: _conversationScrollController,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        children: [currentMessage],
+      );
+    }
+
+    return ListView(
+      controller: _conversationScrollController,
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
+      padding: EdgeInsets.zero,
+      children: [
+        for (final item in _historyEntries) _HistoryMessageLine(entry: item),
+        if (_historyEntries.isNotEmpty) const SizedBox(height: 20),
+        currentMessage,
+        SizedBox(height: viewportHeight),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final aiFontSize = width < 390 ? 24.0 : 26.0;
+    final aiFontSize = width < 390 ? 20.0 : 21.0;
     final aiTextStyle = TextStyle(
       color: AppColors.primary,
       fontSize: aiFontSize,
-      height: 1.36,
+      height: 1.34,
       fontWeight: FontWeight.w500,
     );
 
@@ -1534,39 +2278,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                   Positioned.fill(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 104, 24, 110),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 260),
-                        layoutBuilder: (currentChild, _) {
-                          return currentChild ?? const SizedBox.shrink();
-                        },
-                        transitionBuilder: (child, animation) {
-                          final fadeIn = CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeOutCubic,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return _buildConversationArea(
+                            aiTextStyle,
+                            constraints.maxHeight,
                           );
-                          return FadeTransition(opacity: fadeIn, child: child);
                         },
-                        child: _isThinking
-                            ? Align(
-                                key: const ValueKey('thinking'),
-                                alignment: Alignment.topLeft,
-                                child: _ThinkingWaveText(
-                                  text: '답변을 준비하고 있어요.',
-                                  style: aiTextStyle,
-                                ),
-                              )
-                            : Align(
-                                key: ValueKey('ai-text-$_aiAnimationNonce'),
-                                alignment: Alignment.topLeft,
-                                child: _AiCharFadeText(
-                                  text: _aiText,
-                                  charStep: const Duration(milliseconds: 40),
-                                  fadeDuration:
-                                      const Duration(milliseconds: 180),
-                                  style: aiTextStyle,
-                                  onCompleted: _handleAiTextAnimationCompleted,
-                                ),
-                              ),
                       ),
                     ),
                   ),
@@ -1661,9 +2379,19 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           selectedIds: _selectedOptionIds,
           onTapOption: (id) {
             setState(() {
-              _selectedOptionIds
-                ..clear()
-                ..add(id);
+              final allowMultiple = _isBackendUiHintDriven &&
+                  _backendUiSelectionMode == 'MULTIPLE';
+              if (allowMultiple) {
+                if (_selectedOptionIds.contains(id)) {
+                  _selectedOptionIds.remove(id);
+                } else {
+                  _selectedOptionIds.add(id);
+                }
+              } else {
+                _selectedOptionIds
+                  ..clear()
+                  ..add(id);
+              }
             });
           },
           canSubmit: _selectedOptionIds.isNotEmpty,
@@ -1775,8 +2503,17 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
               _incidentTime == null ? '선택해 주세요' : _formatTime(_incidentTime!),
           onPickDate: _openIncidentDatePicker,
           onPickTime: _openIncidentTimePicker,
-          onSubmit: _submitIntakeDetailMultiForm,
-          canSubmit: _isIntakeDetailReady,
+          onSubmit: _isBackendUiHintDriven
+              ? () => unawaited(_requestBackendTurnForText(
+                    '${_incidentDate == null ? '' : _formatDate(_incidentDate!)} ${_incidentTime == null ? '' : _formatTime(_incidentTime!)}'
+                        .trim(),
+                    thinkingDuration: const Duration(milliseconds: 420),
+                    onFailureContinueLocal: _submitIntakeDetailMultiForm,
+                  ))
+              : _submitIntakeDetailMultiForm,
+          canSubmit: _isBackendUiHintDriven
+              ? (_incidentDate != null && _incidentTime != null)
+              : _isIntakeDetailReady,
         );
       case MiniInterfaceType.measureCheck:
         return _MeasureTransitionCheckWidget(
@@ -1844,6 +2581,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             _SummaryRow(label: '현재 상태', value: _data.noiseNow ?? '미입력'),
           ],
           onContinue: () {
+            _recordMiniResponse('다음');
             _setAi(
               text: '추천 경로를 준비했어요.\n진행 방식을 선택해 주세요.',
               step: DemoStep.pathChooser,
@@ -1851,6 +2589,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             );
           },
           onEdit: () {
+            _recordMiniResponse('수정');
             _goIntakeMultiFormBasic('수정할 기본 정보를 다시 입력해 주세요.');
           },
         );
@@ -1889,16 +2628,18 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           noiseTypes: _noiseTypes,
           impacts: _impacts,
           canSubmit: _isNoiseDiaryReady,
-          onSubmit: () {
-            _showThinkingThen(_startDraftViewer);
-          },
+          onSubmit: _submitNoiseDiaryBuilder,
         );
       case MiniInterfaceType.draftViewer:
         return _DraftViewerWidget(
           previewLines: _buildDraftPreviewLines(),
           guidePoints: _buildDraftGuidePoints(),
-          onApprove: _goStatusFeed,
+          onApprove: () {
+            _recordMiniResponse('좋아요, 접수');
+            _goStatusFeed();
+          },
           onEdit: () {
+            _recordMiniResponse('수정 요청');
             _setAi(
               text: '수정할 내용을 아래 입력창에 적어주세요.',
               step: DemoStep.waitingRevision,
@@ -1912,8 +2653,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           highlightIndexes: _data.revisionNote?.trim().isNotEmpty == true
               ? {_buildDraftConfirmLines().length - 1}
               : const <int>{},
-          onApprove: _goStatusFeed,
+          onApprove: () {
+            _recordMiniResponse('좋아요, 접수해주세요');
+            _goStatusFeed();
+          },
           onEditAgain: () {
+            _recordMiniResponse('다시 수정');
             _setAi(
               text: '수정할 내용을 다시 입력해 주세요.',
               step: DemoStep.waitingRevision,
@@ -1926,6 +2671,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           routeLabel: _data.route ?? '미선택',
           needsSupplementLikely: _evidenceAttachmentIds.isEmpty,
           onUploadMore: () {
+            _recordMiniResponse('추가 증거 업로드');
             _setAi(
               text: '추가 증거를 선택해 주세요.',
               step: DemoStep.evidenceV1,
@@ -1933,6 +2679,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             );
           },
           onOpenSummary: () {
+            _recordMiniResponse('케이스 요약 보기');
             _setAi(
               text: '종결 요약입니다.\n처음으로 돌아가 새 케이스를 시작할 수 있어요.',
               step: DemoStep.complete,
@@ -2333,6 +3080,105 @@ class _InputBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HistoryMessageLine extends StatelessWidget {
+  const _HistoryMessageLine({required this.entry});
+
+  final ChatHistoryEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final alignment = entry.isAi ? Alignment.centerLeft : Alignment.centerRight;
+    final verticalPadding = entry.isAi
+        ? const EdgeInsets.only(bottom: 18)
+        : const EdgeInsets.only(bottom: 22);
+    const userBubbleRadius = BorderRadius.all(Radius.circular(14));
+
+    const userTextStyle = TextStyle(
+      color: AppColors.textMain,
+      fontSize: 15.5,
+      height: 1.45,
+      fontWeight: FontWeight.w500,
+      fontFamilyFallback: _kKrFontFallback,
+    );
+
+    if (entry.isAi) {
+      return Padding(
+        padding: verticalPadding,
+        child: Align(
+          alignment: alignment,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: Text(
+              entry.text,
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontSize: 18,
+                height: 1.36,
+                fontWeight: FontWeight.w500,
+                fontFamilyFallback: _kKrFontFallback,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (entry.fromMiniInterface) {
+      return Padding(
+        padding: verticalPadding,
+        child: Align(
+          alignment: alignment,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F6F8),
+                borderRadius: userBubbleRadius,
+                border: Border.all(color: const Color(0xFFD9E4ED), width: 1),
+              ),
+              child: Text(
+                '선택 응답 · ${entry.text}',
+                textAlign: TextAlign.right,
+                style: userTextStyle.copyWith(
+                  color: _kMiniSubtitleColor,
+                  fontSize: 12,
+                  height: 16 / 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: verticalPadding,
+      child: Align(
+        alignment: alignment,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 300),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7FAFC),
+              borderRadius: userBubbleRadius,
+              border: Border.all(color: const Color(0xFFDCE7F0), width: 1),
+            ),
+            child: Text(
+              entry.text,
+              textAlign: TextAlign.right,
+              style: userTextStyle,
+            ),
+          ),
+        ),
       ),
     );
   }

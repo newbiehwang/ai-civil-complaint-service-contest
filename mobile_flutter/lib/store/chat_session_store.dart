@@ -1,10 +1,17 @@
 import '../models/chat_session_summary.dart';
 
 class ChatSessionStore {
-  final List<ChatSessionSummary> _sessions = <ChatSessionSummary>[];
-  int _nextSequence = 1;
+  ChatSessionStore({List<ChatSessionSummary>? initialSessions})
+      : _sessions = List<ChatSessionSummary>.from(initialSessions ?? const []) {
+    _sessions.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    _nextSequence = _computeNextSequence(_sessions);
+  }
 
-  List<ChatSessionSummary> get sessions => List<ChatSessionSummary>.unmodifiable(_sessions);
+  final List<ChatSessionSummary> _sessions;
+  late int _nextSequence;
+
+  List<ChatSessionSummary> get sessions =>
+      List<ChatSessionSummary>.unmodifiable(_sessions);
 
   ChatSessionSummary createSession({String? title}) {
     final now = DateTime.now();
@@ -28,7 +35,8 @@ class ChatSessionStore {
   }
 
   void upsertSummary(ChatSessionSummary summary) {
-    final index = _sessions.indexWhere((it) => it.sessionId == summary.sessionId);
+    final index =
+        _sessions.indexWhere((it) => it.sessionId == summary.sessionId);
     if (index >= 0) {
       _sessions[index] = summary;
     } else {
@@ -45,8 +53,28 @@ class ChatSessionStore {
     _sessions[index] = session.copyWith(unreadCount: 0);
   }
 
+  bool removeById(String sessionId) {
+    final before = _sessions.length;
+    _sessions.removeWhere((it) => it.sessionId == sessionId);
+    return _sessions.length != before;
+  }
+
   void clear() {
     _sessions.clear();
     _nextSequence = 1;
+  }
+
+  static int _computeNextSequence(List<ChatSessionSummary> sessions) {
+    var maxSequence = 0;
+    for (final session in sessions) {
+      final match = RegExp(r'^상담\s+(\d+)$').firstMatch(session.title.trim());
+      if (match == null) continue;
+      final value = int.tryParse(match.group(1) ?? '');
+      if (value == null) continue;
+      if (value > maxSequence) {
+        maxSequence = value;
+      }
+    }
+    return maxSequence + 1;
   }
 }
