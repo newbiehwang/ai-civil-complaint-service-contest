@@ -101,12 +101,18 @@ public class CaseWorkflowService {
 
     @Transactional
     public ApiModels.CaseDetail createCase(ApiModels.CreateCaseRequest request) {
+        return createCase(request, "anonymous");
+    }
+
+    @Transactional
+    public ApiModels.CaseDetail createCase(ApiModels.CreateCaseRequest request, String ownerSubject) {
         if (!Boolean.TRUE.equals(request.consentAccepted())) {
             throw ApiException.badRequest("VALIDATION_ERROR", "consentAccepted must be true.", List.of("consentAccepted=true required"));
         }
 
         CaseEntity entity = new CaseEntity();
         entity.setId(UUID.randomUUID());
+        entity.setOwnerSubject(normalizeOwnerSubject(ownerSubject));
         entity.setScenarioType(request.scenarioType());
         entity.setHousingType(request.housingType());
         entity.setInitialSummary(request.initialSummary());
@@ -138,6 +144,24 @@ public class CaseWorkflowService {
         );
 
         return toCaseDetail(aggregate);
+    }
+
+    @Transactional(readOnly = true)
+    public ApiModels.CaseListResponse listCasesByOwner(String ownerSubject) {
+        List<ApiModels.CaseSummary> items = caseRepository
+                .findAllByOwnerSubjectOrderByUpdatedAtDesc(normalizeOwnerSubject(ownerSubject))
+                .stream()
+                .map(this::toCaseSummary)
+                .toList();
+        return new ApiModels.CaseListResponse(items);
+    }
+
+    @Transactional
+    public void deleteCase(UUID caseId, String ownerSubject) {
+        CaseEntity entity = caseRepository
+                .findByIdAndOwnerSubject(caseId, normalizeOwnerSubject(ownerSubject))
+                .orElseThrow(() -> ApiException.notFound("CASE_NOT_FOUND", "Case not found: " + caseId));
+        caseRepository.delete(entity);
     }
 
     @Transactional(readOnly = true)
@@ -192,17 +216,33 @@ public class CaseWorkflowService {
 
     @Transactional
     public ApiModels.ChatTurnResponse chatTurn(String traceId, ApiModels.ChatTurnRequest request) {
+        return chatTurn(traceId, request, "anonymous");
+    }
+
+    @Transactional
+    public ApiModels.ChatTurnResponse chatTurn(String traceId, ApiModels.ChatTurnRequest request, String ownerSubject) {
         String userMessage = request.userMessage().trim();
-        UUID caseId = resolveCaseIdForChatTurn(request, userMessage);
+        UUID caseId = resolveCaseIdForChatTurn(request, userMessage, ownerSubject);
 
-        ApiModels.IntakeUpdateResponse intakeUpdate = appendIntakeMessage(
-                caseId,
-                new ApiModels.AppendIntakeMessageRequest(ApiModels.MessageRole.USER, userMessage)
-        );
         ApiModels.CaseDetail detail = getCase(caseId);
+        ApiModels.IntakeUpdateResponse intakeUpdate = null;
 
-        String assistantMessage = resolveAssistantMessage(intakeUpdate, detail.status());
-        ApiModels.ChatUiHint uiHint = toChatUiHint(intakeUpdate.followUpInterface(), detail.status());
+        if (detail.status() == ApiModels.CaseStatus.RECEIVED) {
+            intakeUpdate = appendIntakeMessage(
+                    caseId,
+                    new ApiModels.AppendIntakeMessageRequest(ApiModels.MessageRole.USER, userMessage)
+            );
+            detail = getCase(caseId);
+            if (detail.status() != ApiModels.CaseStatus.RECEIVED) {
+                detail = ensureRoutingPrepared(caseId, detail);
+            }
+        } else {
+            detail = ensureRoutingPrepared(caseId, detail);
+            detail = applyPostIntakeChatAction(caseId, detail, userMessage);
+        }
+
+        String assistantMessage = resolveAssistantMessage(intakeUpdate, detail, userMessage);
+        ApiModels.ChatUiHint uiHint = toChatUiHint(intakeUpdate == null ? null : intakeUpdate.followUpInterface(), detail);
 
         Map<String, Object> statePatch = new HashMap<>();
         statePatch.put("caseId", detail.caseId().toString());
@@ -222,6 +262,132 @@ public class CaseWorkflowService {
                 statePatch,
                 resolveNextAction(detail)
         );
+    }
+
+    private ApiModels.CaseDetail ensureRoutingPrepared(UUID caseId, ApiModels.CaseDetail detail) {
+        ApiModels.CaseDetail current = detail;
+
+        if (current.status() == ApiModels.CaseStatus.CLASSIFIED
+                && "REQUEST_DECOMPOSITION".equals(current.currentActionRequired())) {
+            decomposeCase(caseId);
+            current = getCase(caseId);
+        }
+
+        if (current.status() == ApiModels.CaseStatus.CLASSIFIED
+                && "REQUEST_ROUTING_RECOMMENDATION".equals(current.currentActionRequired())) {
+            recommendRoute(caseId);
+            current = getCase(caseId);
+        }
+
+        return current;
+    }
+
+    private ApiModels.CaseDetail applyPostIntakeChatAction(
+            UUID caseId,
+            ApiModels.CaseDetail detail,
+            String userMessage
+    ) {
+        String message = userMessage == null ? "" : userMessage.trim();
+        if (message.isEmpty()) {
+            return detail;
+        }
+
+        ApiModels.CaseDetail current = detail;
+        String normalized = message.replaceAll("\\s+", "").toLowerCase();
+
+        if (current.status() == ApiModels.CaseStatus.CLASSIFIED
+                && "CONFIRM_ROUTE".equals(current.currentActionRequired())) {
+            String selectedOptionId = resolveRouteOptionIdByMessage(current, message);
+            if (selectedOptionId != null) {
+                confirmRouteDecision(
+                        caseId,
+                        new ApiModels.RouteDecisionRequest(selectedOptionId, true, "chat-turn-confirm-route")
+                );
+                current = getCase(caseId);
+            }
+        }
+
+        if (current.status() == ApiModels.CaseStatus.ROUTE_CONFIRMED
+                || current.status() == ApiModels.CaseStatus.EVIDENCE_COLLECTING
+                || current.status() == ApiModels.CaseStatus.FORMAL_SUBMISSION_READY) {
+
+            if (containsAny(normalized, "녹음파일첨부", "녹음파일", "오디오첨부", "audioupload", "audio")) {
+                registerEvidence(caseId, buildDemoEvidenceRequest(ApiModels.EvidenceType.AUDIO, "demo-audio.m4a", "audio/m4a"));
+                current = getCase(caseId);
+            } else if (containsAny(normalized, "동영상첨부", "영상첨부", "동영상", "영상", "videoupload", "video")) {
+                registerEvidence(caseId, buildDemoEvidenceRequest(ApiModels.EvidenceType.IMAGE, "demo-video.mp4", "video/mp4"));
+                current = getCase(caseId);
+            } else if (containsAny(normalized, "소음일지첨부", "소음일지", "로그첨부", "logupload")) {
+                registerEvidence(caseId, buildDemoEvidenceRequest(ApiModels.EvidenceType.LOG, "demo-noise-log.json", "application/json"));
+                current = getCase(caseId);
+            }
+
+            if (containsAny(normalized, "바로제출", "제출하기", "정부24연계", "submitnow", "submit")) {
+                submitCase(
+                        caseId,
+                        new ApiModels.SubmitCaseRequest(
+                                ApiModels.SubmissionChannel.MCP_API,
+                                true,
+                                true
+                        )
+                );
+                current = getCase(caseId);
+            }
+        }
+
+        if (current.status() == ApiModels.CaseStatus.SUPPLEMENT_REQUIRED
+                && containsAny(normalized, "보완자료제출", "보완제출", "보완완료", "supplement")) {
+            respondSupplement(caseId, new ApiModels.SupplementResponseRequest("채팅에서 보완자료 제출 완료", List.of()));
+            current = getCase(caseId);
+        }
+
+        return current;
+    }
+
+    private ApiModels.RegisterEvidenceRequest buildDemoEvidenceRequest(
+            ApiModels.EvidenceType type,
+            String fileName,
+            String mimeType
+    ) {
+        return new ApiModels.RegisterEvidenceRequest(
+                type,
+                "demo/" + type.name().toLowerCase() + "/" + UUID.randomUUID(),
+                fileName,
+                mimeType,
+                1024L,
+                Instant.now(),
+                "chat-turn demo evidence"
+        );
+    }
+
+    private String resolveRouteOptionIdByMessage(ApiModels.CaseDetail detail, String userMessage) {
+        ApiModels.RoutingRecommendation routing = detail.routing();
+        if (routing == null || routing.options() == null || routing.options().isEmpty()) {
+            return null;
+        }
+
+        String trimmed = userMessage == null ? "" : userMessage.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        for (ApiModels.RoutingOption option : routing.options()) {
+            if (trimmed.equalsIgnoreCase(option.optionId())) {
+                return option.optionId();
+            }
+        }
+
+        String normalized = trimmed.replaceAll("\\s+", "").toLowerCase();
+        for (ApiModels.RoutingOption option : routing.options()) {
+            String labelNormalized = option.label() == null
+                    ? ""
+                    : option.label().replaceAll("\\s+", "").toLowerCase();
+            if (!labelNormalized.isEmpty() && normalized.equals(labelNormalized)) {
+                return option.optionId();
+            }
+        }
+
+        return null;
     }
 
     @Transactional
@@ -622,7 +788,7 @@ public class CaseWorkflowService {
         return new ApiModels.TimelineResponse(caseId, events);
     }
 
-    private UUID resolveCaseIdForChatTurn(ApiModels.ChatTurnRequest request, String userMessage) {
+    private UUID resolveCaseIdForChatTurn(ApiModels.ChatTurnRequest request, String userMessage, String ownerSubject) {
         ApiModels.ChatTurnContext context = request.context();
         String rawCaseId = context == null ? null : context.caseId();
         if (rawCaseId != null && !rawCaseId.isBlank()) {
@@ -650,43 +816,67 @@ public class CaseWorkflowService {
                 housingType,
                 consentAccepted,
                 userMessage
-        ));
+        ), ownerSubject);
 
         return created.caseId();
     }
 
-    private String resolveAssistantMessage(ApiModels.IntakeUpdateResponse intakeUpdate, ApiModels.CaseStatus status) {
-        String followUp = intakeUpdate.recommendedFollowUpQuestion();
-        if (followUp != null && !followUp.isBlank()) {
-            return followUp;
+    private String resolveAssistantMessage(
+            ApiModels.IntakeUpdateResponse intakeUpdate,
+            ApiModels.CaseDetail detail,
+            String userMessage
+    ) {
+        if (intakeUpdate != null) {
+            String followUp = intakeUpdate.recommendedFollowUpQuestion();
+            if (followUp != null && !followUp.isBlank()) {
+                return followUp;
+            }
         }
 
-        return switch (status) {
+        return switch (detail.status()) {
             case RECEIVED -> "추가 정보를 입력해 주세요.";
-            case CLASSIFIED -> "기본 정보가 확인되었어요. 추천 경로를 확인해 주세요.";
-            case ROUTE_CONFIRMED, EVIDENCE_COLLECTING, FORMAL_SUBMISSION_READY -> "다음 단계를 진행해 주세요.";
-            case INSTITUTION_PROCESSING -> "기관 처리 중입니다. 진행 상태를 확인해 주세요.";
-            case SUPPLEMENT_REQUIRED -> "보완자료 요청이 있습니다. 응답을 등록해 주세요.";
+            case CLASSIFIED -> "추천 경로를 준비했어요. 진행 방식을 선택해 주세요.";
+            case ROUTE_CONFIRMED, EVIDENCE_COLLECTING -> "증거를 첨부하거나 바로 제출할 수 있어요.";
+            case FORMAL_SUBMISSION_READY -> "제출 준비가 완료됐어요. 제출을 진행해 주세요.";
+            case INSTITUTION_PROCESSING -> "접수 완료 후 기관 처리 중이에요. 진행 상태를 확인해 주세요.";
+            case SUPPLEMENT_REQUIRED -> "보완자료 요청이 있어요. 보완 후 다시 제출해 주세요.";
             case COMPLETED, CLOSED -> "처리가 완료되었습니다.";
             default -> "다음 단계를 진행해 주세요.";
         };
     }
 
-    private ApiModels.ChatUiHint toChatUiHint(ApiModels.FollowUpInterface followUpInterface, ApiModels.CaseStatus status) {
-        if (followUpInterface == null) {
-            if (status == ApiModels.CaseStatus.CLASSIFIED) {
-                Map<String, Object> meta = new HashMap<>();
-                meta.put("hint", "call:/api/v1/cases/{caseId}/routing/recommendation");
-                return new ApiModels.ChatUiHint(
-                        ApiModels.ChatUiType.PATH_CHOOSER,
-                        ApiModels.ChatUiSelectionMode.SINGLE,
-                        "추천 경로",
-                        "추천 경로를 선택해 주세요.",
-                        List.of(),
-                        meta
-                );
+    private ApiModels.ChatUiHint toChatUiHint(
+            ApiModels.FollowUpInterface followUpInterface,
+            ApiModels.CaseDetail detail
+    ) {
+        if (detail.status() == ApiModels.CaseStatus.RECEIVED && followUpInterface != null) {
+            List<ApiModels.ChatUiOption> options = new ArrayList<>();
+            if (followUpInterface.options() != null) {
+                for (ApiModels.FollowUpOption option : followUpInterface.options()) {
+                    options.add(new ApiModels.ChatUiOption(option.optionId(), option.label()));
+                }
             }
+
             return new ApiModels.ChatUiHint(
+                    followUpInterface.interfaceType() == ApiModels.FollowUpInterfaceType.DATE
+                            ? ApiModels.ChatUiType.OPTION_LIST
+                            : ApiModels.ChatUiType.LIST_PICKER,
+                    switch (followUpInterface.selectionMode()) {
+                        case MULTIPLE -> ApiModels.ChatUiSelectionMode.MULTIPLE;
+                        case SINGLE -> ApiModels.ChatUiSelectionMode.SINGLE;
+                    },
+                    null,
+                    null,
+                    options,
+                    Map.of("flowStep", "intake")
+            );
+        }
+
+        return switch (detail.status()) {
+            case CLASSIFIED -> buildPathChooserHint(detail);
+            case ROUTE_CONFIRMED, EVIDENCE_COLLECTING, FORMAL_SUBMISSION_READY -> buildEvidenceAndSubmitHint(detail);
+            case INSTITUTION_PROCESSING, SUPPLEMENT_REQUIRED, COMPLETED, CLOSED -> buildStatusFeedHint(detail);
+            default -> new ApiModels.ChatUiHint(
                     ApiModels.ChatUiType.NONE,
                     ApiModels.ChatUiSelectionMode.NONE,
                     null,
@@ -694,27 +884,71 @@ public class CaseWorkflowService {
                     List.of(),
                     Map.of()
             );
-        }
+        };
+    }
 
+    private ApiModels.ChatUiHint buildPathChooserHint(ApiModels.CaseDetail detail) {
         List<ApiModels.ChatUiOption> options = new ArrayList<>();
-        if (followUpInterface.options() != null) {
-            for (ApiModels.FollowUpOption option : followUpInterface.options()) {
+        ApiModels.RoutingRecommendation routing = detail.routing();
+        if (routing != null && routing.options() != null) {
+            for (ApiModels.RoutingOption option : routing.options()) {
+                if (option.optionId() == null || option.optionId().isBlank()) {
+                    continue;
+                }
+                if (option.label() == null || option.label().isBlank()) {
+                    continue;
+                }
                 options.add(new ApiModels.ChatUiOption(option.optionId(), option.label()));
             }
         }
 
         return new ApiModels.ChatUiHint(
-                followUpInterface.interfaceType() == ApiModels.FollowUpInterfaceType.DATE
-                        ? ApiModels.ChatUiType.OPTION_LIST
-                        : ApiModels.ChatUiType.LIST_PICKER,
-                switch (followUpInterface.selectionMode()) {
-                    case MULTIPLE -> ApiModels.ChatUiSelectionMode.MULTIPLE;
-                    case SINGLE -> ApiModels.ChatUiSelectionMode.SINGLE;
-                },
-                null,
-                null,
+                ApiModels.ChatUiType.PATH_CHOOSER,
+                ApiModels.ChatUiSelectionMode.SINGLE,
+                "추천 경로",
+                "진행 방식을 선택해 주세요.",
+                List.copyOf(options),
+                Map.of("flowStep", "pathChooser")
+        );
+    }
+
+    private ApiModels.ChatUiHint buildEvidenceAndSubmitHint(ApiModels.CaseDetail detail) {
+        List<ApiModels.ChatUiOption> options = List.of(
+                new ApiModels.ChatUiOption("evidence-audio", "녹음 파일 첨부"),
+                new ApiModels.ChatUiOption("evidence-video", "동영상 첨부"),
+                new ApiModels.ChatUiOption("evidence-log", "소음 일지 첨부"),
+                new ApiModels.ChatUiOption("submit-now", "바로 제출")
+        );
+
+        return new ApiModels.ChatUiHint(
+                ApiModels.ChatUiType.OPTION_LIST,
+                ApiModels.ChatUiSelectionMode.SINGLE,
+                "증거 제출",
+                "필요한 항목을 선택해 주세요.",
                 options,
-                Map.of()
+                Map.of(
+                        "flowStep", "evidence",
+                        "status", detail.status().name()
+                )
+        );
+    }
+
+    private ApiModels.ChatUiHint buildStatusFeedHint(ApiModels.CaseDetail detail) {
+        List<ApiModels.ChatUiOption> options = List.of(
+                new ApiModels.ChatUiOption("status-refresh", "상태 새로고침"),
+                new ApiModels.ChatUiOption("status-restart", "처음으로 돌아가기")
+        );
+
+        return new ApiModels.ChatUiHint(
+                ApiModels.ChatUiType.STATUS_FEED,
+                ApiModels.ChatUiSelectionMode.SINGLE,
+                "진행 상태",
+                "현재 처리 상태를 확인할 수 있어요.",
+                options,
+                Map.of(
+                        "flowStep", "statusFeed",
+                        "status", detail.status().name()
+                )
         );
     }
 
@@ -734,6 +968,23 @@ public class CaseWorkflowService {
             case CLOSED -> "DONE";
             default -> "NONE";
         };
+    }
+
+    private ApiModels.CaseSummary toCaseSummary(CaseEntity entity) {
+        return new ApiModels.CaseSummary(
+                entity.getId(),
+                entity.getStatus(),
+                entity.getRiskLevel(),
+                entity.getCreatedAt(),
+                entity.getUpdatedAt()
+        );
+    }
+
+    private String normalizeOwnerSubject(String ownerSubject) {
+        if (ownerSubject == null || ownerSubject.isBlank()) {
+            return "anonymous";
+        }
+        return ownerSubject.trim();
     }
 
     private CaseAggregate loadAggregate(UUID caseId) {

@@ -113,6 +113,38 @@ class CaseDetailDto {
   }
 }
 
+class CaseSummaryDto {
+  const CaseSummaryDto({
+    required this.caseId,
+    required this.status,
+    required this.riskLevel,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String caseId;
+  final String status;
+  final String riskLevel;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  factory CaseSummaryDto.fromJson(Map<String, dynamic> json) {
+    final createdAtRaw = json['createdAt']?.toString();
+    final updatedAtRaw = json['updatedAt']?.toString();
+    return CaseSummaryDto(
+      caseId: json['caseId']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+      riskLevel: json['riskLevel']?.toString() ?? '',
+      createdAt: (createdAtRaw == null || createdAtRaw.isEmpty)
+          ? null
+          : DateTime.tryParse(createdAtRaw),
+      updatedAt: (updatedAtRaw == null || updatedAtRaw.isEmpty)
+          ? null
+          : DateTime.tryParse(updatedAtRaw),
+    );
+  }
+}
+
 class RoutingOptionDto {
   const RoutingOptionDto({
     required this.optionId,
@@ -452,6 +484,48 @@ class ApiClient {
       parserName: 'IntakeUpdateResponseDto',
       payload: response,
       parser: IntakeUpdateResponseDto.fromJson,
+    );
+  }
+
+  Future<List<CaseSummaryDto>> listCases({
+    required String traceId,
+  }) async {
+    final response = await _request(
+      method: 'GET',
+      path: '/api/v1/cases',
+      traceId: traceId,
+    );
+
+    final rawItems = response['items'];
+    if (rawItems is! List) {
+      throw ApiClientError(
+        code: 'RESPONSE_PARSE_ERROR',
+        message: '케이스 목록 응답 형식이 예상과 다릅니다.',
+        traceId: traceId,
+        details: const <String>['path=/api/v1/cases', 'reason=items-not-list'],
+      );
+    }
+
+    final result = <CaseSummaryDto>[];
+    for (final item in rawItems) {
+      if (item is Map<String, dynamic>) {
+        result.add(CaseSummaryDto.fromJson(item));
+      } else if (item is Map) {
+        result.add(CaseSummaryDto.fromJson(
+            item.map((k, v) => MapEntry(k.toString(), v))));
+      }
+    }
+    return result;
+  }
+
+  Future<void> deleteCase({
+    required String traceId,
+    required String caseId,
+  }) async {
+    await _request(
+      method: 'DELETE',
+      path: '/api/v1/cases/$caseId',
+      traceId: traceId,
     );
   }
 

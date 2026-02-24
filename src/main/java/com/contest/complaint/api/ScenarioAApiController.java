@@ -5,6 +5,7 @@ import com.contest.complaint.application.CaseWorkflowService;
 import com.contest.complaint.application.IdempotencyService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -24,15 +25,34 @@ public class ScenarioAApiController implements ScenarioAApi {
     }
 
     @Override
-    public ResponseEntity<ApiModels.CaseDetail> createCase(String traceId, String idempotencyKey, ApiModels.CreateCaseRequest request) {
+    public ResponseEntity<ApiModels.CaseDetail> createCase(
+            String traceId,
+            String idempotencyKey,
+            ApiModels.CreateCaseRequest request,
+            Authentication authentication
+    ) {
+        String ownerSubject = resolveOwnerSubject(authentication);
         ApiModels.CaseDetail response = idempotencyService.execute(
                 "CREATE_CASE",
                 idempotencyKey,
                 request,
                 ApiModels.CaseDetail.class,
-                () -> caseWorkflowService.createCase(request)
+                () -> caseWorkflowService.createCase(request, ownerSubject)
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @Override
+    public ResponseEntity<ApiModels.CaseListResponse> listCases(String traceId, Authentication authentication) {
+        String ownerSubject = resolveOwnerSubject(authentication);
+        return ResponseEntity.ok(caseWorkflowService.listCasesByOwner(ownerSubject));
+    }
+
+    @Override
+    public ResponseEntity<Void> deleteCase(String traceId, UUID caseId, Authentication authentication) {
+        String ownerSubject = resolveOwnerSubject(authentication);
+        caseWorkflowService.deleteCase(caseId, ownerSubject);
+        return ResponseEntity.noContent().build();
     }
 
     @Override
@@ -46,8 +66,13 @@ public class ScenarioAApiController implements ScenarioAApi {
     }
 
     @Override
-    public ResponseEntity<ApiModels.ChatTurnResponse> chatTurn(String traceId, ApiModels.ChatTurnRequest request) {
-        return ResponseEntity.ok(caseWorkflowService.chatTurn(traceId, request));
+    public ResponseEntity<ApiModels.ChatTurnResponse> chatTurn(
+            String traceId,
+            ApiModels.ChatTurnRequest request,
+            Authentication authentication
+    ) {
+        String ownerSubject = resolveOwnerSubject(authentication);
+        return ResponseEntity.ok(caseWorkflowService.chatTurn(traceId, request, ownerSubject));
     }
 
     @Override
@@ -109,5 +134,12 @@ public class ScenarioAApiController implements ScenarioAApi {
     @Override
     public ResponseEntity<ApiModels.TimelineResponse> getTimeline(String traceId, UUID caseId) {
         return ResponseEntity.ok(caseWorkflowService.getTimeline(caseId));
+    }
+
+    private static String resolveOwnerSubject(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+            return "anonymous";
+        }
+        return authentication.getName().trim();
     }
 }

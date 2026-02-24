@@ -3,12 +3,14 @@ package com.contest.complaint.api;
 import com.contest.complaint.api.model.ApiModels;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 
 import java.util.UUID;
 
@@ -19,7 +21,21 @@ public interface ScenarioAApi {
     ResponseEntity<ApiModels.CaseDetail> createCase(
             @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-            @Valid @RequestBody ApiModels.CreateCaseRequest request
+            @Valid @RequestBody ApiModels.CreateCaseRequest request,
+            Authentication authentication
+    );
+
+    @GetMapping("/cases")
+    ResponseEntity<ApiModels.CaseListResponse> listCases(
+            @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+            Authentication authentication
+    );
+
+    @DeleteMapping("/cases/{caseId}")
+    ResponseEntity<Void> deleteCase(
+            @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+            @PathVariable UUID caseId,
+            Authentication authentication
     );
 
     @GetMapping("/cases/{caseId}")
@@ -38,7 +54,8 @@ public interface ScenarioAApi {
     @PostMapping("/chat/turn")
     ResponseEntity<ApiModels.ChatTurnResponse> chatTurn(
             @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
-            @Valid @RequestBody ApiModels.ChatTurnRequest request
+            @Valid @RequestBody ApiModels.ChatTurnRequest request,
+            Authentication authentication
     );
 
     @PostMapping("/cases/{caseId}/decomposition")

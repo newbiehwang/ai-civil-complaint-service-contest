@@ -24,7 +24,8 @@ class GuideScreen extends StatefulWidget {
   State<GuideScreen> createState() => _GuideScreenState();
 }
 
-class _GuideScreenState extends State<GuideScreen> {
+class _GuideScreenState extends State<GuideScreen>
+    with SingleTickerProviderStateMixin {
   static const List<_GuideStepData> _stepDataList = <_GuideStepData>[
     _GuideStepData(
       title: '민원을 한 줄로 접수하세요.',
@@ -43,10 +44,35 @@ class _GuideScreenState extends State<GuideScreen> {
   int _step = 0;
   int _pageEnterVersion = 0;
   double _dragDx = 0;
+  bool _showInitialSwipeHint = true;
+  late final AnimationController _swipeHintPulseController;
+  Timer? _swipeHintTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _swipeHintPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _swipeHintTimer = Timer(const Duration(seconds: 3), _hideSwipeHint);
+  }
 
   @override
   void dispose() {
+    _swipeHintTimer?.cancel();
+    _swipeHintPulseController.dispose();
     super.dispose();
+  }
+
+  void _hideSwipeHint() {
+    if (!mounted || !_showInitialSwipeHint) {
+      return;
+    }
+    setState(() {
+      _showInitialSwipeHint = false;
+    });
+    _swipeHintPulseController.stop();
   }
 
   void _goToStep(int nextStep) {
@@ -57,10 +83,14 @@ class _GuideScreenState extends State<GuideScreen> {
       _step = nextStep;
       _pageEnterVersion += 1;
     });
+    if (nextStep != 0) {
+      _hideSwipeHint();
+    }
   }
 
   void _handleHorizontalDragStart(DragStartDetails _) {
     _dragDx = 0;
+    _hideSwipeHint();
   }
 
   void _handleHorizontalDragUpdate(DragUpdateDetails details) {
@@ -140,8 +170,8 @@ class _GuideScreenState extends State<GuideScreen> {
                         (constraints.maxHeight * contentHeightFactor)
                             .clamp(minContentHeight, 760.0);
                     final contentAlignment = isCompactHeight
-                        ? const Alignment(0, 0.08)
-                        : const Alignment(0, 0.05);
+                        ? const Alignment(0, 0.01)
+                        : const Alignment(0, -0.03);
 
                     return Align(
                       alignment: contentAlignment,
@@ -191,7 +221,7 @@ class _GuideScreenState extends State<GuideScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 10),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: List<Widget>.generate(
@@ -212,7 +242,7 @@ class _GuideScreenState extends State<GuideScreen> {
                                 );
                               }),
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 8),
                             AnimatedSwitcher(
                               duration: const Duration(milliseconds: 220),
                               child: isLast
@@ -225,10 +255,25 @@ class _GuideScreenState extends State<GuideScreen> {
                                         onPressed: widget.onDone,
                                       ),
                                     )
-                                  : const SizedBox(
-                                      key: ValueKey('guide-empty-bottom'),
-                                      height: 52,
-                                    ),
+                                  : (_step == 0 && _showInitialSwipeHint)
+                                      ? SizedBox(
+                                          key: const ValueKey('swipe-hint'),
+                                          height: 52,
+                                          child: Center(
+                                            child: FadeTransition(
+                                              opacity: CurvedAnimation(
+                                                parent:
+                                                    _swipeHintPulseController,
+                                                curve: Curves.easeInOut,
+                                              ),
+                                              child: const _GuideSwipeHint(),
+                                            ),
+                                          ),
+                                        )
+                                      : const SizedBox(
+                                          key: ValueKey('guide-empty-bottom'),
+                                          height: 52,
+                                        ),
                             ),
                           ],
                         ),
@@ -290,8 +335,48 @@ class _GuidePage extends StatelessWidget {
             fontFamilyFallback: _kGuideFontFallback,
           ),
         ),
+        const SizedBox(height: 8),
+        const Text(
+          '예시 화면입니다.',
+          style: TextStyle(
+            color: AppColors.gray,
+            fontSize: 14,
+            height: 1.35,
+            fontWeight: FontWeight.w600,
+            fontFamilyFallback: _kGuideFontFallback,
+          ),
+        ),
         const SizedBox(height: 14),
         Expanded(child: child),
+      ],
+    );
+  }
+}
+
+class _GuideSwipeHint extends StatelessWidget {
+  const _GuideSwipeHint();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.swipe_rounded,
+          size: 19,
+          color: Color(0xFF8AA1B5),
+        ),
+        SizedBox(width: 8),
+        Text(
+          '스와이프해서 화면 전환',
+          style: TextStyle(
+            color: Color(0xFF8AA1B5),
+            fontSize: 14.5,
+            height: 1.25,
+            fontWeight: FontWeight.w600,
+            fontFamilyFallback: _kGuideFontFallback,
+          ),
+        ),
       ],
     );
   }
@@ -412,22 +497,25 @@ class _GuideMiniInterfaceDemoState extends State<_GuideMiniInterfaceDemo> {
 
   @override
   Widget build(BuildContext context) {
-    final aiStyle = TextStyle(
-      color: AppColors.primary,
-      fontSize: MediaQuery.of(context).size.width < 390 ? 24 : 26,
-      height: 1.36,
-      fontWeight: FontWeight.w500,
-      fontFamilyFallback: _kGuideFontFallback,
-    );
-
     return _GuideChatFrame(
-      aiPadding: const EdgeInsets.fromLTRB(24, 84, 24, 206),
-      aiChild: _GuideAiCharFadeText(
-        text: '소음이 주로 발생하는\n시간대를 선택해 주세요.',
-        style: aiStyle,
-        charStep: const Duration(milliseconds: 40),
-        fadeDuration: const Duration(milliseconds: 180),
-        onCompleted: _handleAiCompleted,
+      aiPadding: const EdgeInsets.fromLTRB(24, 104, 24, 206),
+      aiChild: LayoutBuilder(
+        builder: (context, constraints) {
+          final aiStyle = TextStyle(
+            color: AppColors.primary,
+            fontSize: constraints.maxWidth < 390 ? 24 : 26,
+            height: 1.36,
+            fontWeight: FontWeight.w500,
+            fontFamilyFallback: _kGuideFontFallback,
+          );
+          return _GuideAiCharFadeText(
+            text: '소음이 주로 발생하는\n시간대를 선택해 주세요.',
+            style: aiStyle,
+            charStep: const Duration(milliseconds: 40),
+            fadeDuration: const Duration(milliseconds: 180),
+            onCompleted: _handleAiCompleted,
+          );
+        },
       ),
       miniInterface: AnimatedSwitcher(
         duration: const Duration(milliseconds: 260),
