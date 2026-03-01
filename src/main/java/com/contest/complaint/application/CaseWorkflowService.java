@@ -1206,12 +1206,15 @@ public class CaseWorkflowService {
         String residenceSlot = Objects.toString(aggregate.filledSlots.get("residence"), "").trim();
         String managementSlot = Objects.toString(aggregate.filledSlots.get("management"), "").trim();
         boolean managementOfficeUnavailable = "없음".equals(managementSlot);
-        boolean apartmentRouteEligible = "APARTMENT".equalsIgnoreCase(housingType) || "아파트".equals(residenceSlot);
-        boolean neighborCenterEligible = apartmentRouteEligible
+        boolean hasResidenceSlot = !residenceSlot.isBlank();
+        boolean apartmentRouteEligible = hasResidenceSlot
+                ? "아파트".equals(residenceSlot)
+                : "APARTMENT".equalsIgnoreCase(housingType);
+        boolean neighborCenterEligible = hasResidenceSlot
+                ? ("아파트".equals(residenceSlot) || "빌라".equals(residenceSlot) || "오피스텔".equals(residenceSlot))
+                : ("APARTMENT".equalsIgnoreCase(housingType)
                 || "VILLA".equalsIgnoreCase(housingType)
-                || "OFFICETEL".equalsIgnoreCase(housingType)
-                || "빌라".equals(residenceSlot)
-                || "오피스텔".equals(residenceSlot);
+                || "OFFICETEL".equalsIgnoreCase(housingType));
 
         if (aggregate.caseEntity.isRiskSignalDetected()) {
             options.add(new ApiModels.RoutingOption(
