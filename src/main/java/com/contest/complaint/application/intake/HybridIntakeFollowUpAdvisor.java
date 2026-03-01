@@ -1,5 +1,6 @@
 package com.contest.complaint.application.intake;
 
+import com.contest.complaint.api.model.ApiModels;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -25,6 +26,10 @@ public class HybridIntakeFollowUpAdvisor implements IntakeFollowUpAdvisor {
     @Override
     public IntakeFollowUpSuggestion suggest(IntakeFollowUpRequest request) {
         IntakeFollowUpSuggestion fallback = ruleBasedAdvisor.suggest(request);
+        // Keep intake flow deterministic (origin/main compatible) while LLM is used for chat turn planning.
+        if (request.caseStatus() == ApiModels.CaseStatus.RECEIVED) {
+            return fallback;
+        }
         if (!useLlm) {
             return fallback;
         }

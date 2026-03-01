@@ -2,6 +2,11 @@ package com.contest.complaint.application;
 
 import com.contest.complaint.api.ApiException;
 import com.contest.complaint.api.model.ApiModels;
+import com.contest.complaint.application.chat.ChatTurnPlan;
+import com.contest.complaint.application.chat.ChatTurnPlanValidator;
+import com.contest.complaint.application.chat.ChatTurnPlannerRequest;
+import com.contest.complaint.application.chat.LlmChatTurnPlannerClient;
+import com.contest.complaint.application.chat.RuleBasedTurnFallbackPlanner;
 import com.contest.complaint.application.intake.IntakeFollowUpAdvisor;
 import com.contest.complaint.application.intake.IntakeFollowUpRequest;
 import com.contest.complaint.application.intake.IntakeFollowUpSuggestion;
@@ -13,6 +18,8 @@ import com.contest.complaint.infrastructure.persistence.repository.EvidenceEntit
 import com.contest.complaint.infrastructure.persistence.repository.TimelineEventEntityRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +30,7 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -30,9 +38,39 @@ import java.util.UUID;
 @Service
 public class CaseWorkflowService {
 
+    private static final Logger log = LoggerFactory.getLogger(CaseWorkflowService.class);
+
     private static final String SAFETY_DANGER = "위협 징후 있음";
     private static final String DEFAULT_SCENARIO_TYPE = "SCENARIO_A";
     private static final String DEFAULT_HOUSING_TYPE = "APARTMENT";
+    private static final Set<String> INTAKE_ACTIVATION_TOKENS = Set.of(
+            "민원접수",
+            "접수할게요",
+            "접수해주세요",
+            "신고할게요",
+            "신고해주세요",
+            "진행할게요",
+            "진행해주세요",
+            "접수진행"
+    );
+    private static final Set<String> AFFIRMATIVE_TOKENS = Set.of(
+            "네",
+            "예",
+            "응",
+            "좋아요",
+            "진행",
+            "진행할게요",
+            "진행해주세요"
+    );
+    private static final Set<String> INTAKE_INTENT_HINT_TOKENS = Set.of(
+            "층간소음",
+            "윗집",
+            "아랫집",
+            "쿵쿵",
+            "발망치",
+            "시끄러",
+            "소음"
+    );
     private static final List<String> REQUIRED_SLOTS = List.of(
             "noiseNow",
             "safety",
@@ -43,6 +81,9 @@ public class CaseWorkflowService {
             "timeBand",
             "sourceCertainty"
     );
+    private static final Set<String> TRIAGE_SLOTS = Set.of("noiseNow", "safety");
+    private static final Set<String> BASIC_INTAKE_SLOTS = Set.of("residence", "management", "sourceCertainty");
+    private static final Set<String> DETAIL_INTAKE_SLOTS = Set.of("noiseType", "frequency", "timeBand");
 
     private static final Map<ApiModels.CaseStatus, Set<ApiModels.CaseStatus>> ALLOWED_TRANSITIONS =
             new EnumMap<>(ApiModels.CaseStatus.class);
@@ -75,7 +116,11 @@ public class CaseWorkflowService {
     private final TimelineEventEntityRepository timelineRepository;
     private final MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker;
     private final IntakeFollowUpAdvisor intakeFollowUpAdvisor;
+    private final LlmChatTurnPlannerClient llmChatTurnPlannerClient;
+    private final RuleBasedTurnFallbackPlanner ruleBasedTurnFallbackPlanner;
+    private final ChatTurnPlanValidator chatTurnPlanValidator;
     private final ObjectMapper objectMapper;
+    private final boolean chatUseLlm;
     private final boolean mockSubmissionAutoProcessEnabled;
     private final boolean institutionGatewayFailDirectApi;
 
@@ -85,7 +130,11 @@ public class CaseWorkflowService {
             TimelineEventEntityRepository timelineRepository,
             MockInstitutionSubmissionWorker mockInstitutionSubmissionWorker,
             IntakeFollowUpAdvisor intakeFollowUpAdvisor,
+            LlmChatTurnPlannerClient llmChatTurnPlannerClient,
+            RuleBasedTurnFallbackPlanner ruleBasedTurnFallbackPlanner,
+            ChatTurnPlanValidator chatTurnPlanValidator,
             ObjectMapper objectMapper,
+            @Value("${complaint.ai.chat.use-llm:false}") boolean chatUseLlm,
             @Value("${complaint.mock-submission.auto-process-enabled:true}") boolean mockSubmissionAutoProcessEnabled,
             @Value("${complaint.institution-gateway.fail-direct-api:false}") boolean institutionGatewayFailDirectApi
     ) {
@@ -94,7 +143,11 @@ public class CaseWorkflowService {
         this.timelineRepository = timelineRepository;
         this.mockInstitutionSubmissionWorker = mockInstitutionSubmissionWorker;
         this.intakeFollowUpAdvisor = intakeFollowUpAdvisor;
+        this.llmChatTurnPlannerClient = llmChatTurnPlannerClient;
+        this.ruleBasedTurnFallbackPlanner = ruleBasedTurnFallbackPlanner;
+        this.chatTurnPlanValidator = chatTurnPlanValidator;
         this.objectMapper = objectMapper;
+        this.chatUseLlm = chatUseLlm;
         this.mockSubmissionAutoProcessEnabled = mockSubmissionAutoProcessEnabled;
         this.institutionGatewayFailDirectApi = institutionGatewayFailDirectApi;
     }
@@ -122,7 +175,7 @@ public class CaseWorkflowService {
         entity.setFilledSlotsJson("{}");
         entity.setDecompositionNodesJson("[]");
         entity.setRoutingOptionsJson("[]");
-        entity.setCurrentActionRequired("INTAKE_REQUIRED");
+        entity.setCurrentActionRequired("GENERAL_CHAT");
 
         caseRepository.save(entity);
 
@@ -221,13 +274,29 @@ public class CaseWorkflowService {
 
     @Transactional
     public ApiModels.ChatTurnResponse chatTurn(String traceId, ApiModels.ChatTurnRequest request, String ownerSubject) {
-        String userMessage = request.userMessage().trim();
+        String userMessage = request.userMessage() == null ? "" : request.userMessage().trim();
         UUID caseId = resolveCaseIdForChatTurn(request, userMessage, ownerSubject);
+        List<ApiModels.ChatTurnHistoryMessage> recentMessages = sanitizeRecentMessages(request.recentMessages());
 
-        ApiModels.CaseDetail detail = getCase(caseId);
+        ApiModels.CaseDetail detail = ensureRoutingPrepared(caseId, getCase(caseId));
         ApiModels.IntakeUpdateResponse intakeUpdate = null;
+        String interactionNotice = null;
+        List<String> uiCapabilities = sanitizeUiCapabilities(request.uiCapabilities());
+        ApiModels.ChatTurnInteraction interaction = request.interaction();
 
-        if (detail.status() == ApiModels.CaseStatus.RECEIVED) {
+        InteractionApplyResult interactionApplyResult =
+                applyUserInteractionDeterministically(caseId, detail, interaction, userMessage);
+        detail = interactionApplyResult.detail();
+        intakeUpdate = interactionApplyResult.intakeUpdate();
+        interactionNotice = interactionApplyResult.noticeMessage();
+
+        // Selection-based intake answers arrive as interaction payloads from Flutter.
+        // To keep intake behavior identical to origin/main, continue slot extraction on RECEIVED.
+        if (interaction != null
+                && detail.status() == ApiModels.CaseStatus.RECEIVED
+                && !isGeneralChatMode(detail)
+                && intakeUpdate == null
+                && !userMessage.isBlank()) {
             intakeUpdate = appendIntakeMessage(
                     caseId,
                     new ApiModels.AppendIntakeMessageRequest(ApiModels.MessageRole.USER, userMessage)
@@ -236,19 +305,142 @@ public class CaseWorkflowService {
             if (detail.status() != ApiModels.CaseStatus.RECEIVED) {
                 detail = ensureRoutingPrepared(caseId, detail);
             }
-        } else {
-            detail = ensureRoutingPrepared(caseId, detail);
-            detail = applyPostIntakeChatAction(caseId, detail, userMessage);
         }
 
-        String assistantMessage = resolveAssistantMessage(intakeUpdate, detail, userMessage);
-        ApiModels.ChatUiHint uiHint = toChatUiHint(intakeUpdate == null ? null : intakeUpdate.followUpInterface(), detail);
+        if (interaction == null) {
+            if (detail.status() == ApiModels.CaseStatus.RECEIVED && !userMessage.isBlank()) {
+                if (isGeneralChatMode(detail)
+                        && !chatUseLlm
+                        && shouldActivateIntakeMode(userMessage, recentMessages)) {
+                    detail = activateIntakeMode(caseId, detail);
+                }
+
+                if (isGeneralChatMode(detail)) {
+                    interactionNotice = null;
+                } else {
+                intakeUpdate = appendIntakeMessage(
+                        caseId,
+                        new ApiModels.AppendIntakeMessageRequest(ApiModels.MessageRole.USER, userMessage)
+                );
+                detail = getCase(caseId);
+                if (detail.status() != ApiModels.CaseStatus.RECEIVED) {
+                    detail = ensureRoutingPrepared(caseId, detail);
+                }
+                }
+            } else if (!userMessage.isBlank()) {
+                try {
+                    detail = applyPostIntakeChatAction(caseId, detail, userMessage);
+                } catch (ApiException ex) {
+                    interactionNotice = "현재 단계와 맞지 않는 요청입니다. 다시 확인해 주세요.";
+                }
+            }
+        }
+
+        detail = ensureRoutingPrepared(caseId, getCase(caseId));
+
+        String normalizedLastUiHintType = normalizeLastUiHintType(request.lastUiHintType(), interaction);
+        String flowStepHint = inferFlowStepHint(detail);
+
+        ChatTurnPlannerRequest plannerRequest = new ChatTurnPlannerRequest(
+                traceId,
+                caseId,
+                userMessage,
+                detail.status(),
+                detail.currentActionRequired(),
+                flowStepHint,
+                detail.riskLevel(),
+                detail.intake() == null || detail.intake().filledSlots() == null
+                        ? Map.of()
+                        : Map.copyOf(detail.intake().filledSlots()),
+                detail.intake() == null || detail.intake().filledSlots() == null
+                        ? List.of()
+                        : missingSlots(detail.intake().filledSlots()),
+                detail.intake() != null && detail.intake().riskSignalDetected(),
+                detail.routing() == null || detail.routing().options() == null
+                        ? List.of()
+                        : List.copyOf(detail.routing().options()),
+                detail.evidenceChecklist(),
+                uiCapabilities,
+                normalizedLastUiHintType,
+                recentMessages,
+                interaction
+        );
+
+        ApiModels.CaseDetail finalDetail = detail;
+        ApiModels.IntakeUpdateResponse finalIntakeUpdate = intakeUpdate;
+        ChatTurnPlan resolvedPlan;
+        String planSource;
+
+        boolean deterministicIntake = finalDetail.status() == ApiModels.CaseStatus.RECEIVED
+                && !isGeneralChatMode(finalDetail)
+                && finalIntakeUpdate != null;
+
+        if (deterministicIntake) {
+            resolvedPlan = buildDeterministicIntakePlan(finalDetail);
+            planSource = "intake-deterministic";
+        } else {
+            ChatTurnPlan llmPlan = llmChatTurnPlannerClient.plan(plannerRequest)
+                    .map(plan -> chatTurnPlanValidator.sanitize(plan, finalDetail, uiCapabilities))
+                    .filter(chatTurnPlanValidator::isUsable)
+                    .orElse(null);
+            if (llmPlan != null) {
+                resolvedPlan = llmPlan;
+                planSource = "llm";
+            } else if (chatUseLlm) {
+                throw ApiException.serviceUnavailable(
+                        "LLM_UNAVAILABLE",
+                        "LLM 응답을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+                        List.of("provider=claude", "fallback=disabled")
+                );
+            } else {
+                resolvedPlan = ruleBasedTurnFallbackPlanner.plan(
+                        finalIntakeUpdate,
+                        finalDetail,
+                        REQUIRED_SLOTS,
+                        recentMessages
+                );
+                planSource = "fallback";
+            }
+        }
+
+        if (interaction == null
+                && !userMessage.isBlank()
+                && isGeneralChatMode(detail)
+                && "COLLECT_SLOT".equalsIgnoreCase(resolvedPlan.intent())) {
+            detail = activateIntakeMode(caseId, detail);
+            detail = ensureRoutingPrepared(caseId, detail);
+            resolvedPlan = buildDeterministicIntakePlan(detail);
+            planSource = "llm-intake-handoff";
+        }
+
+        String assistantMessage = interactionNotice != null && !interactionNotice.isBlank()
+                ? interactionNotice
+                : resolvedPlan.assistantMessage();
+        ApiModels.ChatUiHint uiHint = resolvedPlan.uiHint();
+
+        log.info(
+                "chat-turn traceId={} caseId={} status={} source={} uiType={} nextAction={}",
+                traceId,
+                detail.caseId(),
+                detail.status(),
+                planSource,
+                uiHint == null || uiHint.type() == null ? "NONE" : uiHint.type().name(),
+                resolveNextAction(detail)
+        );
 
         Map<String, Object> statePatch = new HashMap<>();
         statePatch.put("caseId", detail.caseId().toString());
         statePatch.put("status", detail.status().name());
         statePatch.put("riskLevel", detail.riskLevel().name());
         statePatch.put("currentActionRequired", detail.currentActionRequired());
+        if (detail.routing() != null && detail.routing().selectedOptionId() != null
+                && !detail.routing().selectedOptionId().isBlank()) {
+            statePatch.put("selectedRouteOptionId", detail.routing().selectedOptionId());
+            String selectedRouteLabel = resolveSelectedRouteLabel(detail);
+            if (selectedRouteLabel != null && !selectedRouteLabel.isBlank()) {
+                statePatch.put("selectedRouteLabel", selectedRouteLabel);
+            }
+        }
         if (detail.intake() != null) {
             statePatch.put("requiredSlots", detail.intake().requiredSlots());
             statePatch.put("filledSlots", detail.intake().filledSlots());
@@ -262,6 +454,492 @@ public class CaseWorkflowService {
                 statePatch,
                 resolveNextAction(detail)
         );
+    }
+
+    private ChatTurnPlan buildDeterministicIntakePlan(ApiModels.CaseDetail detail) {
+        return buildDeterministicIntakePlan(detail, null);
+    }
+
+    private String resolveSelectedRouteLabel(ApiModels.CaseDetail detail) {
+        if (detail == null || detail.routing() == null || detail.routing().selectedOptionId() == null) {
+            return null;
+        }
+        String selectedOptionId = detail.routing().selectedOptionId();
+        List<ApiModels.RoutingOption> options = detail.routing().options();
+        if (options == null || options.isEmpty()) {
+            return null;
+        }
+        for (ApiModels.RoutingOption option : options) {
+            if (option != null
+                    && option.optionId() != null
+                    && option.optionId().equals(selectedOptionId)
+                    && option.label() != null
+                    && !option.label().isBlank()) {
+                return option.label();
+            }
+        }
+        return null;
+    }
+
+    private ChatTurnPlan buildDeterministicIntakePlan(ApiModels.CaseDetail detail, String handoffMessage) {
+        Map<String, Object> filledSlots = detail.intake() == null || detail.intake().filledSlots() == null
+                ? Map.of()
+                : detail.intake().filledSlots();
+        List<String> requiredFields = missingSlots(filledSlots);
+
+        String safeHandoffMessage = handoffMessage == null ? "" : handoffMessage.trim();
+
+        if (requiredFields.contains("safetyContinue")) {
+            ApiModels.ChatUiHint uiHint = new ApiModels.ChatUiHint(
+                    ApiModels.ChatUiType.LIST_PICKER,
+                    ApiModels.ChatUiSelectionMode.SINGLE,
+                    "단일 선택",
+                    null,
+                    List.of(
+                            new ApiModels.ChatUiOption("safety-guide", "112 안전 안내 확인"),
+                            new ApiModels.ChatUiOption("safety-continue", "생활소음 접수 계속")
+                    ),
+                    Map.of(
+                            "flowStep", "safety",
+                            "requiredFields", List.of("safetyContinue"),
+                            "submitAllowed", true,
+                            "requiresExplicitConfirm", false
+                    )
+            );
+            return new ChatTurnPlan(
+                    safeHandoffMessage.isBlank()
+                            ? "위협·폭행 우려가 있으면 112 신고가 우선입니다.\n안전 안내를 확인한 뒤 계속 진행할 수 있어요."
+                            : safeHandoffMessage,
+                    uiHint,
+                    "COLLECT_SLOT",
+                    Map.of()
+            );
+        }
+
+        if (containsAnyRequiredField(requiredFields, TRIAGE_SLOTS)) {
+            return new ChatTurnPlan(
+                    safeHandoffMessage.isBlank()
+                            ? "힘드셨겠어요.\n현재 소음 상태와 안전 긴급도를 함께 선택해 주세요."
+                            : safeHandoffMessage,
+                    buildDeterministicIntakeHint(requiredFields),
+                    "COLLECT_SLOT",
+                    Map.of()
+            );
+        }
+
+        if (containsAnyRequiredField(requiredFields, BASIC_INTAKE_SLOTS)) {
+            return new ChatTurnPlan(
+                    safeHandoffMessage.isBlank()
+                            ? "좋아요. 기본 정보를 입력해 주세요."
+                            : safeHandoffMessage,
+                    buildDeterministicIntakeHint(requiredFields),
+                    "COLLECT_SLOT",
+                    Map.of()
+            );
+        }
+
+        if (containsAnyRequiredField(requiredFields, DETAIL_INTAKE_SLOTS)) {
+            return new ChatTurnPlan(
+                    safeHandoffMessage.isBlank()
+                            ? "좋아요. 소음 패턴과 시작 시점을 입력해 주세요."
+                            : safeHandoffMessage,
+                    buildDeterministicIntakeHint(requiredFields),
+                    "COLLECT_SLOT",
+                    Map.of()
+            );
+        }
+
+        return new ChatTurnPlan(
+                "정리해드릴게요.",
+                new ApiModels.ChatUiHint(
+                        ApiModels.ChatUiType.SUMMARY_CARD,
+                        ApiModels.ChatUiSelectionMode.NONE,
+                        "요약 확인",
+                        null,
+                        List.of(),
+                        Map.of(
+                                "flowStep", "summary",
+                                "requiredFields", List.of(),
+                                "submitAllowed", true,
+                                "requiresExplicitConfirm", false
+                        )
+                ),
+                "COLLECT_SLOT",
+                Map.of()
+        );
+    }
+
+    private ApiModels.ChatUiHint buildDeterministicIntakeHint(List<String> requiredFields) {
+        return new ApiModels.ChatUiHint(
+                ApiModels.ChatUiType.LIST_PICKER,
+                ApiModels.ChatUiSelectionMode.NONE,
+                null,
+                null,
+                List.of(),
+                Map.of(
+                        "flowStep", "intake",
+                        "requiredFields", List.copyOf(requiredFields),
+                        "submitAllowed", false,
+                        "requiresExplicitConfirm", false
+                )
+        );
+    }
+
+    private boolean containsAnyRequiredField(List<String> requiredFields, Set<String> targets) {
+        for (String requiredField : requiredFields) {
+            if (targets.contains(requiredField)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<String> sanitizeUiCapabilities(List<String> uiCapabilities) {
+        if (uiCapabilities == null || uiCapabilities.isEmpty()) {
+            return List.of();
+        }
+        return uiCapabilities.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(value -> value.trim().toUpperCase(Locale.ROOT))
+                .toList();
+    }
+
+    private String normalizeLastUiHintType(
+            String rawLastUiHintType,
+            ApiModels.ChatTurnInteraction interaction
+    ) {
+        if (rawLastUiHintType != null && !rawLastUiHintType.isBlank()) {
+            return rawLastUiHintType.trim().toUpperCase(Locale.ROOT);
+        }
+        if (interaction != null && interaction.sourceUiType() != null) {
+            return interaction.sourceUiType().name();
+        }
+        return "NONE";
+    }
+
+    private List<ApiModels.ChatTurnHistoryMessage> sanitizeRecentMessages(
+            List<ApiModels.ChatTurnHistoryMessage> recentMessages
+    ) {
+        if (recentMessages == null || recentMessages.isEmpty()) {
+            return List.of();
+        }
+        return recentMessages.stream()
+                .filter(message -> message != null
+                        && message.text() != null
+                        && !message.text().isBlank())
+                .map(message -> new ApiModels.ChatTurnHistoryMessage(
+                        message.role() == null || message.role().isBlank()
+                                ? "UNKNOWN"
+                                : message.role().trim().toUpperCase(Locale.ROOT),
+                        message.text().trim(),
+                        message.source() == null || message.source().isBlank()
+                                ? "UNKNOWN"
+                                : message.source().trim()
+                ))
+                .limit(12)
+                .toList();
+    }
+
+    private String inferFlowStepHint(ApiModels.CaseDetail detail) {
+        ApiModels.CaseStatus status = detail.status();
+        String action = detail.currentActionRequired() == null ? "" : detail.currentActionRequired();
+
+        if (status == ApiModels.CaseStatus.RECEIVED) {
+            if ("GENERAL_CHAT".equalsIgnoreCase(action)) {
+                return "general_chat";
+            }
+            return "intake";
+        }
+        if (status == ApiModels.CaseStatus.CLASSIFIED && "CONFIRM_ROUTE".equals(action)) {
+            return "path_choice";
+        }
+        if (status == ApiModels.CaseStatus.ROUTE_CONFIRMED
+                || status == ApiModels.CaseStatus.EVIDENCE_COLLECTING
+                || status == ApiModels.CaseStatus.FORMAL_SUBMISSION_READY) {
+            return "evidence_or_submit";
+        }
+        if (status == ApiModels.CaseStatus.INSTITUTION_PROCESSING
+                || status == ApiModels.CaseStatus.SUPPLEMENT_REQUIRED
+                || status == ApiModels.CaseStatus.COMPLETED
+                || status == ApiModels.CaseStatus.CLOSED) {
+            return "status_tracking";
+        }
+        return "general";
+    }
+
+    private InteractionApplyResult applyUserInteractionDeterministically(
+            UUID caseId,
+            ApiModels.CaseDetail detail,
+            ApiModels.ChatTurnInteraction interaction,
+            String fallbackUserMessage
+    ) {
+        if (interaction == null) {
+            return new InteractionApplyResult(detail, null, null);
+        }
+
+        List<String> selectedIds = normalizeSelectionIds(interaction.selectedOptionIds());
+        List<String> selectedLabels = normalizeSelectionLabels(interaction.selectedOptionLabels());
+        String interactionMessage = selectedLabels.isEmpty()
+                ? fallbackUserMessage
+                : String.join(" ", selectedLabels);
+        Map<String, Object> structuredSlots = extractStructuredIntakeSlots(interaction);
+
+        try {
+            if (detail.status() == ApiModels.CaseStatus.RECEIVED) {
+                if (isGeneralChatMode(detail)) {
+                    if (!shouldActivateIntakeMode(interactionMessage, List.of())) {
+                        return new InteractionApplyResult(
+                                detail,
+                                null,
+                                "접수를 시작하려면 접수 진행 의사를 알려주세요."
+                        );
+                    }
+                    detail = activateIntakeMode(caseId, detail);
+                }
+
+                if (!structuredSlots.isEmpty()) {
+                    mergeIntakeSlots(caseId, structuredSlots);
+                    detail = getCase(caseId);
+                }
+
+                if ((interactionMessage == null || interactionMessage.isBlank()) && structuredSlots.isEmpty()) {
+                    return new InteractionApplyResult(detail, null, "선택 항목을 다시 전달해 주세요.");
+                }
+
+                ApiModels.IntakeUpdateResponse intakeUpdate = null;
+                ApiModels.CaseDetail updatedDetail;
+                if (interactionMessage != null && !interactionMessage.isBlank()) {
+                    intakeUpdate = appendIntakeMessage(
+                            caseId,
+                            new ApiModels.AppendIntakeMessageRequest(ApiModels.MessageRole.USER, interactionMessage)
+                    );
+                    updatedDetail = getCase(caseId);
+                } else {
+                    updatedDetail = getCase(caseId);
+                    if (updatedDetail.intake() != null) {
+                        intakeUpdate = new ApiModels.IntakeUpdateResponse(
+                                updatedDetail.caseId(),
+                                updatedDetail.status(),
+                                updatedDetail.intake(),
+                                "",
+                                null
+                        );
+                    }
+                }
+                if (updatedDetail.status() != ApiModels.CaseStatus.RECEIVED) {
+                    updatedDetail = ensureRoutingPrepared(caseId, updatedDetail);
+                }
+                return new InteractionApplyResult(updatedDetail, intakeUpdate, null);
+            }
+
+            ApiModels.CaseDetail current = detail;
+            String sourceUiType = interaction.sourceUiType() == null
+                    ? "NONE"
+                    : interaction.sourceUiType().name();
+
+            if ("PATH_CHOOSER".equalsIgnoreCase(sourceUiType)
+                    || "CONFIRM_ROUTE".equals(current.currentActionRequired())) {
+                String selectedOptionId = selectedIds.isEmpty() ? null : selectedIds.getFirst();
+                if (selectedOptionId == null || selectedOptionId.isBlank()) {
+                    selectedOptionId = resolveRouteOptionIdByMessage(
+                            current,
+                            selectedLabels.isEmpty() ? interactionMessage : selectedLabels.getFirst()
+                    );
+                }
+                if (selectedOptionId == null || selectedOptionId.isBlank()) {
+                    return new InteractionApplyResult(current, null, "경로를 다시 선택해 주세요.");
+                }
+                confirmRouteDecision(
+                        caseId,
+                        new ApiModels.RouteDecisionRequest(selectedOptionId, true, "chat-interaction-confirm-route")
+                );
+                return new InteractionApplyResult(getCase(caseId), null, null);
+            }
+
+            if ("STATUS_FEED".equalsIgnoreCase(sourceUiType)
+                    || current.status() == ApiModels.CaseStatus.INSTITUTION_PROCESSING
+                    || current.status() == ApiModels.CaseStatus.SUPPLEMENT_REQUIRED
+                    || current.status() == ApiModels.CaseStatus.COMPLETED
+                    || current.status() == ApiModels.CaseStatus.CLOSED) {
+                List<String> actionIds = selectedIds.isEmpty()
+                        ? inferActionIdsFromLabels(selectedLabels)
+                        : selectedIds;
+                if (actionIds.contains("status-refresh")) {
+                    return new InteractionApplyResult(getCase(caseId), null, "최신 진행 상태를 불러왔어요.");
+                }
+                if (actionIds.contains("status-restart")) {
+                    return new InteractionApplyResult(getCase(caseId), null, "새 민원 접수를 시작하려면 채팅을 새로 열어 주세요.");
+                }
+            }
+
+            if (isEvidenceOrSubmissionState(current.status())) {
+                List<String> actionIds = selectedIds.isEmpty()
+                        ? inferActionIdsFromLabels(selectedLabels)
+                        : selectedIds;
+                if (actionIds.isEmpty()) {
+                    return new InteractionApplyResult(current, null, "선택 항목을 확인해 주세요.");
+                }
+
+                boolean executed = false;
+                for (String actionId : actionIds) {
+                    if ("evidence-audio".equalsIgnoreCase(actionId)) {
+                        registerEvidence(caseId, buildDemoEvidenceRequest(ApiModels.EvidenceType.AUDIO, "demo-audio.m4a", "audio/m4a"));
+                        executed = true;
+                    } else if ("evidence-video".equalsIgnoreCase(actionId)) {
+                        registerEvidence(caseId, buildDemoEvidenceRequest(ApiModels.EvidenceType.IMAGE, "demo-video.mp4", "video/mp4"));
+                        executed = true;
+                    } else if ("evidence-log".equalsIgnoreCase(actionId)) {
+                        registerEvidence(caseId, buildDemoEvidenceRequest(ApiModels.EvidenceType.LOG, "demo-noise-log.json", "application/json"));
+                        executed = true;
+                    } else if ("submit-confirm".equalsIgnoreCase(actionId) || "submit-now".equalsIgnoreCase(actionId)) {
+                        if (!hasExplicitSubmitConfirm(interaction)) {
+                            return new InteractionApplyResult(
+                                    getCase(caseId),
+                                    null,
+                                    "최종 제출 전 한 번 더 확인해 주세요."
+                            );
+                        }
+                        submitCase(
+                                caseId,
+                                new ApiModels.SubmitCaseRequest(
+                                        ApiModels.SubmissionChannel.MCP_API,
+                                        true,
+                                        true
+                                )
+                        );
+                        executed = true;
+                    } else if ("supplement-done".equalsIgnoreCase(actionId)) {
+                        respondSupplement(caseId, new ApiModels.SupplementResponseRequest("채팅에서 보완자료 제출 완료", List.of()));
+                        executed = true;
+                    }
+                }
+
+                if (!executed) {
+                    return new InteractionApplyResult(getCase(caseId), null, "선택 항목을 현재 단계에서 처리할 수 없어요.");
+                }
+                return new InteractionApplyResult(getCase(caseId), null, null);
+            }
+        } catch (ApiException ex) {
+            return new InteractionApplyResult(getCase(caseId), null, "현재 단계와 맞지 않는 요청입니다. 다시 확인해 주세요.");
+        }
+
+        return new InteractionApplyResult(detail, null, null);
+    }
+
+    private Map<String, Object> extractStructuredIntakeSlots(ApiModels.ChatTurnInteraction interaction) {
+        if (interaction == null || interaction.meta() == null || interaction.meta().isEmpty()) {
+            return Map.of();
+        }
+        Object rawFilledSlots = interaction.meta().get("filledSlots");
+        if (!(rawFilledSlots instanceof Map<?, ?> rawMap) || rawMap.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, Object> slots = new HashMap<>();
+        putAllowedSlot(slots, "noiseNow", rawMap.get("noiseNow"), Set.of("지금 진행 중", "방금 멈춤", "자주 반복"));
+        putAllowedSlot(slots, "safety", rawMap.get("safety"), Set.of("위협 징후 없음", "잘 모르겠음", SAFETY_DANGER));
+        putAllowedSlot(slots, "residence", rawMap.get("residence"), Set.of("아파트", "빌라", "오피스텔", "기타"));
+        putAllowedSlot(slots, "management", rawMap.get("management"), Set.of("있음", "없음", "모름"));
+        putAllowedSlot(slots, "sourceCertainty", rawMap.get("sourceCertainty"), Set.of("호수까지 확실", "층은 확실(호수 불명)", "모름"));
+        putAllowedSlot(slots, "noiseType", rawMap.get("noiseType"), Set.of("충격 소음(쿵쿵)", "공기전달 소음(TV/음악)", "둘 다", "잘 모르겠음"));
+        putAllowedSlot(slots, "frequency", rawMap.get("frequency"), Set.of("주 1회 이하", "주 2~3회", "거의 매일", "불규칙"));
+        putAllowedSlot(slots, "timeBand", rawMap.get("timeBand"), Set.of("저녁", "심야", "새벽", "불규칙"));
+
+        String startedAt = toTrimmedString(rawMap.get("startedAt"));
+        if (startedAt != null) {
+            slots.put("startedAt", startedAt);
+        }
+        return slots;
+    }
+
+    private void putAllowedSlot(
+            Map<String, Object> target,
+            String key,
+            Object rawValue,
+            Set<String> allowedValues
+    ) {
+        String value = toTrimmedString(rawValue);
+        if (value == null) {
+            return;
+        }
+        if (allowedValues.contains(value)) {
+            target.put(key, value);
+        }
+    }
+
+    private String toTrimmedString(Object rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        String value = String.valueOf(rawValue).trim();
+        return value.isEmpty() ? null : value;
+    }
+
+    private void mergeIntakeSlots(UUID caseId, Map<String, Object> structuredSlots) {
+        if (structuredSlots.isEmpty()) {
+            return;
+        }
+        CaseAggregate aggregate = loadAggregate(caseId);
+        aggregate.filledSlots.putAll(structuredSlots);
+        persistCase(aggregate);
+    }
+
+    private boolean isGeneralChatMode(ApiModels.CaseDetail detail) {
+        return detail.status() == ApiModels.CaseStatus.RECEIVED
+                && "GENERAL_CHAT".equalsIgnoreCase(detail.currentActionRequired());
+    }
+
+    private boolean shouldActivateIntakeMode(
+            String userMessage,
+            List<ApiModels.ChatTurnHistoryMessage> recentMessages
+    ) {
+        if (userMessage == null || userMessage.isBlank()) {
+            return false;
+        }
+        String normalized = userMessage.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+        for (String token : INTAKE_ACTIVATION_TOKENS) {
+            if (normalized.contains(token.replaceAll("\\s+", "").toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+
+        for (String token : INTAKE_INTENT_HINT_TOKENS) {
+            if (normalized.contains(token.replaceAll("\\s+", "").toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+
+        if (AFFIRMATIVE_TOKENS.contains(userMessage.trim())
+                || AFFIRMATIVE_TOKENS.contains(normalized)) {
+            for (int i = recentMessages.size() - 1; i >= 0; i--) {
+                ApiModels.ChatTurnHistoryMessage message = recentMessages.get(i);
+                if (!"ASSISTANT".equalsIgnoreCase(message.role())) {
+                    continue;
+                }
+                String assistantText = message.text() == null ? "" : message.text();
+                String assistantNormalized = assistantText.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+                if (assistantNormalized.contains("진행할까요")
+                        || assistantNormalized.contains("접수를도와드릴수있어요")
+                        || assistantNormalized.contains("접수도와드릴수있어요")) {
+                    return true;
+                }
+                break;
+            }
+        }
+        return false;
+    }
+
+    private ApiModels.CaseDetail activateIntakeMode(UUID caseId, ApiModels.CaseDetail detail) {
+        if (!isGeneralChatMode(detail)) {
+            return detail;
+        }
+        CaseAggregate aggregate = loadAggregate(caseId);
+        if (!"GENERAL_CHAT".equalsIgnoreCase(aggregate.caseEntity.getCurrentActionRequired())) {
+            return toCaseDetail(aggregate);
+        }
+        aggregate.caseEntity.setCurrentActionRequired("INTAKE_REQUIRED");
+        persistCase(aggregate);
+        return toCaseDetail(aggregate);
     }
 
     private ApiModels.CaseDetail ensureRoutingPrepared(UUID caseId, ApiModels.CaseDetail detail) {
@@ -358,6 +1036,77 @@ public class CaseWorkflowService {
                 Instant.now(),
                 "chat-turn demo evidence"
         );
+    }
+
+    private boolean isEvidenceOrSubmissionState(ApiModels.CaseStatus status) {
+        return status == ApiModels.CaseStatus.ROUTE_CONFIRMED
+                || status == ApiModels.CaseStatus.EVIDENCE_COLLECTING
+                || status == ApiModels.CaseStatus.FORMAL_SUBMISSION_READY
+                || status == ApiModels.CaseStatus.SUPPLEMENT_REQUIRED;
+    }
+
+    private List<String> normalizeSelectionIds(List<String> selectedIds) {
+        if (selectedIds == null || selectedIds.isEmpty()) {
+            return List.of();
+        }
+        return selectedIds.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .toList();
+    }
+
+    private List<String> normalizeSelectionLabels(List<String> selectedLabels) {
+        if (selectedLabels == null || selectedLabels.isEmpty()) {
+            return List.of();
+        }
+        return selectedLabels.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .toList();
+    }
+
+    private boolean hasExplicitSubmitConfirm(ApiModels.ChatTurnInteraction interaction) {
+        if (interaction == null) {
+            return false;
+        }
+        if (interaction.interactionType() == ApiModels.ChatInteractionType.SYSTEM_CONFIRM) {
+            return true;
+        }
+        Map<String, Object> meta = interaction.meta();
+        if (meta == null || meta.isEmpty()) {
+            return false;
+        }
+        Object confirmed = meta.get("confirmed");
+        if (confirmed instanceof Boolean value) {
+            return value;
+        }
+        return confirmed != null && "true".equalsIgnoreCase(confirmed.toString());
+    }
+
+    private List<String> inferActionIdsFromLabels(List<String> labels) {
+        if (labels == null || labels.isEmpty()) {
+            return List.of();
+        }
+        List<String> actionIds = new ArrayList<>();
+        for (String label : labels) {
+            String normalized = label.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+            if (containsAny(normalized, "녹음파일첨부", "녹음파일", "오디오첨부", "audio")) {
+                actionIds.add("evidence-audio");
+            } else if (containsAny(normalized, "동영상첨부", "영상첨부", "동영상", "영상", "video")) {
+                actionIds.add("evidence-video");
+            } else if (containsAny(normalized, "소음일지첨부", "소음일지", "로그첨부", "log")) {
+                actionIds.add("evidence-log");
+            } else if (containsAny(normalized, "제출진행확인", "바로제출", "제출하기", "정부24연계", "submit")) {
+                actionIds.add("submit-confirm");
+            } else if (containsAny(normalized, "보완제출", "보완완료", "supplement")) {
+                actionIds.add("supplement-done");
+            } else if (containsAny(normalized, "상태새로고침", "새로고침", "refresh")) {
+                actionIds.add("status-refresh");
+            } else if (containsAny(normalized, "처음으로돌아가기", "다시시작", "restart")) {
+                actionIds.add("status-restart");
+            }
+        }
+        return List.copyOf(actionIds);
     }
 
     private String resolveRouteOptionIdByMessage(ApiModels.CaseDetail detail, String userMessage) {
@@ -857,6 +1606,10 @@ public class CaseWorkflowService {
                 }
             }
 
+            List<String> requiredFields = detail.intake() == null || detail.intake().filledSlots() == null
+                    ? List.of()
+                    : missingSlots(detail.intake().filledSlots());
+
             return new ApiModels.ChatUiHint(
                     followUpInterface.interfaceType() == ApiModels.FollowUpInterfaceType.DATE
                             ? ApiModels.ChatUiType.OPTION_LIST
@@ -868,7 +1621,12 @@ public class CaseWorkflowService {
                     null,
                     null,
                     options,
-                    Map.of("flowStep", "intake")
+                    Map.of(
+                            "flowStep", "intake",
+                            "requiredFields", requiredFields,
+                            "submitAllowed", false,
+                            "requiresExplicitConfirm", false
+                    )
             );
         }
 
@@ -1017,9 +1775,11 @@ public class CaseWorkflowService {
         if (trimmed.isEmpty()) {
             return;
         }
+        String compact = trimmed.replaceAll("\\s+", "");
 
         if (equalsAny(trimmed, "생활소음 접수 계속")
-                || containsAny(trimmed, "접수 계속", "계속 진행")) {
+                || containsAny(trimmed, "접수 계속", "계속 진행")
+                || containsAnyCompact(compact, "생활소음접수계속", "접수계속", "계속진행")) {
             filledSlots.put("safetyContinue", true);
         }
 
@@ -1029,22 +1789,34 @@ public class CaseWorkflowService {
             filledSlots.put("noiseNow", "방금 멈춤");
         } else if (equalsAny(trimmed, "자주 반복")) {
             filledSlots.put("noiseNow", "자주 반복");
-        } else if (containsAny(trimmed, "지금도", "현재도", "진행 중")) {
+        } else if (containsAny(trimmed, "지금도", "현재도", "진행 중")
+                || containsAnyCompact(compact, "현재소음상태지금진행중", "현재소음상태방금멈춤", "현재소음상태자주반복", "방금멈춤", "자주반복")) {
+            if (containsAnyCompact(compact, "방금멈춤")) {
+                filledSlots.put("noiseNow", "방금 멈춤");
+            } else if (containsAnyCompact(compact, "자주반복")) {
+                filledSlots.put("noiseNow", "자주 반복");
+            } else {
+                filledSlots.put("noiseNow", "지금 진행 중");
+            }
+        } else if (containsAnyCompact(compact, "현재소음상태지금진행중")) {
             filledSlots.put("noiseNow", "지금 진행 중");
         }
 
         if (equalsAny(trimmed, "위협 징후 없음", "없음(생활소음)")) {
             filledSlots.put("safety", "위협 징후 없음");
-        } else if (containsAny(trimmed, "위협 징후 없음", "안전 문제 없음")) {
+        } else if (containsAny(trimmed, "위협 징후 없음", "안전 문제 없음")
+                || containsAnyCompact(compact, "안전긴급도위협징후없음", "위협징후없음", "안전문제없음")) {
             filledSlots.put("safety", "위협 징후 없음");
         } else if (equalsAny(trimmed, "잘 모르겠음")) {
             filledSlots.put("safety", "잘 모르겠음");
-        } else if (containsAny(trimmed, "안전은 잘 모르겠", "위험 여부는 잘 모르겠")) {
+        } else if (containsAny(trimmed, "안전은 잘 모르겠", "위험 여부는 잘 모르겠")
+                || containsAnyCompact(compact, "안전긴급도잘모르겠음", "위험여부잘모르겠", "안전잘모르겠")) {
             filledSlots.put("safety", "잘 모르겠음");
         } else if (equalsAny(trimmed, "위협 징후 있음", "있음(위험)")) {
             filledSlots.put("safety", SAFETY_DANGER);
         } else if (containsAny(trimmed, "폭행", "스토킹", "칼", "죽이", "협박", "기물파손")
-                || containsAny(trimmed, "위협 징후 있음")) {
+                || containsAny(trimmed, "위협 징후 있음")
+                || containsAnyCompact(compact, "안전긴급도위협징후있음", "위협징후있음", "있음위험")) {
             filledSlots.put("safety", SAFETY_DANGER);
         }
 
@@ -1056,6 +1828,8 @@ public class CaseWorkflowService {
             filledSlots.put("residence", "빌라");
         } else if (containsAny(trimmed, "오피스텔")) {
             filledSlots.put("residence", "오피스텔");
+        } else if (containsAnyCompact(compact, "거주형태기타", "주거형태기타")) {
+            filledSlots.put("residence", "기타");
         }
 
         if (equalsAny(trimmed, "있음", "없음", "모름")) {
@@ -1074,6 +1848,10 @@ public class CaseWorkflowService {
 
         if (equalsAny(trimmed, "충격 소음(쿵쿵)", "공기전달 소음(TV/음악)", "둘 다", "잘 모르겠음")) {
             filledSlots.put("noiseType", trimmed);
+        } else if (containsAnyCompact(compact, "소음유형둘다", "둘다")) {
+            filledSlots.put("noiseType", "둘 다");
+        } else if (containsAnyCompact(compact, "소음유형잘모르겠음", "소음유형모름")) {
+            filledSlots.put("noiseType", "잘 모르겠음");
         } else if (containsAny(trimmed, "쿵", "발망치", "뛰", "의자", "가구")) {
             filledSlots.put("noiseType", "충격 소음(쿵쿵)");
         } else if (containsAny(trimmed, "tv", "음악", "오디오", "스피커")) {
@@ -1082,13 +1860,17 @@ public class CaseWorkflowService {
 
         if (equalsAny(trimmed, "거의 매일", "주 2~3회", "주 1회 이하", "불규칙")) {
             filledSlots.put("frequency", trimmed);
-        } else if (containsAny(trimmed, "거의 매일", "매일")) {
+        } else if (containsAny(trimmed, "거의 매일", "매일")
+                || containsAnyCompact(compact, "반복빈도거의매일")) {
             filledSlots.put("frequency", "거의 매일");
-        } else if (containsAny(trimmed, "주 2", "주2", "주 3", "주3")) {
+        } else if (containsAny(trimmed, "주 2", "주2", "주 3", "주3")
+                || containsAnyCompact(compact, "반복빈도주2~3회", "반복빈도주2회", "반복빈도주3회")) {
             filledSlots.put("frequency", "주 2~3회");
-        } else if (containsAny(trimmed, "주 1", "주1", "가끔")) {
+        } else if (containsAny(trimmed, "주 1", "주1", "가끔")
+                || containsAnyCompact(compact, "반복빈도주1회이하")) {
             filledSlots.put("frequency", "주 1회 이하");
-        } else if (containsAny(trimmed, "불규칙")) {
+        } else if (containsAny(trimmed, "불규칙")
+                || containsAnyCompact(compact, "반복빈도불규칙")) {
             filledSlots.put("frequency", "불규칙");
         }
 
@@ -1100,10 +1882,14 @@ public class CaseWorkflowService {
             filledSlots.put("timeBand", "새벽");
         } else if (containsAny(trimmed, "저녁", "밤")) {
             filledSlots.put("timeBand", "저녁");
+        } else if (containsAnyCompact(compact, "주발생시간불규칙", "시간대불규칙")) {
+            filledSlots.put("timeBand", "불규칙");
         }
 
         if (equalsAny(trimmed, "호수까지 확실", "층은 확실(호수 불명)", "모름")) {
             filledSlots.put("sourceCertainty", trimmed);
+        } else if (containsAnyCompact(compact, "발생원특정모름", "발생원모름")) {
+            filledSlots.put("sourceCertainty", "모름");
         } else if (containsAny(trimmed, "호수", "몇 호", "동 ")) {
             filledSlots.put("sourceCertainty", "호수까지 확실");
         } else if (containsAny(trimmed, "층", "윗집")) {
@@ -1140,6 +1926,16 @@ public class CaseWorkflowService {
         String normalizedText = text.toLowerCase();
         for (String keyword : keywords) {
             if (normalizedText.contains(keyword.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsAnyCompact(String compactText, String... keywords) {
+        String normalizedText = compactText == null ? "" : compactText.toLowerCase(Locale.ROOT);
+        for (String keyword : keywords) {
+            if (normalizedText.contains(keyword.toLowerCase(Locale.ROOT))) {
                 return true;
             }
         }
@@ -1363,7 +2159,14 @@ public class CaseWorkflowService {
             this.decompositionNodes = decompositionNodes;
             this.routingOptions = routingOptions;
             this.evidenceItems = evidenceItems;
-            this.timeline = timeline;
+                this.timeline = timeline;
         }
+    }
+
+    private record InteractionApplyResult(
+            ApiModels.CaseDetail detail,
+            ApiModels.IntakeUpdateResponse intakeUpdate,
+            String noticeMessage
+    ) {
     }
 }
