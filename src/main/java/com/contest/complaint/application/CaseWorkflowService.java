@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -1199,6 +1200,18 @@ public class CaseWorkflowService {
         }
 
         List<ApiModels.RoutingOption> options = new ArrayList<>();
+        String housingType = aggregate.caseEntity.getHousingType() == null
+                ? ""
+                : aggregate.caseEntity.getHousingType().trim();
+        String residenceSlot = Objects.toString(aggregate.filledSlots.get("residence"), "").trim();
+        String managementSlot = Objects.toString(aggregate.filledSlots.get("management"), "").trim();
+        boolean managementOfficeUnavailable = "없음".equals(managementSlot);
+        boolean apartmentRouteEligible = "APARTMENT".equalsIgnoreCase(housingType) || "아파트".equals(residenceSlot);
+        boolean neighborCenterEligible = apartmentRouteEligible
+                || "VILLA".equalsIgnoreCase(housingType)
+                || "OFFICETEL".equalsIgnoreCase(housingType)
+                || "빌라".equals(residenceSlot)
+                || "오피스텔".equals(residenceSlot);
 
         if (aggregate.caseEntity.isRiskSignalDetected()) {
             options.add(new ApiModels.RoutingOption(
@@ -1211,15 +1224,18 @@ public class CaseWorkflowService {
             ));
         }
 
-        if ("APARTMENT".equalsIgnoreCase(aggregate.caseEntity.getHousingType())) {
+        if (apartmentRouteEligible && !managementOfficeUnavailable) {
             options.add(new ApiModels.RoutingOption(
                     "opt-management-office",
                     ApiModels.RoutingChannelType.MANAGEMENT_OFFICE,
                     "관리사무소 조정 요청",
                     2,
-                    "아파트 거주 형태에서 1차 조정 채널입니다.",
+                    "관리주체가 있는 경우 우선 시도할 수 있는 1차 조정 채널입니다.",
                     List.of("소음 일지", "녹음 파일")
             ));
+        }
+
+        if (neighborCenterEligible) {
             options.add(new ApiModels.RoutingOption(
                     "opt-neighbor-center",
                     ApiModels.RoutingChannelType.NEIGHBOR_CENTER,
