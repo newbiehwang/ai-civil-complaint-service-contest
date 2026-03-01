@@ -34,6 +34,7 @@ class ChatListScreen extends StatefulWidget {
     required this.sessions,
     required this.onOpenSession,
     required this.onCreateSession,
+    required this.onDeleteSession,
     required this.onLogout,
     required this.accountId,
     super.key,
@@ -42,6 +43,7 @@ class ChatListScreen extends StatefulWidget {
   final List<ChatSessionSummary> sessions;
   final ValueChanged<String> onOpenSession;
   final VoidCallback onCreateSession;
+  final ValueChanged<String> onDeleteSession;
   final VoidCallback onLogout;
   final String accountId;
 
@@ -216,10 +218,43 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         separatorBuilder: (_, __) => const SizedBox(height: 24),
                         itemBuilder: (context, index) {
                           final session = sessions[index];
-                          return _SessionCard(
-                            session: session,
-                            onTap: () =>
-                                widget.onOpenSession(session.sessionId),
+                          return Dismissible(
+                            key: ValueKey('dismiss-${session.sessionId}'),
+                            direction: DismissDirection.endToStart,
+                            dismissThresholds: const {
+                              DismissDirection.endToStart: 0.35,
+                            },
+                            movementDuration: const Duration(milliseconds: 220),
+                            resizeDuration: const Duration(milliseconds: 180),
+                            background: const SizedBox.shrink(),
+                            secondaryBackground: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE14949),
+                                borderRadius:
+                                    BorderRadius.circular(KrdsTokens.radiusXl),
+                              ),
+                              alignment: Alignment.centerRight,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 24),
+                              child: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                            confirmDismiss: (_) async {
+                              final approved =
+                                  await _confirmDeleteSession(session);
+                              if (approved) {
+                                widget.onDeleteSession(session.sessionId);
+                              }
+                              return approved;
+                            },
+                            child: _SessionCard(
+                              session: session,
+                              onTap: () =>
+                                  widget.onOpenSession(session.sessionId),
+                            ),
                           );
                         },
                       ),

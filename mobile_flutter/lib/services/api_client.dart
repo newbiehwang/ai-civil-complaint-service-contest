@@ -303,6 +303,52 @@ class ChatTurnResponseDto {
   }
 }
 
+class ChatTurnInteractionPayload {
+  const ChatTurnInteractionPayload({
+    required this.interactionType,
+    this.selectedOptionIds = const <String>[],
+    this.selectedOptionLabels = const <String>[],
+    this.sourceUiType = 'NONE',
+    this.meta = const <String, dynamic>{},
+  });
+
+  final String interactionType;
+  final List<String> selectedOptionIds;
+  final List<String> selectedOptionLabels;
+  final String sourceUiType;
+  final Map<String, dynamic> meta;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'interactionType': interactionType,
+      'selectedOptionIds': selectedOptionIds,
+      'selectedOptionLabels': selectedOptionLabels,
+      'sourceUiType': sourceUiType,
+      'meta': meta,
+    };
+  }
+}
+
+class ChatTurnRecentMessagePayload {
+  const ChatTurnRecentMessagePayload({
+    required this.role,
+    required this.text,
+    required this.source,
+  });
+
+  final String role;
+  final String text;
+  final String source;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'role': role,
+      'text': text,
+      'source': source,
+    };
+  }
+}
+
 class ApiClient {
   ApiClient({String? baseUrl, String? jwt, bool? useBackend})
       : _baseUrl =
@@ -628,6 +674,10 @@ class ApiClient {
     String housingType = 'APARTMENT',
     bool consentAccepted = true,
     List<String> uiCapabilities = const <String>[],
+    ChatTurnInteractionPayload? interaction,
+    String? lastUiHintType,
+    List<ChatTurnRecentMessagePayload> recentMessages =
+        const <ChatTurnRecentMessagePayload>[],
   }) async {
     final context = <String, dynamic>{
       if (caseId != null && caseId.trim().isNotEmpty) 'caseId': caseId.trim(),
@@ -644,6 +694,13 @@ class ApiClient {
         'userMessage': userMessage,
         'context': context,
         'uiCapabilities': uiCapabilities,
+        if (interaction != null) 'interaction': interaction.toJson(),
+        if (lastUiHintType != null && lastUiHintType.trim().isNotEmpty)
+          'lastUiHintType': lastUiHintType.trim(),
+        if (recentMessages.isNotEmpty)
+          'recentMessages': recentMessages
+              .map((message) => message.toJson())
+              .toList(growable: false),
       },
     );
 

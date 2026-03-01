@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../services/api_client.dart';
+import '../../services/auth_session.dart';
 import '../../services/error_map.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/krds_tokens.dart';
@@ -344,7 +345,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   bool _isMiniInterfaceCollapsed = false;
   bool _hasIntroBridgeShown = false;
   int _aiAnimationNonce = 0;
-  String _aiText = '안녕하세요. 정부24 민원 서비스 도우미입니다.\n무엇을 도와드릴까요?';
+  String _aiText = '안녕하세요, 정부24 민원 서비스 도우미입니다.\n무엇을 도와드릴까요?';
   DemoStep _step = DemoStep.waitingIssue;
   MiniInterfaceType _miniType = MiniInterfaceType.none;
   List<MiniOption> _options = const [];
@@ -391,6 +392,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String _backendUiSelectionMode = 'NONE';
   bool _forceLocalDemoMode = false;
   bool _isBackendRequestInFlight = false;
+  bool _wasConversationScrollLocked = false;
   Future<void> _backendSyncQueue = Future<void>.value();
   final List<ChatHistoryEntry> _historyEntries = <ChatHistoryEntry>[];
 
@@ -413,6 +415,18 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _inputController.addListener(_handleInputControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (widget.initialSnapshot == null &&
+          _historyEntries.isEmpty &&
+          _step == DemoStep.waitingIssue &&
+          _isBackendEnabled) {
+        unawaited(
+          _requestBackendTurnForText(
+            '',
+            thinkingDuration: const Duration(milliseconds: 240),
+            allowLocalFallback: false,
+          ),
+        );
+      }
       if (_isAiAnswerReady) {
         _pinCurrentAiToTop();
       }
@@ -498,6 +512,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       ..clear()
       ..addAll(snapshot.historyEntries);
     _hasIntroBridgeShown = snapshot.hasIntroBridgeShown;
+    _wasConversationScrollLocked =
+        snapshot.isThinking || !snapshot.isAiAnswerReady;
   }
 
   ChatbotScreenSnapshot _buildSnapshot() {
@@ -650,7 +666,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _aiAnimationNonce += 1;
       _isAiAnswerReady = false;
       _isMiniInterfaceCollapsed = false;
-      _aiText = text;
+      _aiText = _formatAiTextForDisplay(text);
       _step = step;
       _miniType = miniType;
       _options = options;
@@ -667,6 +683,25 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _evidenceV2AttachmentNames.clear();
       }
     });
+  }
+
+  String _formatAiTextForDisplay(String raw) {
+    final normalized =
+        raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+    if (normalized.isEmpty) return normalized;
+
+    final compact = normalized
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'[ \t]*\n+[ \t]*'), '\n')
+        .trim();
+    if (compact.isEmpty) return normalized;
+
+    final withLineBreak = compact.replaceAllMapped(
+      RegExp(r'([.!?。！？])\s*(?=\S)'),
+      (match) => '${match.group(1)}\n',
+    );
+
+    return withLineBreak.replaceAll(RegExp(r'\n{2,}'), '\n').trim();
   }
 
   void _handleAiTextAnimationCompleted() {
@@ -741,6 +776,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _measureReceivingUnit == true;
   }
 
+  bool get _isServerMode => AuthSession.useBackend;
+  bool get _allowLocalDemoFallback => !_isServerMode;
+
   bool get _isBackendEnabled => _apiClient.isConfigured && !_forceLocalDemoMode;
 
   String _housingTypeForBackend() {
@@ -757,8 +795,14 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
   }
 
-  Future<ChatTurnResponseDto> _sendChatTurnMessage(String message) async {
+  Future<ChatTurnResponseDto> _sendChatTurnMessage(
+    String message, {
+    ChatTurnInteractionPayload? interaction,
+  }) async {
     final traceId = _backendTraceId ?? _bootTraceId;
+    final lastUiHintType = _backendUiHintType == 'NONE'
+        ? _sourceUiTypeFromMiniType(_miniType)
+        : _backendUiHintType;
     final response = await _apiClient.chatTurn(
       traceId: traceId,
       userMessage: message,
@@ -771,6 +815,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         'PATH_CHOOSER',
         'STATUS_FEED',
       ],
+      interaction: interaction,
+      lastUiHintType: lastUiHintType,
+      recentMessages: _buildRecentMessagesForPlanner(),
     );
     if (response.sessionId.trim().isNotEmpty) {
       _backendCaseId = response.sessionId.trim();
@@ -790,6 +837,42 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     return 'NONE';
   }
 
+  String _sourceUiTypeFromMiniType(MiniInterfaceType miniType) {
+    switch (miniType) {
+      case MiniInterfaceType.listPicker:
+        return 'LIST_PICKER';
+      case MiniInterfaceType.optionList:
+      case MiniInterfaceType.datePicker:
+      case MiniInterfaceType.timePicker:
+        return 'OPTION_LIST';
+      case MiniInterfaceType.pathChooser:
+        return 'PATH_CHOOSER';
+      case MiniInterfaceType.summaryCard:
+        return 'SUMMARY_CARD';
+      case MiniInterfaceType.statusFeed:
+        return 'STATUS_FEED';
+      default:
+        return 'NONE';
+    }
+  }
+
+  List<ChatTurnRecentMessagePayload> _buildRecentMessagesForPlanner() {
+    if (_historyEntries.isEmpty) {
+      return const <ChatTurnRecentMessagePayload>[];
+    }
+    final start = _historyEntries.length > 10 ? _historyEntries.length - 10 : 0;
+    final slice = _historyEntries.sublist(start);
+    return slice
+        .map(
+          (entry) => ChatTurnRecentMessagePayload(
+            role: entry.isAi ? 'ASSISTANT' : 'USER',
+            text: entry.text,
+            source: entry.fromMiniInterface ? 'MINI_INTERFACE' : 'CHAT_INPUT',
+          ),
+        )
+        .toList(growable: false);
+  }
+
   MiniInterfaceType _miniTypeFromBackendUiHint({
     required String uiType,
     required List<MiniOption> options,
@@ -801,13 +884,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             ? MiniInterfaceType.none
             : MiniInterfaceType.listPicker;
       case 'OPTION_LIST':
-        return options.isEmpty
-            ? MiniInterfaceType.optionList
-            : MiniInterfaceType.listPicker;
+        return MiniInterfaceType.optionList;
       case 'PATH_CHOOSER':
         return options.isEmpty
             ? MiniInterfaceType.none
-            : MiniInterfaceType.listPicker;
+            : MiniInterfaceType.pathChooser;
       case 'SUMMARY_CARD':
         return MiniInterfaceType.summaryCard;
       case 'STATUS_FEED':
@@ -815,6 +896,31 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       default:
         return MiniInterfaceType.none;
     }
+  }
+
+  List<String> _requiredFieldsFromUiMeta(Map<String, dynamic> meta) {
+    final raw = meta['requiredFields'];
+    if (raw is! List) return const <String>[];
+    return raw
+        .map((value) => value?.toString().trim() ?? '')
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  DemoStep _intakeStepFromRequiredFields(List<String> requiredFields) {
+    bool hasAny(Set<String> targets) =>
+        requiredFields.any((field) => targets.contains(field));
+
+    if (hasAny(<String>{'noiseNow', 'safety', 'safetyContinue'})) {
+      return DemoStep.noiseNow;
+    }
+    if (hasAny(<String>{'residence', 'management', 'sourceCertainty'})) {
+      return DemoStep.multiForm;
+    }
+    if (hasAny(<String>{'noiseType', 'frequency', 'timeBand'})) {
+      return DemoStep.dateTime;
+    }
+    return _step;
   }
 
   DemoStep _stepFromBackendTurn(
@@ -937,23 +1043,60 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   Future<void> _applyBackendTurn(ChatTurnResponseDto response) async {
     final hint = response.uiHint;
     final options = await _resolveBackendUiOptions(hint);
-    final miniType = _miniTypeFromBackendUiHint(
-      uiType: hint.type,
-      options: options,
+    final flowStep =
+        (hint.meta['flowStep']?.toString() ?? '').trim().toLowerCase();
+    final requiredFields = _requiredFieldsFromUiMeta(hint.meta);
+    final currentActionRequired =
+        (response.statePatch['currentActionRequired']?.toString() ?? '')
+            .trim()
+            .toUpperCase();
+    final forceNoMiniInterface = currentActionRequired == 'GENERAL_CHAT';
+    final forceIntakeMultiForm = !forceNoMiniInterface &&
+        currentActionRequired == 'INTAKE_REQUIRED' &&
+        flowStep == 'intake' &&
+        requiredFields.isNotEmpty;
+    final effectiveUiType =
+        forceNoMiniInterface ? 'NONE' : hint.type.trim().toUpperCase();
+    final effectiveOptions =
+        forceNoMiniInterface ? const <MiniOption>[] : options;
+    final mappedMiniType = _miniTypeFromBackendUiHint(
+      uiType: effectiveUiType,
+      options: effectiveOptions,
     );
-    final nextStep = _stepFromBackendTurn(response, miniType, options);
+    final miniType =
+        forceIntakeMultiForm ? MiniInterfaceType.multiForm : mappedMiniType;
+    final nextStep = forceIntakeMultiForm
+        ? _intakeStepFromRequiredFields(requiredFields)
+        : _stepFromBackendTurn(response, miniType, effectiveOptions);
     final assistantMessage = response.assistantMessage.trim().isEmpty
         ? '다음 단계를 진행해 주세요.'
         : response.assistantMessage.trim();
+    final selectedRouteLabel =
+        (response.statePatch['selectedRouteLabel']?.toString() ?? '').trim();
+    final selectedRouteOptionId =
+        (response.statePatch['selectedRouteOptionId']?.toString() ?? '').trim();
+
+    String? routeLabelToSync;
+    if (selectedRouteLabel.isNotEmpty) {
+      routeLabelToSync = selectedRouteLabel;
+    } else if (selectedRouteOptionId.isNotEmpty) {
+      routeLabelToSync =
+          _optionLabelById(effectiveOptions, selectedRouteOptionId) ??
+              _optionLabelById(_options, selectedRouteOptionId);
+    }
+    if (routeLabelToSync != null && routeLabelToSync.trim().isNotEmpty) {
+      _data = _data.copyWith(route: routeLabelToSync.trim());
+    }
 
     if (!mounted) return;
     _setAi(
       text: assistantMessage,
       step: nextStep,
       miniType: miniType,
-      options: options,
-      backendUiHintDriven: miniType != MiniInterfaceType.none,
-      backendUiHintType: hint.type.trim().toUpperCase(),
+      options: effectiveOptions,
+      backendUiHintDriven:
+          !forceNoMiniInterface && miniType != MiniInterfaceType.none,
+      backendUiHintType: effectiveUiType,
       backendUiSelectionMode:
           _normalizeBackendSelectionMode(hint.selectionMode),
     );
@@ -978,7 +1121,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     VoidCallback? localFallback;
     try {
       await Future<void>.delayed(thinkingDuration);
-      final response = await request();
+      final response = await _requestWithRetry(request);
       if (mounted && _forceLocalDemoMode) {
         setState(() {
           _forceLocalDemoMode = false;
@@ -1003,7 +1146,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           );
         },
       );
-      if (allowLocalFallback) {
+      if (_allowLocalDemoFallback && allowLocalFallback) {
         localFallback = onFailureContinueLocal;
       }
     } finally {
@@ -1019,17 +1162,60 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
   }
 
+  Future<ChatTurnResponseDto> _requestWithRetry(
+    Future<ChatTurnResponseDto> Function() request,
+  ) async {
+    const maxAttempts = 2;
+    Object? lastError;
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await request();
+      } catch (error) {
+        lastError = error;
+        final isLast = attempt >= maxAttempts;
+        if (isLast || !_isRetryableChatError(error)) {
+          rethrow;
+        }
+        debugPrint(
+          '[chat-api-retry] attempt=$attempt reason=${error.runtimeType} trace=${_backendTraceId ?? _bootTraceId}',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 280));
+      }
+    }
+
+    throw lastError ?? StateError('Unknown chat request error');
+  }
+
+  bool _isRetryableChatError(Object error) {
+    if (error is ApiClientError) {
+      final code = error.code.trim().toUpperCase();
+      if (code == 'NETWORK_ERROR' ||
+          code == 'UNKNOWN_ERROR' ||
+          code == 'SERVICE_UNAVAILABLE' ||
+          code == 'LLM_UNAVAILABLE') {
+        return true;
+      }
+      if (error.status != null && error.status! >= 500) {
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
   Future<void> _requestBackendTurnForText(
     String userMessage, {
     Duration thinkingDuration = const Duration(milliseconds: 560),
+    ChatTurnInteractionPayload? interaction,
     VoidCallback? onFailureContinueLocal,
     bool allowLocalFallback = true,
   }) async {
     final message = userMessage.trim();
-    if (message.isEmpty) return;
+    if (message.isEmpty && interaction == null && !_isBackendEnabled) return;
 
     await _runBackendTurnRequest(
-      request: () => _sendChatTurnMessage(message),
+      request: () => _sendChatTurnMessage(message, interaction: interaction),
       thinkingDuration: thinkingDuration,
       onFailureContinueLocal: onFailureContinueLocal,
       allowLocalFallback: allowLocalFallback,
@@ -1044,35 +1230,42 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         .where((option) => _selectedOptionIds.contains(option.id))
         .toList(growable: false);
     if (selected.isEmpty) return;
+    final selectedIds =
+        selected.map((option) => option.id).where((id) => id.isNotEmpty).toList(
+              growable: false,
+            );
+    final selectedLabels = selected
+        .map((option) => option.label)
+        .where((label) => label.trim().isNotEmpty)
+        .toList(growable: false);
 
-    if (_backendUiHintType == 'PATH_CHOOSER') {
-      final caseId = _backendCaseId?.trim();
-      if (caseId == null || caseId.isEmpty) return;
+    final isSubmitConfirm = selectedIds.any(
+      (id) => id == 'submit-confirm' || id == 'submit-now',
+    );
+    final interaction = ChatTurnInteractionPayload(
+      interactionType: isSubmitConfirm ? 'SYSTEM_CONFIRM' : 'MINI_SELECTION',
+      selectedOptionIds: selectedIds,
+      selectedOptionLabels: selectedLabels,
+      sourceUiType: _backendUiHintType == 'NONE'
+          ? _sourceUiTypeFromMiniType(_miniType)
+          : _backendUiHintType,
+      meta: <String, dynamic>{
+        if (isSubmitConfirm) 'confirmed': true,
+      },
+    );
 
-      await _runBackendTurnRequest(
-        request: () async {
-          final traceId = _backendTraceId ?? _bootTraceId;
-          await _apiClient.confirmRouteDecision(
-            traceId: traceId,
-            caseId: caseId,
-            optionId: selected.first.id,
-          );
-          return _sendChatTurnMessage(selected.first.label);
-        },
-        thinkingDuration: const Duration(milliseconds: 420),
-        onFailureContinueLocal: onFailureContinueLocal,
-        allowLocalFallback: allowLocalFallback,
-      );
-      return;
-    }
-
-    final message = _backendUiSelectionMode == 'MULTIPLE'
-        ? selected.map((option) => option.label).join(', ')
-        : selected.first.label;
+    final message = selectedLabels.isEmpty
+        ? (_inputController.text.trim().isEmpty
+            ? '선택 완료'
+            : _inputController.text.trim())
+        : (_backendUiSelectionMode == 'MULTIPLE'
+            ? selectedLabels.join(', ')
+            : selectedLabels.first);
 
     await _requestBackendTurnForText(
       message,
       thinkingDuration: const Duration(milliseconds: 420),
+      interaction: interaction,
       onFailureContinueLocal: onFailureContinueLocal,
       allowLocalFallback: allowLocalFallback,
     );
@@ -1107,7 +1300,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
     if (!mounted) return;
     setState(() {
-      _forceLocalDemoMode = true;
+      if (_allowLocalDemoFallback) {
+        _forceLocalDemoMode = true;
+      }
       _isBackendUiHintDriven = false;
       _backendUiHintType = 'NONE';
       _backendUiSelectionMode = 'NONE';
@@ -1212,7 +1407,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       await Future<void>.delayed(const Duration(milliseconds: 420));
       if (!mounted) return;
 
-      await _sendChatTurnMessage(selectedLabel);
+      final response = await _sendChatTurnMessage(selectedLabel);
 
       if (!mounted) return;
       if (_forceLocalDemoMode) {
@@ -1224,11 +1419,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       if (!mounted) return;
 
       _data = _data.copyWith(route: selectedLabel);
-      _setAi(
-        text: '선택한 경로로 진행할게요.\n증거 제출을 진행해 주세요.',
-        step: DemoStep.evidenceV1,
-        miniType: MiniInterfaceType.optionList,
-      );
+      await _applyBackendTurn(response);
     } catch (error) {
       _showAiRequestFailureSnack(
         error,
@@ -1240,13 +1431,15 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           unawaited(_syncBackendRouteAndAdvance(selectedLabel));
         },
       );
-      if (!mounted) return;
-      _data = _data.copyWith(route: selectedLabel);
-      _setAi(
-        text: '선택한 경로로 진행할게요.\n증거 제출을 진행해 주세요.',
-        step: DemoStep.evidenceV1,
-        miniType: MiniInterfaceType.optionList,
-      );
+      if (_allowLocalDemoFallback) {
+        if (!mounted) return;
+        _data = _data.copyWith(route: selectedLabel);
+        _setAi(
+          text: '선택한 경로로 진행할게요.\n증거 제출을 진행해 주세요.',
+          step: DemoStep.evidenceV1,
+          miniType: MiniInterfaceType.optionList,
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -1463,11 +1656,54 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       '기본 정보 입력: ${residenceLabel ?? '미입력'}, ${managementLabel ?? '미입력'}, ${sourceCertaintyLabel ?? '미입력'}',
     );
 
-    _enqueueBackendSyncMessages(<String>[
-      if (residenceLabel != null) residenceLabel,
-      if (managementLabel != null) managementLabel,
-      if (sourceCertaintyLabel != null) sourceCertaintyLabel,
-    ]);
+    if (_isBackendEnabled) {
+      final messageParts = <String>[
+        if (residenceLabel != null) '거주 형태 $residenceLabel',
+        if (managementLabel != null) '관리사무소 $managementLabel',
+        if (sourceCertaintyLabel != null) '발생원 특정 $sourceCertaintyLabel',
+      ];
+      final message = messageParts.join(', ');
+      final interaction = ChatTurnInteractionPayload(
+        interactionType: 'MINI_SELECTION',
+        selectedOptionIds: <String>[
+          if (_intakeResidenceId != null) _intakeResidenceId!,
+          if (_intakeManagementId != null) _intakeManagementId!,
+          if (_intakeSourceCertaintyId != null) _intakeSourceCertaintyId!,
+        ],
+        selectedOptionLabels: <String>[
+          if (residenceLabel != null) residenceLabel,
+          if (managementLabel != null) managementLabel,
+          if (sourceCertaintyLabel != null) sourceCertaintyLabel,
+        ],
+        sourceUiType:
+            _backendUiHintType == 'NONE' ? 'LIST_PICKER' : _backendUiHintType,
+        meta: <String, dynamic>{
+          'filledSlots': <String, dynamic>{
+            if (residenceLabel != null) 'residence': residenceLabel,
+            if (managementLabel != null) 'management': managementLabel,
+            if (sourceCertaintyLabel != null)
+              'sourceCertainty': sourceCertaintyLabel,
+          },
+        },
+      );
+      unawaited(
+        _requestBackendTurnForText(
+          message,
+          interaction: interaction,
+          thinkingDuration: const Duration(milliseconds: 420),
+          onFailureContinueLocal: () {
+            _showThinkingThen(() {
+              _setAi(
+                text: '좋아요. 소음 패턴과 시작 시점을 입력해 주세요.',
+                step: DemoStep.dateTime,
+                miniType: MiniInterfaceType.multiForm,
+              );
+            });
+          },
+        ),
+      );
+      return;
+    }
 
     _showThinkingThen(() {
       _setAi(
@@ -1498,13 +1734,77 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       '소음 패턴 입력: ${noiseTypeLabel ?? '미입력'}, ${frequencyLabel ?? '미입력'}, ${timeBandLabel ?? '미입력'}',
     );
 
-    _enqueueBackendSyncMessages(<String>[
-      if (noiseTypeLabel != null) noiseTypeLabel,
-      if (frequencyLabel != null) frequencyLabel,
-      if (timeBandLabel != null) timeBandLabel,
-      if (_incidentDate != null) _formatDate(_incidentDate!),
-      if (_incidentTime != null) _formatTime(_incidentTime!),
-    ]);
+    if (_isBackendEnabled) {
+      final detailParts = <String>[
+        if (noiseTypeLabel != null) '소음 유형 $noiseTypeLabel',
+        if (frequencyLabel != null) '빈도 $frequencyLabel',
+        if (timeBandLabel != null) '시간대 $timeBandLabel',
+        if (_incidentDate != null) '발생 날짜 ${_formatDate(_incidentDate!)}',
+        if (_incidentTime != null) '발생 시간 ${_formatTime(_incidentTime!)}',
+      ];
+      final detailMessage = detailParts.join(', ');
+      final interaction = ChatTurnInteractionPayload(
+        interactionType: 'MINI_SELECTION',
+        selectedOptionIds: <String>[
+          if (_intakeNoiseTypeId != null) _intakeNoiseTypeId!,
+          if (_intakeFrequencyId != null) _intakeFrequencyId!,
+          if (_intakeTimeBandId != null) _intakeTimeBandId!,
+        ],
+        selectedOptionLabels: <String>[
+          if (noiseTypeLabel != null) noiseTypeLabel,
+          if (frequencyLabel != null) frequencyLabel,
+          if (timeBandLabel != null) timeBandLabel,
+          if (_incidentDate != null) _formatDate(_incidentDate!),
+          if (_incidentTime != null) _formatTime(_incidentTime!),
+        ],
+        sourceUiType:
+            _backendUiHintType == 'NONE' ? 'LIST_PICKER' : _backendUiHintType,
+        meta: <String, dynamic>{
+          'filledSlots': <String, dynamic>{
+            if (noiseTypeLabel != null) 'noiseType': noiseTypeLabel,
+            if (frequencyLabel != null) 'frequency': frequencyLabel,
+            if (timeBandLabel != null) 'timeBand': timeBandLabel,
+            if (_incidentDate != null && _incidentTime != null)
+              'startedAt':
+                  '${_formatDate(_incidentDate!)} ${_formatTime(_incidentTime!)}',
+          },
+        },
+      );
+      unawaited(
+        _requestBackendTurnForText(
+          detailMessage,
+          interaction: interaction,
+          thinkingDuration: const Duration(milliseconds: 420),
+          onFailureContinueLocal: () {
+            final eligibility = _evaluateEligibility();
+            _data = _data.copyWith(eligibilityReason: eligibility.reason);
+
+            if (!eligibility.eligible) {
+              _setAi(
+                text: '${eligibility.reason}\n대체 경로로 즉시 연결할게요.',
+                step: DemoStep.ineligible,
+                miniType: MiniInterfaceType.listPicker,
+                options: const [
+                  MiniOption(id: 'ineligible-next', label: '바로 연결'),
+                ],
+              );
+              return;
+            }
+
+            _setAi(
+              text: '정리해드릴게요.',
+              step: DemoStep.summary,
+              miniType: MiniInterfaceType.summaryCard,
+              options: const [
+                MiniOption(id: 'summary-edit', label: '수정'),
+                MiniOption(id: 'summary-next', label: '다음'),
+              ],
+            );
+          },
+        ),
+      );
+      return;
+    }
 
     final eligibility = _evaluateEligibility();
     _data = _data.copyWith(eligibilityReason: eligibility.reason);
@@ -1546,7 +1846,55 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     );
     _recordMiniResponse('현재 소음 상태: $noiseNowLabel / 안전 긴급도: $safetyLabel');
 
-    _enqueueBackendSyncMessages(<String>[noiseNowLabel, safetyLabel]);
+    if (_isBackendEnabled) {
+      final message = '현재 소음 상태 $noiseNowLabel, 안전 긴급도 $safetyLabel';
+      final interaction = ChatTurnInteractionPayload(
+        interactionType: 'MINI_SELECTION',
+        selectedOptionIds: <String>[
+          if (_triageNoiseNowId != null) _triageNoiseNowId!,
+          if (_triageSafetyId != null) _triageSafetyId!,
+        ],
+        selectedOptionLabels: <String>[noiseNowLabel, safetyLabel],
+        sourceUiType:
+            _backendUiHintType == 'NONE' ? 'LIST_PICKER' : _backendUiHintType,
+        meta: <String, dynamic>{
+          'filledSlots': <String, dynamic>{
+            'noiseNow': noiseNowLabel,
+            'safety': safetyLabel,
+          },
+        },
+      );
+      unawaited(
+        _requestBackendTurnForText(
+          message,
+          interaction: interaction,
+          thinkingDuration: const Duration(milliseconds: 420),
+          onFailureContinueLocal: () {
+            if (_triageSafetyId == 'safety-danger') {
+              _showThinkingThen(() {
+                _setAi(
+                  text:
+                      '위협·폭행 우려가 있으면 112 신고가 우선입니다.\n안전 안내를 확인한 뒤 계속 진행할 수 있어요.',
+                  step: DemoStep.safety,
+                  miniType: MiniInterfaceType.listPicker,
+                  options: const [
+                    MiniOption(id: 'safety-guide', label: '112 안전 안내 확인'),
+                    MiniOption(id: 'safety-continue', label: '생활소음 접수 계속'),
+                  ],
+                );
+              });
+              return;
+            }
+
+            _goIntakeMultiFormBasic(
+              '좋아요. 기본 정보를 입력해 주세요.',
+              resetSelections: true,
+            );
+          },
+        ),
+      );
+      return;
+    }
 
     if (_triageSafetyId == 'safety-danger') {
       _showThinkingThen(() {
@@ -1838,6 +2186,19 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _recordUserChatInput(input);
 
     if (_step == DemoStep.waitingIssue) {
+      if (_isBackendEnabled) {
+        _data = _data.copyWith(userIssue: input);
+        _hasIntroBridgeShown = true;
+        unawaited(
+          _requestBackendTurnForText(
+            input,
+            thinkingDuration: const Duration(milliseconds: 420),
+            allowLocalFallback: false,
+          ),
+        );
+        return;
+      }
+
       if (!_hasIntroBridgeShown) {
         _showThinkingThen(() {
           _hasIntroBridgeShown = true;
@@ -1855,7 +2216,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       final thinkingDuration = input == '1'
           ? const Duration(seconds: 3)
           : const Duration(milliseconds: 560);
-      _enqueueBackendSyncMessage(input);
       _showThinkingThen(() {
         _triageNoiseNowId = null;
         _triageSafetyId = null;
@@ -2181,8 +2541,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
               ? Align(
                   key: const ValueKey('ai-text-static'),
                   alignment: Alignment.topLeft,
-                  child: Text(
-                    _aiText,
+                  child: _MarkdownText(
+                    text: _aiText,
                     style: aiTextStyle,
                   ),
                 )
@@ -2205,6 +2565,16 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     double viewportHeight,
   ) {
     final isScrollLocked = _isThinking || !_isAiAnswerReady;
+    if (isScrollLocked != _wasConversationScrollLocked) {
+      _wasConversationScrollLocked = isScrollLocked;
+      if (isScrollLocked) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _pinCurrentAiToTop();
+        });
+      }
+    }
+
     final currentMessage = KeyedSubtree(
       key: const ValueKey('current-ai-message'),
       child: Container(
@@ -2214,27 +2584,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       ),
     );
 
-    if (isScrollLocked) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_conversationScrollController.hasClients) return;
-        if (_conversationScrollController.offset > 1) {
-          _conversationScrollController.jumpTo(0);
-        }
-      });
-
-      return ListView(
-        controller: _conversationScrollController,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        children: [currentMessage],
-      );
-    }
-
     return ListView(
       controller: _conversationScrollController,
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
+      physics: isScrollLocked
+          ? const NeverScrollableScrollPhysics()
+          : const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
       padding: EdgeInsets.zero,
       children: [
         for (final item in _historyEntries) _HistoryMessageLine(entry: item),
@@ -2594,7 +2950,21 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           },
         );
       case MiniInterfaceType.pathChooser:
+        final pathOptions = _options.isNotEmpty
+            ? _options
+            : const <MiniOption>[
+                MiniOption(
+                  id: 'path-recommended',
+                  label: '이웃사이센터 조정 신청',
+                  description: '층간소음 상담/조정 절차에 가장 빠르게 연결돼요.',
+                ),
+                MiniOption(
+                  id: 'path-alternative',
+                  label: '다른 기관 선택',
+                ),
+              ];
         return _PathChooserWidget(
+          options: pathOptions,
           selectedId:
               _selectedOptionIds.isEmpty ? null : _selectedOptionIds.first,
           onSelect: (id) {
@@ -3113,8 +3483,8 @@ class _HistoryMessageLine extends StatelessWidget {
           alignment: alignment,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 300),
-            child: Text(
-              entry.text,
+            child: _MarkdownText(
+              text: entry.text,
               style: const TextStyle(
                 color: AppColors.primary,
                 fontSize: 18,
@@ -5515,12 +5885,14 @@ class _SummaryItemRow extends StatelessWidget {
 
 class _PathChooserWidget extends StatefulWidget {
   const _PathChooserWidget({
+    required this.options,
     required this.selectedId,
     required this.onSelect,
     required this.canSubmit,
     required this.onSubmit,
   });
 
+  final List<MiniOption> options;
   final String? selectedId;
   final ValueChanged<String> onSelect;
   final bool canSubmit;
@@ -5533,8 +5905,32 @@ class _PathChooserWidget extends StatefulWidget {
 class _PathChooserWidgetState extends State<_PathChooserWidget> {
   bool _openReason = false;
 
+  String _compactPathTitle(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return raw;
+    final compact = trimmed.split(RegExp(r'\s*[—–-]\s*')).first.trim();
+    return compact.isEmpty ? trimmed : compact;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final options = widget.options.isNotEmpty
+        ? widget.options
+        : const <MiniOption>[
+            MiniOption(
+              id: 'path-recommended',
+              label: '이웃사이센터 조정 신청',
+              description: '층간소음 상담/조정 절차에 가장 빠르게 연결돼요.',
+            ),
+            MiniOption(
+              id: 'path-alternative',
+              label: '다른 기관 선택',
+            ),
+          ];
+    final recommended = options.first;
+    final alternatives =
+        options.length > 1 ? options.sublist(1) : const <MiniOption>[];
+
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: 356),
       child: SingleChildScrollView(
@@ -5545,11 +5941,14 @@ class _PathChooserWidgetState extends State<_PathChooserWidget> {
               width: double.infinity,
               child: _SelectableCardButton(
                 compact: true,
-                selected: widget.selectedId == 'path-recommended',
-                title: '이웃사이센터 조정 신청',
-                subtitle: '층간소음 상담/조정 절차에 가장 빠르게 연결돼요.',
+                selected: widget.selectedId == recommended.id,
+                title: _compactPathTitle(recommended.label),
+                subtitle: (recommended.description ?? '').trim().isEmpty
+                    ? '층간소음 상담/조정 절차에 가장 빠르게 연결돼요.'
+                    : recommended.description!.trim(),
                 leadingBadge: '추천',
-                onTap: () => widget.onSelect('path-recommended'),
+                onTap: () => widget.onSelect(recommended.id),
+                emphasizeTitle: false,
                 trailing: Align(
                   alignment: Alignment.centerLeft,
                   child: SizedBox(
@@ -5576,17 +5975,23 @@ class _PathChooserWidgetState extends State<_PathChooserWidget> {
                     : null,
               ),
             ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: _SelectableCardButton(
-                compact: true,
-                centerContent: true,
-                selected: widget.selectedId == 'path-alternative',
-                title: '다른 기관 선택',
-                onTap: () => widget.onSelect('path-alternative'),
+            for (final option in alternatives) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: _SelectableCardButton(
+                  compact: true,
+                  centerContent: true,
+                  selected: widget.selectedId == option.id,
+                  title: _compactPathTitle(option.label),
+                  subtitle: (option.description ?? '').trim().isEmpty
+                      ? null
+                      : option.description!.trim(),
+                  onTap: () => widget.onSelect(option.id),
+                  emphasizeTitle: false,
+                ),
               ),
-            ),
+            ],
             const SizedBox(height: 12),
             _PrimaryButton(
               label: '선택 완료',
@@ -6529,6 +6934,7 @@ class _SelectableCardButton extends StatefulWidget {
     this.extra,
     this.centerContent = false,
     this.compact = false,
+    this.emphasizeTitle = true,
   });
 
   final String title;
@@ -6540,6 +6946,7 @@ class _SelectableCardButton extends StatefulWidget {
   final Widget? extra;
   final bool centerContent;
   final bool compact;
+  final bool emphasizeTitle;
 
   @override
   State<_SelectableCardButton> createState() => _SelectableCardButtonState();
@@ -6622,11 +7029,13 @@ class _SelectableCardButtonState extends State<_SelectableCardButton> {
                 textAlign:
                     widget.centerContent ? TextAlign.center : TextAlign.left,
                 style: TextStyle(
-                  color:
-                      widget.selected ? AppColors.primary : AppColors.textMain,
+                  color: widget.emphasizeTitle && widget.selected
+                      ? AppColors.primary
+                      : AppColors.textMain,
                   fontSize: titleSize,
                   height: 1.25,
-                  fontWeight: FontWeight.w700,
+                  fontWeight:
+                      widget.emphasizeTitle ? FontWeight.w700 : FontWeight.w600,
                 ),
               ),
               if (widget.subtitle != null) ...[
@@ -6758,7 +7167,7 @@ class _AiCharFadeTextState extends State<_AiCharFadeText>
   late final AnimationController _controller;
   bool _completionNotified = false;
 
-  List<String> _chunks = const [];
+  List<_MarkdownStyledChar> _chunks = const [];
   int _totalMs = 0;
 
   @override
@@ -6800,10 +7209,6 @@ class _AiCharFadeTextState extends State<_AiCharFadeText>
     }
   }
 
-  List<String> _splitCharChunks(String text) {
-    return text.runes.map(String.fromCharCode).toList(growable: false);
-  }
-
   void _notifyCompleted() {
     if (_completionNotified) return;
     _completionNotified = true;
@@ -6816,7 +7221,7 @@ class _AiCharFadeTextState extends State<_AiCharFadeText>
   }
 
   void _restartCharFade() {
-    _chunks = _splitCharChunks(widget.text);
+    _chunks = _buildStyledChars(widget.text);
     final stepMs = widget.charStep.inMilliseconds;
     final fadeMs = widget.fadeDuration.inMilliseconds;
     _completionNotified = false;
@@ -6842,10 +7247,15 @@ class _AiCharFadeTextState extends State<_AiCharFadeText>
     for (var i = 0; i < _chunks.length; i++) {
       final startMs = i * stepMs;
       final alpha = ((elapsedMs - startMs) / fadeMs).clamp(0.0, 1.0);
+      final styled = _markdownStyle(
+        widget.style,
+        _chunks[i].bold,
+        _chunks[i].italic,
+      );
       spans.add(
         TextSpan(
-          text: _chunks[i],
-          style: widget.style.copyWith(
+          text: _chunks[i].char,
+          style: styled.copyWith(
             color: baseColor.withValues(alpha: alpha),
           ),
         ),
@@ -6859,6 +7269,185 @@ class _AiCharFadeTextState extends State<_AiCharFadeText>
       ),
     );
   }
+}
+
+class _MarkdownText extends StatelessWidget {
+  const _MarkdownText({
+    required this.text,
+    required this.style,
+  });
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final spans = _buildMarkdownTextSpans(text, style);
+    return Text.rich(
+      TextSpan(
+        style: style,
+        children: spans,
+      ),
+      textAlign: TextAlign.left,
+    );
+  }
+}
+
+class _MarkdownSegment {
+  const _MarkdownSegment({
+    required this.text,
+    required this.bold,
+    required this.italic,
+  });
+
+  final String text;
+  final bool bold;
+  final bool italic;
+}
+
+class _MarkdownStyledChar {
+  const _MarkdownStyledChar({
+    required this.char,
+    required this.bold,
+    required this.italic,
+  });
+
+  final String char;
+  final bool bold;
+  final bool italic;
+}
+
+TextStyle _markdownStyle(TextStyle base, bool bold, bool italic) {
+  final baseWeight = base.fontWeight ?? FontWeight.w500;
+  return base.copyWith(
+    fontWeight: bold ? FontWeight.w700 : baseWeight,
+    fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+  );
+}
+
+List<InlineSpan> _buildMarkdownTextSpans(String raw, TextStyle baseStyle) {
+  final segments = _parseMarkdownSegments(raw);
+  if (segments.isEmpty) {
+    return <InlineSpan>[TextSpan(text: raw, style: baseStyle)];
+  }
+  return segments
+      .where((segment) => segment.text.isNotEmpty)
+      .map(
+        (segment) => TextSpan(
+          text: segment.text,
+          style: _markdownStyle(baseStyle, segment.bold, segment.italic),
+        ),
+      )
+      .toList(growable: false);
+}
+
+List<_MarkdownStyledChar> _buildStyledChars(String raw) {
+  final segments = _parseMarkdownSegments(raw);
+  if (segments.isEmpty) {
+    return raw.runes
+        .map(
+          (rune) => _MarkdownStyledChar(
+            char: String.fromCharCode(rune),
+            bold: false,
+            italic: false,
+          ),
+        )
+        .toList(growable: false);
+  }
+  final chars = <_MarkdownStyledChar>[];
+  for (final segment in segments) {
+    for (final rune in segment.text.runes) {
+      chars.add(
+        _MarkdownStyledChar(
+          char: String.fromCharCode(rune),
+          bold: segment.bold,
+          italic: segment.italic,
+        ),
+      );
+    }
+  }
+  return chars;
+}
+
+List<_MarkdownSegment> _parseMarkdownSegments(String raw) {
+  if (raw.isEmpty) return const [];
+
+  final segments = <_MarkdownSegment>[];
+  final buffer = StringBuffer();
+  var bold = false;
+  var italic = false;
+  var i = 0;
+
+  bool hasUnescaped(String marker, int from) {
+    var cursor = raw.indexOf(marker, from);
+    while (cursor != -1) {
+      final escaped = cursor > 0 && raw.substring(cursor - 1, cursor) == r'\';
+      if (!escaped) return true;
+      cursor = raw.indexOf(marker, cursor + marker.length);
+    }
+    return false;
+  }
+
+  void flush() {
+    if (buffer.isEmpty) return;
+    segments.add(
+      _MarkdownSegment(
+        text: buffer.toString(),
+        bold: bold,
+        italic: italic,
+      ),
+    );
+    buffer.clear();
+  }
+
+  while (i < raw.length) {
+    final current = raw.substring(i, i + 1);
+    if (current == r'\' && i + 1 < raw.length) {
+      buffer.write(raw.substring(i + 1, i + 2));
+      i += 2;
+      continue;
+    }
+
+    if (raw.startsWith('**', i)) {
+      if (bold) {
+        // closing bold marker
+        flush();
+        bold = false;
+        i += 2;
+        continue;
+      }
+      if (hasUnescaped('**', i + 2)) {
+        // opening bold marker (only when closing marker exists ahead)
+        flush();
+        bold = true;
+        i += 2;
+        continue;
+      }
+    }
+
+    if (current == '*') {
+      if (italic) {
+        // closing italic marker
+        flush();
+        italic = false;
+        i += 1;
+        continue;
+      }
+      if (hasUnescaped('*', i + 1)) {
+        // opening italic marker (only when closing marker exists ahead)
+        flush();
+        italic = true;
+        i += 1;
+        continue;
+      }
+    }
+
+    buffer.write(current);
+    i += 1;
+  }
+
+  flush();
+  return segments;
 }
 
 class _PrimaryButton extends StatefulWidget {

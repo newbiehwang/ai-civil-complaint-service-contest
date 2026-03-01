@@ -66,6 +66,12 @@ public final class ApiModels {
         MULTIPLE
     }
 
+    public enum ChatInteractionType {
+        TEXT,
+        MINI_SELECTION,
+        SYSTEM_CONFIRM
+    }
+
     public enum DecompositionNodeType {
         LIVING_NOISE,
         IMMEDIATE_RISK,
@@ -216,10 +222,29 @@ public final class ApiModels {
     ) {
     }
 
+    public record ChatTurnInteraction(
+            ChatInteractionType interactionType,
+            List<String> selectedOptionIds,
+            List<String> selectedOptionLabels,
+            ChatUiType sourceUiType,
+            Map<String, Object> meta
+    ) {
+    }
+
+    public record ChatTurnHistoryMessage(
+            String role,
+            @Size(max = 5000) String text,
+            String source
+    ) {
+    }
+
     public record ChatTurnRequest(
-            @NotBlank @Size(max = 5000) String userMessage,
+            @Size(max = 5000) String userMessage,
             ChatTurnContext context,
-            List<String> uiCapabilities
+            List<String> uiCapabilities,
+            ChatTurnInteraction interaction,
+            String lastUiHintType,
+            List<ChatTurnHistoryMessage> recentMessages
     ) {
     }
 

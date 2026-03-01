@@ -92,7 +92,7 @@ class ChatSnapshotCodec {
       isAiAnswerReady: _asBool(json['isAiAnswerReady'], fallback: true),
       aiAnimationNonce: _asInt(json['aiAnimationNonce']),
       aiText: json['aiText']?.toString() ??
-          '안녕하세요. 정부24 민원 서비스 도우미입니다.\n무엇을 도와드릴까요?',
+          '안녕하세요, 정부24 민원 서비스 도우미입니다.\n무엇을 도와드릴까요?',
       step: _parseEnum(
         DemoStep.values,
         json['step']?.toString(),

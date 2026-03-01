@@ -680,6 +680,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
           sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
           onOpenSession: _openSession,
           onCreateSession: _createAndOpenSession,
+          onDeleteSession: _deleteSession,
           onLogout: _restart,
           accountId: accountId ?? 'demo',
         ),
@@ -688,6 +689,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
               sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
               onOpenSession: _openSession,
               onCreateSession: _createAndOpenSession,
+              onDeleteSession: _deleteSession,
               onLogout: _restart,
               accountId: accountId ?? 'demo',
             )

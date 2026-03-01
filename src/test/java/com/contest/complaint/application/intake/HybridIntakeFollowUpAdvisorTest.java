@@ -40,7 +40,7 @@ class HybridIntakeFollowUpAdvisorTest {
         );
         llmClient.nextSuggestion = Optional.of(llmSuggestion);
 
-        IntakeFollowUpSuggestion suggestion = advisor.suggest(defaultRequest());
+        IntakeFollowUpSuggestion suggestion = advisor.suggest(nonReceivedRequest());
 
         assertThat(suggestion).isEqualTo(llmSuggestion);
         assertThat(llmClient.called).isTrue();
@@ -53,11 +53,24 @@ class HybridIntakeFollowUpAdvisorTest {
         StubLlmClient llmClient = new StubLlmClient(Optional.empty());
         HybridIntakeFollowUpAdvisor advisor = new HybridIntakeFollowUpAdvisor(ruleBased, llmClient, true);
 
-        IntakeFollowUpSuggestion suggestion = advisor.suggest(defaultRequest());
+        IntakeFollowUpSuggestion suggestion = advisor.suggest(nonReceivedRequest());
 
         assertThat(suggestion.question()).isEqualTo("지금도 소음이 나나요?");
         assertThat(suggestion.followUpInterface()).isNotNull();
         assertThat(llmClient.called).isTrue();
+    }
+
+    @Test
+    void usesRuleBasedSuggestionDuringReceivedEvenWhenLlmIsEnabled() {
+        RuleBasedIntakeFollowUpAdvisor ruleBased = new RuleBasedIntakeFollowUpAdvisor();
+        StubLlmClient llmClient = new StubLlmClient(Optional.empty());
+        HybridIntakeFollowUpAdvisor advisor = new HybridIntakeFollowUpAdvisor(ruleBased, llmClient, true);
+
+        IntakeFollowUpSuggestion suggestion = advisor.suggest(defaultRequest());
+
+        assertThat(suggestion.question()).isEqualTo("지금도 소음이 나나요?");
+        assertThat(suggestion.followUpInterface()).isNotNull();
+        assertThat(llmClient.called).isFalse();
     }
 
     private IntakeFollowUpRequest defaultRequest() {
@@ -66,6 +79,16 @@ class HybridIntakeFollowUpAdvisorTest {
                 List.of("noiseNow", "safety", "residence"),
                 Map.of(),
                 ApiModels.CaseStatus.RECEIVED,
+                false
+        );
+    }
+
+    private IntakeFollowUpRequest nonReceivedRequest() {
+        return new IntakeFollowUpRequest(
+                "소음이 너무 심합니다.",
+                List.of("noiseNow", "safety", "residence"),
+                Map.of(),
+                ApiModels.CaseStatus.CLASSIFIED,
                 false
         );
     }

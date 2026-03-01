@@ -335,6 +335,96 @@ class ScenarioAApiControllerTest {
                 .andExpect(jsonPath("$.code").value("CASE_NOT_FOUND"));
     }
 
+    @Test
+    void chatTurnWithPathChooserInteractionConfirmsRoute() throws Exception {
+        String caseId = prepareClassifiedCase();
+
+        String bootstrapResponse = mockMvc.perform(post("/api/v1/chat/turn")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userMessage":"추천 경로를 보여주세요",
+                                  "context":{"caseId":"%s","scenarioType":"SCENARIO_A","housingType":"APARTMENT","consentAccepted":true},
+                                  "uiCapabilities":["LIST_PICKER","OPTION_LIST","SUMMARY_CARD","PATH_CHOOSER"]
+                                }
+                                """.formatted(caseId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String optionId = objectMapper.readTree(bootstrapResponse)
+                .path("uiHint")
+                .path("options")
+                .get(0)
+                .path("id")
+                .asText();
+        assertThat(optionId).isNotBlank();
+
+        mockMvc.perform(post("/api/v1/chat/turn")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userMessage":"경로 선택",
+                                  "context":{"caseId":"%s","scenarioType":"SCENARIO_A","housingType":"APARTMENT","consentAccepted":true},
+                                  "uiCapabilities":["LIST_PICKER","OPTION_LIST","SUMMARY_CARD","PATH_CHOOSER"],
+                                  "interaction":{
+                                    "interactionType":"MINI_SELECTION",
+                                    "selectedOptionIds":["%s"],
+                                    "selectedOptionLabels":["관리사무소 조정 요청"],
+                                    "sourceUiType":"PATH_CHOOSER",
+                                    "meta":{}
+                                  }
+                                }
+                                """.formatted(caseId, optionId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statePatch.status").value("ROUTE_CONFIRMED"))
+                .andExpect(jsonPath("$.uiHint.type").value("OPTION_LIST"));
+    }
+
+    @Test
+    void chatTurnSubmitRequiresExplicitConfirm() throws Exception {
+        String caseId = prepareCaseWithInsufficientEvidence();
+
+        mockMvc.perform(post("/api/v1/chat/turn")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userMessage":"제출",
+                                  "context":{"caseId":"%s","scenarioType":"SCENARIO_A","housingType":"APARTMENT","consentAccepted":true},
+                                  "uiCapabilities":["LIST_PICKER","OPTION_LIST","SUMMARY_CARD","PATH_CHOOSER"],
+                                  "interaction":{
+                                    "interactionType":"MINI_SELECTION",
+                                    "selectedOptionIds":["submit-confirm"],
+                                    "selectedOptionLabels":["제출 진행 확인"],
+                                    "sourceUiType":"OPTION_LIST",
+                                    "meta":{"confirmed":false}
+                                  }
+                                }
+                                """.formatted(caseId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assistantMessage").value("최종 제출 전 한 번 더 확인해 주세요."))
+                .andExpect(jsonPath("$.statePatch.status").value("EVIDENCE_COLLECTING"));
+
+        mockMvc.perform(post("/api/v1/chat/turn")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userMessage":"제출 확인",
+                                  "context":{"caseId":"%s","scenarioType":"SCENARIO_A","housingType":"APARTMENT","consentAccepted":true},
+                                  "uiCapabilities":["LIST_PICKER","OPTION_LIST","SUMMARY_CARD","PATH_CHOOSER"],
+                                  "interaction":{
+                                    "interactionType":"SYSTEM_CONFIRM",
+                                    "selectedOptionIds":["submit-confirm"],
+                                    "selectedOptionLabels":["제출 진행 확인"],
+                                    "sourceUiType":"OPTION_LIST",
+                                    "meta":{"confirmed":true}
+                                  }
+                                }
+                                """.formatted(caseId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statePatch.status").value("INSTITUTION_PROCESSING"));
+    }
+
     private String prepareCaseReadyForSubmission() throws Exception {
         String createResponse = mockMvc.perform(post("/api/v1/cases")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -412,6 +502,36 @@ class ScenarioAApiControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
+        return caseId;
+    }
+
+    private String prepareClassifiedCase() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v1/cases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scenarioType":"INTER_FLOOR_NOISE",
+                                  "housingType":"APARTMENT",
+                                  "consentAccepted":true
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String caseId = objectMapper.readTree(createResponse).get("caseId").asText();
+
+        mockMvc.perform(post("/api/v1/cases/{caseId}/intake/messages", caseId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "role":"USER",
+                                  "message":"지금 진행 중이고 위협 징후 없음입니다. 아파트이며 관리사무소 있음. 충격 소음(쿵쿵)이 거의 매일 심야에 발생하고 호수까지 확실합니다."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLASSIFIED"));
         return caseId;
     }
 
