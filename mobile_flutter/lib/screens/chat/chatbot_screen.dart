@@ -3231,6 +3231,8 @@ class _MiniInterfaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final expandedMaxHeight = (screenHeight * 0.72).clamp(520.0, 680.0);
     final double cardRadius = collapsed
         ? KrdsTokens.radiusXl + KrdsTokens.space4
         : KrdsTokens.radiusXl;
@@ -3240,7 +3242,7 @@ class _MiniInterfaceCard extends StatelessWidget {
       width: double.infinity,
       constraints: BoxConstraints(
         minHeight: 58,
-        maxHeight: collapsed ? 58 : 520,
+        maxHeight: collapsed ? 58 : expandedMaxHeight,
       ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
