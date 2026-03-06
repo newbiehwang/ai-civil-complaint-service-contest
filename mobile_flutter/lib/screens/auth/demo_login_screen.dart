@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../config/app_env.dart';
@@ -17,10 +18,19 @@ class _DemoLoginScreenState extends State<DemoLoginScreen> {
   bool _isSubmitting = false;
   String? _errorText;
 
+  String _buildDemoUsername() {
+    final base = AppEnv.demoLoginUsername.trim().isEmpty
+        ? 'demo'
+        : AppEnv.demoLoginUsername.trim();
+    final random = Random.secure();
+    final suffix = List.generate(8, (_) => random.nextInt(10)).join();
+    return '${base}_$suffix';
+  }
+
   Future<void> _submit() async {
     if (_isSubmitting) return;
 
-    final username = AppEnv.demoLoginUsername.trim();
+    final username = _buildDemoUsername();
     final password = AppEnv.demoLoginPassword.trim();
     final baseUrl = AppEnv.apiBaseUrl.trim();
 
@@ -145,28 +155,10 @@ class _DemoLoginScreenState extends State<DemoLoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '아래 버튼을 누르면 .env에 설정된 데모 계정으로\n서버 인증을 진행합니다.',
+                      '아래 버튼을 누르면 데모 계정으로 서버 인증을 진행합니다.',
                       style: TextStyle(
                         color: AppColors.textMuted,
                         fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '서버: ${AppEnv.apiBaseUrl.isEmpty ? '(미설정)' : AppEnv.apiBaseUrl}',
-                      style: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '계정: ${AppEnv.demoLoginUsername.isEmpty ? '(미설정)' : AppEnv.demoLoginUsername}',
-                      style: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 12.5,
                         fontWeight: FontWeight.w500,
                       ),
                     ),

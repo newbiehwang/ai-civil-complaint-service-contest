@@ -16,11 +16,15 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Service
 public class DemoAuthService {
 
     private static final Duration TOKEN_TTL = Duration.ofHours(12);
+    private static final Pattern DEMO_ALIAS_PATTERN =
+            Pattern.compile("^(?<base>[a-zA-Z0-9._-]+)_(?<suffix>\\d{8})$");
 
     private final JwtEncoder jwtEncoder;
     private final AppUserEntityRepository appUserEntityRepository;
@@ -48,7 +52,8 @@ public class DemoAuthService {
             );
         }
 
-        AppUserEntity user = appUserEntityRepository.findByUsernameIgnoreCase(username)
+        String baseUsername = resolveBaseUsername(username);
+        AppUserEntity baseUser = appUserEntityRepository.findByUsernameIgnoreCase(baseUsername)
                 .filter(AppUserEntity::isActive)
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.UNAUTHORIZED,
@@ -57,7 +62,7 @@ public class DemoAuthService {
                         List.of()
                 ));
 
-        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+        if (!passwordEncoder.matches(password, baseUser.getPasswordHash())) {
             throw new ApiException(
                     HttpStatus.UNAUTHORIZED,
                     "DEMO_LOGIN_FAILED",
@@ -65,6 +70,10 @@ public class DemoAuthService {
                     List.of()
             );
         }
+
+        AppUserEntity user = username.equalsIgnoreCase(baseUsername)
+                ? baseUser
+                : getOrCreateAliasUser(username, baseUser);
 
         Instant now = Instant.now();
         Instant expiresAt = now.plus(TOKEN_TTL);
@@ -93,5 +102,40 @@ public class DemoAuthService {
         );
 
         return new ApiModels.DemoLoginResponse(token, "Bearer", expiresAt, profile);
+    }
+
+    private String resolveBaseUsername(String username) {
+        var matcher = DEMO_ALIAS_PATTERN.matcher(username);
+        if (matcher.matches()) {
+            return matcher.group("base");
+        }
+        return username;
+    }
+
+    private AppUserEntity getOrCreateAliasUser(String aliasUsername, AppUserEntity baseUser) {
+        Optional<AppUserEntity> existingAlias = appUserEntityRepository.findByUsernameIgnoreCase(aliasUsername);
+        if (existingAlias.isPresent()) {
+            AppUserEntity user = existingAlias.get();
+            if (!user.isActive()) {
+                throw new ApiException(
+                        HttpStatus.UNAUTHORIZED,
+                        "DEMO_LOGIN_FAILED",
+                        "데모 계정 정보가 올바르지 않습니다.",
+                        List.of()
+                );
+            }
+            return user;
+        }
+
+        AppUserEntity alias = new AppUserEntity();
+        alias.setUsername(aliasUsername);
+        alias.setPasswordHash(baseUser.getPasswordHash());
+        alias.setDisplayName(baseUser.getDisplayName());
+        alias.setPhone(baseUser.getPhone());
+        alias.setEmail(baseUser.getEmail());
+        alias.setHousingName(baseUser.getHousingName());
+        alias.setAddress(baseUser.getAddress());
+        alias.setActive(true);
+        return appUserEntityRepository.save(alias);
     }
 }

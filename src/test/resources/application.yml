@@ -15,6 +15,13 @@ spring:
     enabled: true
 
 complaint:
+  neighbor-center:
+    measurement-template-path: /tmp/neighbor-center-template.hwpx
+    measurement-recipient-email: test-recipient@example.com
+    measurement-mail-subject: "[테스트] 층간소음 측정 신청서 제출"
+    measurement-mail-from: test-sender@example.com
+    measurement-mail-enabled: false
+    measurement-output-dir: /tmp/neighbor-center-submissions-test
   mock-submission:
     auto-process-enabled: true
     processing-delay-ms: 50
