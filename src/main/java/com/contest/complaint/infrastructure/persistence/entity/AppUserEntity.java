@@ -27,6 +27,18 @@ public class AppUserEntity {
     @Column(name = "display_name", length = 120)
     private String displayName;
 
+    @Column(name = "phone", length = 40)
+    private String phone;
+
+    @Column(name = "email", length = 160)
+    private String email;
+
+    @Column(name = "housing_name", length = 200)
+    private String housingName;
+
+    @Column(name = "address", length = 500)
+    private String address;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
@@ -83,6 +95,38 @@ public class AppUserEntity {
 
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getHousingName() {
+        return housingName;
+    }
+
+    public void setHousingName(String housingName) {
+        this.housingName = housingName;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
     }
 
     public boolean isActive() {

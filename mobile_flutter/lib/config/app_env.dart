@@ -17,6 +17,15 @@ class AppEnv {
   static const _devJwtMacos =
       String.fromEnvironment('DEV_JWT_MACOS', defaultValue: '');
 
+  static const _demoLoginUsernamePrimary =
+      String.fromEnvironment('DEMO_LOGIN_USERNAME', defaultValue: '');
+  static const _demoLoginUsernameMacos =
+      String.fromEnvironment('DEMO_LOGIN_USERNAME_MACOS', defaultValue: '');
+  static const _demoLoginPasswordPrimary =
+      String.fromEnvironment('DEMO_LOGIN_PASSWORD', defaultValue: '');
+  static const _demoLoginPasswordMacos =
+      String.fromEnvironment('DEMO_LOGIN_PASSWORD_MACOS', defaultValue: '');
+
   static bool get _isMacosTarget =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 
@@ -39,7 +48,22 @@ class AppEnv {
           : (_devJwtPrimary.isNotEmpty ? _devJwtPrimary : _devJwtLegacy))
       : (_devJwtPrimary.isNotEmpty ? _devJwtPrimary : _devJwtLegacy);
 
+  static String get demoLoginUsername => _isMacosTarget
+      ? (_demoLoginUsernameMacos.isNotEmpty
+          ? _demoLoginUsernameMacos
+          : _demoLoginUsernamePrimary)
+      : _demoLoginUsernamePrimary;
+
+  static String get demoLoginPassword => _isMacosTarget
+      ? (_demoLoginPasswordMacos.isNotEmpty
+          ? _demoLoginPasswordMacos
+          : _demoLoginPasswordPrimary)
+      : _demoLoginPasswordPrimary;
+
   static bool get isConfigured => apiBaseUrl.isNotEmpty && devJwt.isNotEmpty;
+
+  static bool get isDemoLoginConfigured =>
+      demoLoginUsername.isNotEmpty && demoLoginPassword.isNotEmpty;
 
   static String? get missingReason {
     if (apiBaseUrl.isEmpty && devJwt.isEmpty) {
@@ -56,6 +80,25 @@ class AppEnv {
       return _isMacosTarget
           ? 'DEV_JWT_MACOS(또는 DEV_JWT)가 비어 있습니다.'
           : 'DEV_JWT가 비어 있습니다.';
+    }
+    return null;
+  }
+
+  static String? get missingDemoLoginReason {
+    if (demoLoginUsername.isEmpty && demoLoginPassword.isEmpty) {
+      return _isMacosTarget
+          ? 'DEMO_LOGIN_USERNAME_MACOS(또는 DEMO_LOGIN_USERNAME), DEMO_LOGIN_PASSWORD_MACOS(또는 DEMO_LOGIN_PASSWORD)가 비어 있습니다.'
+          : 'DEMO_LOGIN_USERNAME, DEMO_LOGIN_PASSWORD가 비어 있습니다.';
+    }
+    if (demoLoginUsername.isEmpty) {
+      return _isMacosTarget
+          ? 'DEMO_LOGIN_USERNAME_MACOS(또는 DEMO_LOGIN_USERNAME)가 비어 있습니다.'
+          : 'DEMO_LOGIN_USERNAME이 비어 있습니다.';
+    }
+    if (demoLoginPassword.isEmpty) {
+      return _isMacosTarget
+          ? 'DEMO_LOGIN_PASSWORD_MACOS(또는 DEMO_LOGIN_PASSWORD)가 비어 있습니다.'
+          : 'DEMO_LOGIN_PASSWORD가 비어 있습니다.';
     }
     return null;
   }

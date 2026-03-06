@@ -84,6 +84,14 @@ public class DemoAuthService {
 
         String token = jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
 
-        return new ApiModels.DemoLoginResponse(token, "Bearer", expiresAt);
+        ApiModels.UserProfile profile = new ApiModels.UserProfile(
+                user.getDisplayName(),
+                user.getPhone(),
+                user.getEmail(),
+                user.getHousingName(),
+                user.getAddress()
+        );
+
+        return new ApiModels.DemoLoginResponse(token, "Bearer", expiresAt, profile);
     }
 }

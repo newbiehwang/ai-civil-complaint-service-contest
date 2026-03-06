@@ -1,0 +1,4 @@
+ALTER TABLE app_users ADD COLUMN phone VARCHAR(40);
+ALTER TABLE app_users ADD COLUMN email VARCHAR(160);
+ALTER TABLE app_users ADD COLUMN housing_name VARCHAR(200);
+ALTER TABLE app_users ADD COLUMN address VARCHAR(500);

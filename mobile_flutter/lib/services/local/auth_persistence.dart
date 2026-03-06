@@ -7,6 +7,7 @@ class AuthPersistenceState {
     required this.accessToken,
     required this.expiresAtIso,
     required this.accountId,
+    required this.profile,
     required this.useBackend,
     required this.apiBaseUrlOverride,
   });
@@ -14,6 +15,7 @@ class AuthPersistenceState {
   final String? accessToken;
   final String? expiresAtIso;
   final String? accountId;
+  final Map<String, Object?>? profile;
   final bool useBackend;
   final String? apiBaseUrlOverride;
 
@@ -22,6 +24,7 @@ class AuthPersistenceState {
       'accessToken': accessToken,
       'expiresAtIso': expiresAtIso,
       'accountId': accountId,
+      'profile': profile,
       'useBackend': useBackend,
       'apiBaseUrlOverride': apiBaseUrlOverride,
     };
@@ -37,6 +40,9 @@ class AuthPersistenceState {
       accessToken: json['accessToken']?.toString(),
       expiresAtIso: json['expiresAtIso']?.toString(),
       accountId: json['accountId']?.toString(),
+      profile: json['profile'] is Map<String, Object?>
+          ? (json['profile'] as Map<String, Object?>)
+          : null,
       useBackend: useBackend,
       apiBaseUrlOverride: json['apiBaseUrlOverride']?.toString(),
     );

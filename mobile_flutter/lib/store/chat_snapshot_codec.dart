@@ -37,6 +37,8 @@ class ChatSnapshotCodec {
       'evidenceV2AttachmentIds':
           snapshot.evidenceV2AttachmentIds.toList(growable: false),
       'evidenceV2AttachmentNames': snapshot.evidenceV2AttachmentNames,
+      'neighborOptionalDocAttachmentNames':
+          snapshot.neighborOptionalDocAttachmentNames,
       'isPickingEvidence': snapshot.isPickingEvidence,
       'measureVisitDone': snapshot.measureVisitDone,
       'measureWithin30Days': snapshot.measureWithin30Days,
@@ -51,10 +53,16 @@ class ChatSnapshotCodec {
       'triageSafetyId': snapshot.triageSafetyId,
       'intakeResidenceId': snapshot.intakeResidenceId,
       'intakeManagementId': snapshot.intakeManagementId,
+      'intakeVisitConsultWithin30DaysId':
+          snapshot.intakeVisitConsultWithin30DaysId,
       'intakeSourceCertaintyId': snapshot.intakeSourceCertaintyId,
       'intakeNoiseTypeId': snapshot.intakeNoiseTypeId,
+      'intakeNoiseTypeIds': snapshot.intakeNoiseTypeIds.toList(growable: false),
+      'intakeNoiseTypeEtc': snapshot.intakeNoiseTypeEtc,
       'intakeFrequencyId': snapshot.intakeFrequencyId,
       'intakeTimeBandId': snapshot.intakeTimeBandId,
+      'intakeTimeBandIds': snapshot.intakeTimeBandIds.toList(growable: false),
+      'intakeAddress': snapshot.intakeAddress,
       'backendCaseId': snapshot.backendCaseId,
       'backendCaseStatus': snapshot.backendCaseStatus,
       'backendTraceId': snapshot.backendTraceId,
@@ -62,6 +70,13 @@ class ChatSnapshotCodec {
       'backendUiHintDriven': snapshot.backendUiHintDriven,
       'backendUiHintType': snapshot.backendUiHintType,
       'backendUiSelectionMode': snapshot.backendUiSelectionMode,
+      'backendUiMeta': snapshot.backendUiMeta,
+      'neighborFormMode': snapshot.neighborFormMode,
+      'neighborFormName': snapshot.neighborFormName,
+      'neighborFormPhone': snapshot.neighborFormPhone,
+      'neighborFormEmail': snapshot.neighborFormEmail,
+      'neighborFormHousingName': snapshot.neighborFormHousingName,
+      'neighborFormAddress': snapshot.neighborFormAddress,
       'hasIntroBridgeShown': snapshot.hasIntroBridgeShown,
       'historyEntries': snapshot.historyEntries
           .map((entry) => <String, Object?>{
@@ -85,6 +100,8 @@ class ChatSnapshotCodec {
 
     final evidenceAttachmentNamesRaw = json['evidenceAttachmentNames'];
     final evidenceV2AttachmentNamesRaw = json['evidenceV2AttachmentNames'];
+    final neighborOptionalDocAttachmentNamesRaw =
+        json['neighborOptionalDocAttachmentNames'];
 
     final now = DateTime.now();
     return ChatbotScreenSnapshot(
@@ -132,6 +149,8 @@ class ChatSnapshotCodec {
               .where((value) => value.isNotEmpty)
               .toSet(),
       evidenceV2AttachmentNames: _decodeStringMap(evidenceV2AttachmentNamesRaw),
+      neighborOptionalDocAttachmentNames:
+          _decodeStringMap(neighborOptionalDocAttachmentNamesRaw),
       isPickingEvidence: _asBool(json['isPickingEvidence']),
       measureVisitDone: _asNullableBool(json['measureVisitDone']),
       measureWithin30Days: _asNullableBool(json['measureWithin30Days']),
@@ -147,10 +166,24 @@ class ChatSnapshotCodec {
       triageSafetyId: _nullableText(json['triageSafetyId']),
       intakeResidenceId: _nullableText(json['intakeResidenceId']),
       intakeManagementId: _nullableText(json['intakeManagementId']),
+      intakeVisitConsultWithin30DaysId:
+          _nullableText(json['intakeVisitConsultWithin30DaysId']),
       intakeSourceCertaintyId: _nullableText(json['intakeSourceCertaintyId']),
       intakeNoiseTypeId: _nullableText(json['intakeNoiseTypeId']),
+      intakeNoiseTypeIds:
+          (json['intakeNoiseTypeIds'] as List<dynamic>? ?? const <dynamic>[])
+              .map((value) => value.toString())
+              .where((value) => value.trim().isNotEmpty)
+              .toSet(),
+      intakeNoiseTypeEtc: _nullableText(json['intakeNoiseTypeEtc']),
       intakeFrequencyId: _nullableText(json['intakeFrequencyId']),
       intakeTimeBandId: _nullableText(json['intakeTimeBandId']),
+      intakeTimeBandIds:
+          (json['intakeTimeBandIds'] as List<dynamic>? ?? const <dynamic>[])
+              .map((value) => value.toString())
+              .where((value) => value.trim().isNotEmpty)
+              .toSet(),
+      intakeAddress: _nullableText(json['intakeAddress']),
       backendCaseId: _nullableText(json['backendCaseId']),
       backendCaseStatus: _nullableText(json['backendCaseStatus']),
       backendTraceId: _nullableText(json['backendTraceId']),
@@ -160,6 +193,14 @@ class ChatSnapshotCodec {
       backendUiHintType: _nullableText(json['backendUiHintType']) ?? 'NONE',
       backendUiSelectionMode:
           _nullableText(json['backendUiSelectionMode']) ?? 'NONE',
+      backendUiMeta: _decodeDynamicMap(json['backendUiMeta']),
+      neighborFormMode: _nullableText(json['neighborFormMode']) ?? 'PROFILE',
+      neighborFormName: _nullableText(json['neighborFormName']) ?? '',
+      neighborFormPhone: _nullableText(json['neighborFormPhone']) ?? '',
+      neighborFormEmail: _nullableText(json['neighborFormEmail']) ?? '',
+      neighborFormHousingName:
+          _nullableText(json['neighborFormHousingName']) ?? '',
+      neighborFormAddress: _nullableText(json['neighborFormAddress']) ?? '',
       hasIntroBridgeShown:
           _asBool(json['hasIntroBridgeShown'], fallback: false),
       historyEntries: _decodeHistoryEntries(json['historyEntries']),
@@ -173,9 +214,14 @@ class ChatSnapshotCodec {
       'safety': data.safety,
       'residence': data.residence,
       'management': data.management,
+      'address': data.address,
+      'visitConsultWithin30Days': data.visitConsultWithin30Days,
       'noiseType': data.noiseType,
+      'noiseTypes': data.noiseTypes,
+      'noiseTypeEtc': data.noiseTypeEtc,
       'frequency': data.frequency,
       'timeBand': data.timeBand,
+      'timeBands': data.timeBands,
       'sourceCertainty': data.sourceCertainty,
       'eligibilityReason': data.eligibilityReason,
       'route': data.route,
@@ -196,9 +242,14 @@ class ChatSnapshotCodec {
       safety: _nullableText(raw['safety']),
       residence: _nullableText(raw['residence']),
       management: _nullableText(raw['management']),
+      address: _nullableText(raw['address']),
+      visitConsultWithin30Days: _nullableText(raw['visitConsultWithin30Days']),
       noiseType: _nullableText(raw['noiseType']),
+      noiseTypes: _decodeStringList(raw['noiseTypes']),
+      noiseTypeEtc: _nullableText(raw['noiseTypeEtc']),
       frequency: _nullableText(raw['frequency']),
       timeBand: _nullableText(raw['timeBand']),
+      timeBands: _decodeStringList(raw['timeBands']),
       sourceCertainty: _nullableText(raw['sourceCertainty']),
       eligibilityReason: _nullableText(raw['eligibilityReason']),
       route: _nullableText(raw['route']),
@@ -218,6 +269,26 @@ class ChatSnapshotCodec {
       map[normalizedKey] = normalizedValue;
     });
     return map;
+  }
+
+  static Map<String, dynamic> _decodeDynamicMap(Object? raw) {
+    if (raw is! Map) return <String, dynamic>{};
+    final map = <String, dynamic>{};
+    raw.forEach((key, value) {
+      final normalizedKey = key.toString().trim();
+      if (normalizedKey.isEmpty) return;
+      map[normalizedKey] = value;
+    });
+    return map;
+  }
+
+  static List<String>? _decodeStringList(Object? raw) {
+    if (raw is! List) return null;
+    final values = raw
+        .map((value) => value.toString().trim())
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+    return values.isEmpty ? null : values;
   }
 
   static List<ChatHistoryEntry> _decodeHistoryEntries(Object? raw) {
