@@ -27,7 +27,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -38,7 +37,6 @@ public class ClaudeChatTurnPlannerClient implements LlmChatTurnPlannerClient {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
     private static final Pattern TRAILING_COMMA_PATTERN = Pattern.compile(",\\s*([}\\]])");
-    private static final Pattern CODE_FENCE_PATTERN = Pattern.compile("```(?:json)?\\s*([\\s\\S]*?)\\s*```", Pattern.CASE_INSENSITIVE);
     private static final String DEFAULT_MODEL = "claude-3-5-sonnet-latest";
     private static final String SYSTEM_PROMPT = """
             You are a conversation orchestrator for floor-noise civil complaint intake.
@@ -96,9 +94,7 @@ public class ClaudeChatTurnPlannerClient implements LlmChatTurnPlannerClient {
                - If proposing submission, set meta.requiresExplicitConfirm=true.
 
             5) flowStepHint=status_tracking
-               - Output a short closing message in 1~2 sentences.
-               - Keep the closing natural and context-aware. Do not force any fixed sentence.
-               - Do not mention additional evidence upload in this phase.
+               - Summarize current status briefly.
                - Use STATUS_FEED only if useful for action; otherwise NONE.
             """;
 
@@ -135,30 +131,7 @@ public class ClaudeChatTurnPlannerClient implements LlmChatTurnPlannerClient {
 
     @Override
     public Optional<ChatTurnPlan> plan(ChatTurnPlannerRequest request) {
-        String traceId = request == null ? "-" : request.traceId();
-        String caseId = request == null || request.caseId() == null ? "-" : request.caseId().toString();
-        String flowStepHint = request == null ? "-" : nullableText(request.flowStepHint());
-        String action = request == null ? "-" : nullableText(request.currentActionRequired());
-
-        if (!useLlm) {
-            log.debug("Claude planner skipped: reason=llm_disabled traceId={} caseId={}", traceId, caseId);
-            return Optional.empty();
-        }
-        if (!"claude".equals(provider)) {
-            log.warn(
-                    "Claude planner skipped: reason=provider_mismatch expected=claude actual={} traceId={} caseId={}",
-                    provider,
-                    traceId,
-                    caseId
-            );
-            return Optional.empty();
-        }
-        if (apiKey.isBlank()) {
-            log.warn("Claude planner skipped: reason=missing_api_key traceId={} caseId={}", traceId, caseId);
-            return Optional.empty();
-        }
-        if (anthropicClient == null) {
-            log.warn("Claude planner skipped: reason=client_init_failed traceId={} caseId={}", traceId, caseId);
+        if (!useLlm || !"claude".equals(provider) || apiKey.isBlank() || anthropicClient == null) {
             return Optional.empty();
         }
 
@@ -179,76 +152,35 @@ public class ClaudeChatTurnPlannerClient implements LlmChatTurnPlannerClient {
             long elapsed = System.currentTimeMillis() - start;
             String text = extractTextContent(response);
             if (text.isBlank()) {
-                log.warn(
-                        "Claude planner returned empty text: traceId={} caseId={} flowStep={} action={} latencyMs={}",
-                        traceId,
-                        caseId,
-                        flowStepHint,
-                        action,
-                        elapsed
-                );
+                log.warn("Claude planner returned empty text: latencyMs={}", elapsed);
                 return Optional.empty();
             }
 
-            String cleanedText = stripMarkdownCodeFences(text);
-            String json = extractFirstCompleteJsonObject(cleanedText)
-                    .or(() -> tryRepairTruncatedJsonObject(cleanedText))
-                    .or(() -> extractFirstCompleteJsonObject(text))
+            String json = extractFirstCompleteJsonObject(text)
                     .or(() -> tryRepairTruncatedJsonObject(text))
                     .orElse(null);
             if (json == null || json.isBlank()) {
-                log.warn(
-                        "Claude planner returned non-parseable JSON payload: traceId={} caseId={} flowStep={} action={} latencyMs={} text={}",
-                        traceId,
-                        caseId,
-                        flowStepHint,
-                        action,
-                        elapsed,
-                        truncate(text)
-                );
+                log.warn("Claude planner returned non-parseable JSON payload: latencyMs={}, text={}", elapsed, truncate(text));
                 return Optional.empty();
             }
             JsonNode payload = parsePlannerJson(json).orElse(null);
             if (payload == null) {
-                log.warn(
-                        "Claude planner JSON parse failed after normalization: traceId={} caseId={} flowStep={} action={} latencyMs={} json={}",
-                        traceId,
-                        caseId,
-                        flowStepHint,
-                        action,
-                        elapsed,
-                        truncate(json)
-                );
+                log.warn("Claude planner JSON parse failed after normalization: latencyMs={}, json={}", elapsed, truncate(json));
                 return Optional.empty();
             }
             ChatTurnPlan plan = toPlan(payload);
             if (plan.assistantMessage() == null || plan.assistantMessage().isBlank()) {
-                log.warn(
-                        "Claude planner returned blank assistantMessage: traceId={} caseId={} flowStep={} action={} latencyMs={}",
-                        traceId,
-                        caseId,
-                        flowStepHint,
-                        action,
-                        elapsed
-                );
+                log.warn("Claude planner returned blank assistantMessage: latencyMs={}", elapsed);
                 return Optional.empty();
             }
-            log.info("Claude planner succeeded: traceId={} caseId={} flowStep={} action={} latencyMs={} intent={} uiType={}",
-                    traceId,
-                    caseId,
-                    flowStepHint,
-                    action,
+            log.info("Claude planner succeeded: latencyMs={}, intent={}, uiType={}",
                     elapsed,
                     plan.intent(),
                     plan.uiHint() == null ? null : plan.uiHint().type());
             return Optional.of(plan);
         } catch (UnexpectedStatusCodeException ex) {
             log.warn(
-                    "Claude planner HTTP error: traceId={} caseId={} flowStep={} action={} status={} body={} model={} baseUrl={} timeoutMs={}",
-                    traceId,
-                    caseId,
-                    flowStepHint,
-                    action,
+                    "Claude planner HTTP error: status={} body={} model={} baseUrl={} timeoutMs={}",
                     ex.statusCode(),
                     truncate(ex.body() == null ? "" : ex.body().toString()),
                     model,
@@ -259,11 +191,7 @@ public class ClaudeChatTurnPlannerClient implements LlmChatTurnPlannerClient {
         } catch (AnthropicIoException ex) {
             Throwable cause = ex.getCause();
             log.warn(
-                    "Claude planner I/O error: traceId={} caseId={} flowStep={} action={} message={} causeType={} causeMessage={} model={} timeoutMs={}",
-                    traceId,
-                    caseId,
-                    flowStepHint,
-                    action,
+                    "Claude planner I/O error: message={} causeType={} causeMessage={} model={} timeoutMs={}",
                     ex.getMessage(),
                     cause == null ? "-" : cause.getClass().getSimpleName(),
                     cause == null ? "-" : cause.getMessage(),
@@ -273,11 +201,7 @@ public class ClaudeChatTurnPlannerClient implements LlmChatTurnPlannerClient {
             return Optional.empty();
         } catch (AnthropicServiceException ex) {
             log.warn(
-                    "Claude planner service error: traceId={} caseId={} flowStep={} action={} type={} message={} model={} timeoutMs={}",
-                    traceId,
-                    caseId,
-                    flowStepHint,
-                    action,
+                    "Claude planner service error: type={} message={} model={} timeoutMs={}",
                     ex.getClass().getSimpleName(),
                     ex.getMessage(),
                     model,
@@ -285,15 +209,7 @@ public class ClaudeChatTurnPlannerClient implements LlmChatTurnPlannerClient {
             );
             return Optional.empty();
         } catch (Exception ex) {
-            log.warn(
-                    "Claude planner error: traceId={} caseId={} flowStep={} action={} type={} message={}",
-                    traceId,
-                    caseId,
-                    flowStepHint,
-                    action,
-                    ex.getClass().getSimpleName(),
-                    ex.getMessage()
-            );
+            log.warn("Claude planner error: type={} message={}", ex.getClass().getSimpleName(), ex.getMessage());
             return Optional.empty();
         }
     }
@@ -556,7 +472,7 @@ public class ClaudeChatTurnPlannerClient implements LlmChatTurnPlannerClient {
         if (raw == null) {
             return "";
         }
-        String normalized = stripMarkdownCodeFences(raw)
+        String normalized = raw
                 .replace("\uFEFF", "")
                 .replace('“', '"')
                 .replace('”', '"')
@@ -571,29 +487,6 @@ public class ClaudeChatTurnPlannerClient implements LlmChatTurnPlannerClient {
         } while (!prev.equals(normalized));
 
         return normalized;
-    }
-
-    private String stripMarkdownCodeFences(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return "";
-        }
-        String trimmed = raw.trim();
-        Matcher matcher = CODE_FENCE_PATTERN.matcher(trimmed);
-        if (matcher.find()) {
-            return matcher.group(1).trim();
-        }
-        if (trimmed.startsWith("```")) {
-            String withoutTicks = trimmed.replaceFirst("^```(?:json)?\\s*", "");
-            withoutTicks = withoutTicks.replaceFirst("\\s*```$", "");
-            return withoutTicks.trim();
-        }
-        if (trimmed.startsWith("json")) {
-            String maybeJson = trimmed.substring(4).trim();
-            if (maybeJson.startsWith("{") || maybeJson.startsWith("[")) {
-                return maybeJson;
-            }
-        }
-        return trimmed;
     }
 
     private AnthropicClient createAnthropicClient(String baseUrl) {

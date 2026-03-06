@@ -15,7 +15,6 @@ enum MiniInterfaceType {
   listPicker,
   multiForm,
   optionList,
-  neighborCenterForm,
   measureCheck,
   datePicker,
   timePicker,
@@ -98,14 +97,9 @@ class DemoFlowData {
     this.safety,
     this.residence,
     this.management,
-    this.address,
-    this.visitConsultWithin30Days,
     this.noiseType,
-    this.noiseTypes,
-    this.noiseTypeEtc,
     this.frequency,
     this.timeBand,
-    this.timeBands,
     this.sourceCertainty,
     this.eligibilityReason,
     this.route,
@@ -119,14 +113,9 @@ class DemoFlowData {
   final String? safety;
   final String? residence;
   final String? management;
-  final String? address;
-  final String? visitConsultWithin30Days;
   final String? noiseType;
-  final List<String>? noiseTypes;
-  final String? noiseTypeEtc;
   final String? frequency;
   final String? timeBand;
-  final List<String>? timeBands;
   final String? sourceCertainty;
   final String? eligibilityReason;
   final String? route;
@@ -140,14 +129,9 @@ class DemoFlowData {
     String? safety,
     String? residence,
     String? management,
-    String? address,
-    String? visitConsultWithin30Days,
     String? noiseType,
-    List<String>? noiseTypes,
-    String? noiseTypeEtc,
     String? frequency,
     String? timeBand,
-    List<String>? timeBands,
     String? sourceCertainty,
     String? eligibilityReason,
     String? route,
@@ -161,15 +145,9 @@ class DemoFlowData {
       safety: safety ?? this.safety,
       residence: residence ?? this.residence,
       management: management ?? this.management,
-      address: address ?? this.address,
-      visitConsultWithin30Days:
-          visitConsultWithin30Days ?? this.visitConsultWithin30Days,
       noiseType: noiseType ?? this.noiseType,
-      noiseTypes: noiseTypes ?? this.noiseTypes,
-      noiseTypeEtc: noiseTypeEtc ?? this.noiseTypeEtc,
       frequency: frequency ?? this.frequency,
       timeBand: timeBand ?? this.timeBand,
-      timeBands: timeBands ?? this.timeBands,
       sourceCertainty: sourceCertainty ?? this.sourceCertainty,
       eligibilityReason: eligibilityReason ?? this.eligibilityReason,
       route: route ?? this.route,
@@ -204,7 +182,6 @@ class ChatbotScreenSnapshot {
     required this.evidenceAttachmentNames,
     required this.evidenceV2AttachmentIds,
     required this.evidenceV2AttachmentNames,
-    required this.neighborOptionalDocAttachmentNames,
     required this.isPickingEvidence,
     required this.measureVisitDone,
     required this.measureWithin30Days,
@@ -219,15 +196,10 @@ class ChatbotScreenSnapshot {
     required this.triageSafetyId,
     required this.intakeResidenceId,
     required this.intakeManagementId,
-    required this.intakeVisitConsultWithin30DaysId,
     required this.intakeSourceCertaintyId,
     required this.intakeNoiseTypeId,
-    required this.intakeNoiseTypeIds,
-    required this.intakeNoiseTypeEtc,
     required this.intakeFrequencyId,
     required this.intakeTimeBandId,
-    required this.intakeTimeBandIds,
-    required this.intakeAddress,
     required this.backendCaseId,
     required this.backendCaseStatus,
     required this.backendTraceId,
@@ -235,13 +207,6 @@ class ChatbotScreenSnapshot {
     required this.backendUiHintDriven,
     required this.backendUiHintType,
     required this.backendUiSelectionMode,
-    required this.backendUiMeta,
-    required this.neighborFormMode,
-    required this.neighborFormName,
-    required this.neighborFormPhone,
-    required this.neighborFormEmail,
-    required this.neighborFormHousingName,
-    required this.neighborFormAddress,
     required this.historyEntries,
     required this.hasIntroBridgeShown,
   });
@@ -268,7 +233,6 @@ class ChatbotScreenSnapshot {
   final Map<String, String> evidenceAttachmentNames;
   final Set<String> evidenceV2AttachmentIds;
   final Map<String, String> evidenceV2AttachmentNames;
-  final Map<String, String> neighborOptionalDocAttachmentNames;
   final bool isPickingEvidence;
   final bool? measureVisitDone;
   final bool? measureWithin30Days;
@@ -283,15 +247,10 @@ class ChatbotScreenSnapshot {
   final String? triageSafetyId;
   final String? intakeResidenceId;
   final String? intakeManagementId;
-  final String? intakeVisitConsultWithin30DaysId;
   final String? intakeSourceCertaintyId;
   final String? intakeNoiseTypeId;
-  final Set<String> intakeNoiseTypeIds;
-  final String? intakeNoiseTypeEtc;
   final String? intakeFrequencyId;
   final String? intakeTimeBandId;
-  final Set<String> intakeTimeBandIds;
-  final String? intakeAddress;
   final String? backendCaseId;
   final String? backendCaseStatus;
   final String? backendTraceId;
@@ -299,13 +258,6 @@ class ChatbotScreenSnapshot {
   final bool backendUiHintDriven;
   final String backendUiHintType;
   final String backendUiSelectionMode;
-  final Map<String, dynamic> backendUiMeta;
-  final String neighborFormMode;
-  final String neighborFormName;
-  final String neighborFormPhone;
-  final String neighborFormEmail;
-  final String neighborFormHousingName;
-  final String neighborFormAddress;
   final List<ChatHistoryEntry> historyEntries;
   final bool hasIntroBridgeShown;
 }
@@ -334,7 +286,7 @@ class ChatbotDemoScreen extends StatefulWidget {
 
 class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   static const _durations = ['10분 미만', '10~30분', '30분 이상', '모름'];
-  static const _noiseTypes = ['뛰거나 걷는 소리', 'TV 소리', '가구 끄는 소리', '기타'];
+  static const _noiseTypes = ['쿵쿵', '음악', '가구 끄는 소리', '기타'];
   static const _impacts = ['수면 방해', '업무 방해', '불안', '기타'];
   static const _residenceOptions = <MiniOption>[
     MiniOption(id: 'residence-apartment', label: '아파트'),
@@ -353,24 +305,16 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     MiniOption(id: 'management-no', label: '없음'),
     MiniOption(id: 'management-unknown', label: '모름'),
   ];
-  static const _visitConsultWithin30DaysOptions = <MiniOption>[
-    MiniOption(id: 'visit-consult-yes', label: '있음(30일 이내)'),
-    MiniOption(id: 'visit-consult-no', label: '없음'),
-  ];
   static const _sourceCertaintyOptions = <MiniOption>[
     MiniOption(id: 'source-exact', label: '호수까지 확실'),
     MiniOption(id: 'source-floor', label: '층은 확실(호수 불명)'),
     MiniOption(id: 'source-unknown', label: '모름'),
   ];
   static const _noiseTypeOptions = <MiniOption>[
-    MiniOption(id: 'noise-walk', label: '뛰거나 걷는 소리'),
-    MiniOption(id: 'noise-door', label: '문 개폐 소리'),
-    MiniOption(id: 'noise-drop', label: '물건 떨어지는 소리'),
-    MiniOption(id: 'noise-furniture', label: '가구 끄는 소리'),
-    MiniOption(id: 'noise-hammer', label: '망치질 소리'),
-    MiniOption(id: 'noise-tv', label: 'TV 소리'),
-    MiniOption(id: 'noise-audio', label: '오디오 소리'),
-    MiniOption(id: 'noise-other', label: '기타'),
+    MiniOption(id: 'noise-impact', label: '충격 소음(쿵쿵)'),
+    MiniOption(id: 'noise-air', label: '공기전달 소음(TV/음악)'),
+    MiniOption(id: 'noise-both', label: '둘 다'),
+    MiniOption(id: 'noise-unknown', label: '잘 모르겠음'),
   ];
   static const _frequencyOptions = <MiniOption>[
     MiniOption(id: 'freq-low', label: '주 1회 이하'),
@@ -384,27 +328,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   ];
   static const _triageSafetyOptions = <MiniOption>[
     MiniOption(id: 'safety-normal', label: '위협 징후 없음'),
+    MiniOption(id: 'safety-unknown', label: '잘 모르겠음'),
     MiniOption(id: 'safety-danger', label: '위협 징후 있음'),
   ];
 
   final TextEditingController _inputController = TextEditingController();
-  final TextEditingController _neighborNameController = TextEditingController();
-  final TextEditingController _neighborPhoneController =
-      TextEditingController();
-  final TextEditingController _neighborEmailController =
-      TextEditingController();
-  final TextEditingController _neighborHousingNameController =
-      TextEditingController();
-  final TextEditingController _neighborAddressController =
-      TextEditingController();
-  final TextEditingController _recipientLocalPartController =
-      TextEditingController();
-  final TextEditingController _recipientCustomDomainController =
-      TextEditingController();
-  final TextEditingController _intakeAddressController =
-      TextEditingController();
-  final TextEditingController _intakeNoiseTypeEtcController =
-      TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ScrollController _multiFormScrollController = ScrollController();
   final ScrollController _conversationScrollController = ScrollController();
@@ -437,8 +365,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   final Map<String, String> _evidenceAttachmentNames = <String, String>{};
   final Set<String> _evidenceV2AttachmentIds = <String>{};
   final Map<String, String> _evidenceV2AttachmentNames = <String, String>{};
-  final Map<String, String> _neighborOptionalDocAttachmentNames =
-      <String, String>{};
   final ImagePicker _imagePicker = ImagePicker();
   bool _isPickingEvidence = false;
   bool? _measureVisitDone;
@@ -454,27 +380,16 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String? _triageSafetyId;
   String? _intakeResidenceId;
   String? _intakeManagementId;
-  String? _intakeVisitConsultWithin30DaysId;
   String? _intakeSourceCertaintyId;
   String? _intakeNoiseTypeId;
   String? _intakeFrequencyId;
   String? _intakeTimeBandId;
-  final Set<String> _intakeNoiseTypeIds = <String>{};
-  final Set<String> _intakeTimeBandIds = <String>{};
   String? _backendCaseId;
   String? _backendCaseStatus;
   String? _backendTraceId;
-  String? _neighborGeneratedDocPath;
-  String? _neighborGeneratedDocFileName;
-  String? _neighborGeneratedDocGeneratedAt;
   bool _isBackendUiHintDriven = false;
   String _backendUiHintType = 'NONE';
   String _backendUiSelectionMode = 'NONE';
-  Map<String, dynamic> _backendUiMeta = <String, dynamic>{};
-  String _neighborFormMode = 'PROFILE';
-  String? _recipientDomainId;
-  final Map<String, String> _neighborProfileDraft = <String, String>{};
-  final Map<String, String> _neighborManualDraft = <String, String>{};
   bool _forceLocalDemoMode = false;
   bool _isBackendRequestInFlight = false;
   bool _wasConversationScrollLocked = false;
@@ -495,13 +410,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       if (initialCaseStatus != null && initialCaseStatus.isNotEmpty) {
         _backendCaseStatus = initialCaseStatus;
       }
-    }
-    if (_neighborNameController.text.trim().isEmpty &&
-        _neighborPhoneController.text.trim().isEmpty &&
-        _neighborEmailController.text.trim().isEmpty &&
-        _neighborHousingNameController.text.trim().isEmpty &&
-        _neighborAddressController.text.trim().isEmpty) {
-      _loadNeighborProfileFromSession(overwriteExisting: true);
     }
     _backendTraceId ??= _bootTraceId;
     _inputController.addListener(_handleInputControllerChanged);
@@ -535,15 +443,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     widget.onSnapshotChanged?.call(_buildSnapshot());
     _inputController.removeListener(_handleInputControllerChanged);
     _inputController.dispose();
-    _neighborNameController.dispose();
-    _neighborPhoneController.dispose();
-    _neighborEmailController.dispose();
-    _neighborHousingNameController.dispose();
-    _neighborAddressController.dispose();
-    _recipientLocalPartController.dispose();
-    _recipientCustomDomainController.dispose();
-    _intakeAddressController.dispose();
-    _intakeNoiseTypeEtcController.dispose();
     _focusNode.dispose();
     _multiFormScrollController.dispose();
     _conversationScrollController.dispose();
@@ -583,9 +482,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _evidenceV2AttachmentNames
       ..clear()
       ..addAll(snapshot.evidenceV2AttachmentNames);
-    _neighborOptionalDocAttachmentNames
-      ..clear()
-      ..addAll(snapshot.neighborOptionalDocAttachmentNames);
     _isPickingEvidence = snapshot.isPickingEvidence;
     _measureVisitDone = snapshot.measureVisitDone;
     _measureWithin30Days = snapshot.measureWithin30Days;
@@ -598,76 +494,20 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _pickerIsAm = snapshot.pickerIsAm;
     _pickerHour12 = snapshot.pickerHour12;
     _pickerMinute = snapshot.pickerMinute;
-    _triageNoiseNowId = _triageNoiseNowOptions.any(
-      (option) => option.id == snapshot.triageNoiseNowId,
-    )
-        ? snapshot.triageNoiseNowId
-        : null;
-    _triageSafetyId = _triageSafetyOptions.any(
-      (option) => option.id == snapshot.triageSafetyId,
-    )
-        ? snapshot.triageSafetyId
-        : null;
+    _triageNoiseNowId = snapshot.triageNoiseNowId;
+    _triageSafetyId = snapshot.triageSafetyId;
     _intakeResidenceId = snapshot.intakeResidenceId;
     _intakeManagementId = snapshot.intakeManagementId;
-    _intakeVisitConsultWithin30DaysId =
-        snapshot.intakeVisitConsultWithin30DaysId ??
-            _optionIdByLabel(
-              _visitConsultWithin30DaysOptions,
-              _data.visitConsultWithin30Days,
-            );
     _intakeSourceCertaintyId = snapshot.intakeSourceCertaintyId;
     _intakeNoiseTypeId = snapshot.intakeNoiseTypeId;
     _intakeFrequencyId = snapshot.intakeFrequencyId;
     _intakeTimeBandId = snapshot.intakeTimeBandId;
-    _intakeNoiseTypeIds
-      ..clear()
-      ..addAll(snapshot.intakeNoiseTypeIds);
-    if (_intakeNoiseTypeIds.isEmpty) {
-      _intakeNoiseTypeIds.addAll(
-        _optionIdsByLabels(_noiseTypeOptions, _data.noiseTypes ?? <String>[]),
-      );
-    }
-    if (_intakeNoiseTypeIds.isEmpty && _intakeNoiseTypeId != null) {
-      _intakeNoiseTypeIds.add(_intakeNoiseTypeId!);
-    }
-    _intakeTimeBandIds
-      ..clear()
-      ..addAll(snapshot.intakeTimeBandIds);
-    if (_intakeTimeBandIds.isEmpty) {
-      _intakeTimeBandIds.addAll(
-        _optionIdsByLabels(_timeBandOptions, _data.timeBands ?? <String>[]),
-      );
-    }
-    if (_intakeTimeBandIds.isEmpty && _intakeTimeBandId != null) {
-      _intakeTimeBandIds.add(_intakeTimeBandId!);
-    }
-    _intakeAddressController.text =
-        snapshot.intakeAddress ?? _data.address ?? '';
-    _intakeNoiseTypeEtcController.text =
-        snapshot.intakeNoiseTypeEtc ?? _data.noiseTypeEtc ?? '';
     _backendCaseId = snapshot.backendCaseId;
     _backendCaseStatus = snapshot.backendCaseStatus;
     _backendTraceId = snapshot.backendTraceId;
     _isBackendUiHintDriven = snapshot.backendUiHintDriven;
     _backendUiHintType = snapshot.backendUiHintType;
     _backendUiSelectionMode = snapshot.backendUiSelectionMode;
-    _backendUiMeta = Map<String, dynamic>.from(snapshot.backendUiMeta);
-    _neighborFormMode = snapshot.neighborFormMode;
-    _neighborNameController.text = snapshot.neighborFormName;
-    _neighborPhoneController.text = snapshot.neighborFormPhone;
-    _neighborEmailController.text = snapshot.neighborFormEmail;
-    _neighborHousingNameController.text = snapshot.neighborFormHousingName;
-    _neighborAddressController.text = snapshot.neighborFormAddress;
-    if (_neighborFormMode.toUpperCase() == 'MANUAL') {
-      _neighborManualDraft
-        ..clear()
-        ..addAll(_readNeighborControllerValues());
-    } else {
-      _neighborProfileDraft
-        ..clear()
-        ..addAll(_readNeighborControllerValues());
-    }
     _historyEntries
       ..clear()
       ..addAll(snapshot.historyEntries);
@@ -678,8 +518,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   ChatbotScreenSnapshot _buildSnapshot() {
     final safeIsAiAnswerReady = _isThinking ? true : _isAiAnswerReady;
-    final intakeAddress = _intakeAddressController.text.trim();
-    final intakeNoiseTypeEtc = _intakeNoiseTypeEtcController.text.trim();
     return ChatbotScreenSnapshot(
       isThinking: false,
       isAiAnswerReady: safeIsAiAnswerReady,
@@ -705,8 +543,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       evidenceV2AttachmentIds: Set<String>.from(_evidenceV2AttachmentIds),
       evidenceV2AttachmentNames:
           Map<String, String>.from(_evidenceV2AttachmentNames),
-      neighborOptionalDocAttachmentNames:
-          Map<String, String>.from(_neighborOptionalDocAttachmentNames),
       isPickingEvidence: _isPickingEvidence,
       measureVisitDone: _measureVisitDone,
       measureWithin30Days: _measureWithin30Days,
@@ -721,16 +557,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       triageSafetyId: _triageSafetyId,
       intakeResidenceId: _intakeResidenceId,
       intakeManagementId: _intakeManagementId,
-      intakeVisitConsultWithin30DaysId: _intakeVisitConsultWithin30DaysId,
       intakeSourceCertaintyId: _intakeSourceCertaintyId,
       intakeNoiseTypeId: _intakeNoiseTypeId,
-      intakeNoiseTypeIds: Set<String>.from(_intakeNoiseTypeIds),
-      intakeNoiseTypeEtc:
-          intakeNoiseTypeEtc.isEmpty ? _data.noiseTypeEtc : intakeNoiseTypeEtc,
       intakeFrequencyId: _intakeFrequencyId,
       intakeTimeBandId: _intakeTimeBandId,
-      intakeTimeBandIds: Set<String>.from(_intakeTimeBandIds),
-      intakeAddress: intakeAddress.isEmpty ? _data.address : intakeAddress,
       backendCaseId: _backendCaseId,
       backendCaseStatus: _backendCaseStatus,
       backendTraceId: _backendTraceId ?? _bootTraceId,
@@ -738,13 +568,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       backendUiHintDriven: _isBackendUiHintDriven,
       backendUiHintType: _backendUiHintType,
       backendUiSelectionMode: _backendUiSelectionMode,
-      backendUiMeta: Map<String, dynamic>.from(_backendUiMeta),
-      neighborFormMode: _neighborFormMode,
-      neighborFormName: _neighborNameController.text,
-      neighborFormPhone: _neighborPhoneController.text,
-      neighborFormEmail: _neighborEmailController.text,
-      neighborFormHousingName: _neighborHousingNameController.text,
-      neighborFormAddress: _neighborAddressController.text,
       historyEntries: List<ChatHistoryEntry>.from(_historyEntries),
       hasIntroBridgeShown: _hasIntroBridgeShown,
     );
@@ -835,7 +658,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     bool backendUiHintDriven = false,
     String backendUiHintType = 'NONE',
     String backendUiSelectionMode = 'NONE',
-    Map<String, dynamic> backendUiMeta = const <String, dynamic>{},
   }) {
     if (miniType != MiniInterfaceType.none) {
       FocusScope.of(context).unfocus();
@@ -851,12 +673,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _isBackendUiHintDriven = backendUiHintDriven;
       _backendUiHintType = backendUiHintType;
       _backendUiSelectionMode = backendUiSelectionMode;
-      _backendUiMeta = Map<String, dynamic>.from(backendUiMeta);
       _selectedOptionIds.clear();
       if (step == DemoStep.evidenceV1) {
         _evidenceAttachmentIds.clear();
         _evidenceAttachmentNames.clear();
-        _neighborOptionalDocAttachmentNames.clear();
       }
       if (step == DemoStep.evidenceV2) {
         _evidenceV2AttachmentIds.clear();
@@ -907,158 +727,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     return '$meridiem ${hour12.toString().padLeft(2, '0')}시 ${time.minute.toString().padLeft(2, '0')}분';
   }
 
-  static const List<String> _neighborFormFieldKeys = <String>[
-    'name',
-    'phone',
-    'email',
-    'housingName',
-    'address',
-  ];
-
-  Map<String, String> _readNeighborControllerValues() {
-    return <String, String>{
-      'name': _neighborNameController.text.trim(),
-      'phone': _neighborPhoneController.text.trim(),
-      'email': _neighborEmailController.text.trim(),
-      'housingName': _neighborHousingNameController.text.trim(),
-      'address': _neighborAddressController.text.trim(),
-    };
-  }
-
-  void _applyNeighborDraftToControllers(Map<String, String> source) {
-    _neighborNameController.text = source['name'] ?? '';
-    _neighborPhoneController.text = source['phone'] ?? '';
-    _neighborEmailController.text = source['email'] ?? '';
-    _neighborHousingNameController.text = source['housingName'] ?? '';
-    _neighborAddressController.text = source['address'] ?? '';
-  }
-
-  void _captureCurrentNeighborDraft() {
-    final current = _readNeighborControllerValues();
-    if (_neighborFormMode.toUpperCase() == 'MANUAL') {
-      _neighborManualDraft
-        ..clear()
-        ..addAll(current);
-      return;
-    }
-    _neighborProfileDraft
-      ..clear()
-      ..addAll(current);
-  }
-
-  void _switchNeighborFormMode(String mode) {
-    final nextMode = mode.toUpperCase() == 'MANUAL' ? 'MANUAL' : 'PROFILE';
-    _captureCurrentNeighborDraft();
-    if (nextMode == 'MANUAL') {
-      _neighborFormMode = 'MANUAL';
-      _applyNeighborDraftToControllers(_neighborManualDraft);
-      return;
-    }
-    _neighborFormMode = 'PROFILE';
-    _applyNeighborDraftToControllers(_neighborProfileDraft);
-  }
-
-  void _loadNeighborProfileFromSession({required bool overwriteExisting}) {
-    final profile = AuthSession.profile;
-    if (profile == null) return;
-    _applyNeighborFormValues(
-      <String, dynamic>{
-        'name': profile.name,
-        'phone': profile.phone,
-        'email': profile.email,
-        'housingName': profile.housingName,
-        'address': profile.address,
-      },
-      overwriteExisting: overwriteExisting,
-      targetProfileDraft: true,
-    );
-  }
-
-  void _applyNeighborFormValues(
-    Map<String, dynamic> values, {
-    required bool overwriteExisting,
-    bool targetProfileDraft = false,
-  }) {
-    final target = targetProfileDraft
-        ? _neighborProfileDraft
-        : (_neighborFormMode.toUpperCase() == 'MANUAL'
-            ? _neighborManualDraft
-            : _neighborProfileDraft);
-
-    for (final key in _neighborFormFieldKeys) {
-      final value = (values[key] ?? '').toString().trim();
-      if (value.isEmpty) continue;
-      final current = (target[key] ?? '').trim();
-      if (!overwriteExisting && current.isNotEmpty) continue;
-      target[key] = value;
-    }
-
-    if (targetProfileDraft) {
-      if (_neighborFormMode.toUpperCase() == 'PROFILE') {
-        _applyNeighborDraftToControllers(_neighborProfileDraft);
-      }
-      return;
-    }
-
-    if (_neighborFormMode.toUpperCase() == 'MANUAL') {
-      _applyNeighborDraftToControllers(_neighborManualDraft);
-    } else {
-      _applyNeighborDraftToControllers(_neighborProfileDraft);
-    }
-  }
-
-  Map<String, dynamic> _extractNeighborPrefillFromMeta() {
-    final raw = _backendUiMeta['prefill'];
-    if (raw is! Map) return const <String, dynamic>{};
-    final mapped = <String, dynamic>{};
-    raw.forEach((key, value) {
-      final normalizedKey = key?.toString().trim() ?? '';
-      if (normalizedKey.isEmpty) return;
-      mapped[normalizedKey] = value;
-    });
-    return mapped;
-  }
-
-  List<String> _neighborRequiredFields() {
-    final required = _requiredFieldsFromUiMeta(_backendUiMeta);
-    if (required.isNotEmpty) return required;
-    return const <String>['name', 'phone', 'email', 'housingName', 'address'];
-  }
-
-  bool get _isNeighborCenterFormReady {
-    final values = _neighborFormValues();
-    for (final field in _neighborRequiredFields()) {
-      final value = (values[field] ?? '').toString().trim();
-      if (value.isEmpty) return false;
-    }
-    return true;
-  }
-
-  Map<String, dynamic> _neighborFormValues() {
-    return <String, dynamic>{
-      'name': _neighborNameController.text.trim(),
-      'phone': _neighborPhoneController.text.trim(),
-      'email': _neighborEmailController.text.trim(),
-      'housingName': _neighborHousingNameController.text.trim(),
-      'address': _neighborAddressController.text.trim(),
-      if ((_data.residence ?? '').trim().isNotEmpty)
-        'residence': _data.residence!.trim(),
-      if ((_data.management ?? '').trim().isNotEmpty)
-        'management': _data.management!.trim(),
-      if ((_data.sourceCertainty ?? '').trim().isNotEmpty)
-        'sourceCertainty': _data.sourceCertainty!.trim(),
-      if ((_data.noiseType ?? '').trim().isNotEmpty)
-        'noiseType': _data.noiseType!.trim(),
-      if ((_data.frequency ?? '').trim().isNotEmpty)
-        'frequency': _data.frequency!.trim(),
-      if ((_data.timeBand ?? '').trim().isNotEmpty)
-        'timeBand': _data.timeBand!.trim(),
-      if (_data.startedAtDate != null && _data.startedAtTime != null)
-        'startedAt':
-            '${_formatDate(_data.startedAtDate!)} ${_formatTime(_data.startedAtTime!)}',
-    };
-  }
-
   bool get _isNoiseDiaryReady {
     return _noiseDiaryDate != null &&
         _noiseDiaryTime != null &&
@@ -1077,18 +745,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   bool get _isIntakeBasicReady {
     return _intakeResidenceId != null &&
         _intakeManagementId != null &&
-        _intakeVisitConsultWithin30DaysId != null &&
         _intakeSourceCertaintyId != null;
   }
 
   bool get _isIntakeDetailReady {
-    final hasNoiseTypes = _intakeNoiseTypeIds.isNotEmpty;
-    final hasTimeBands = _intakeTimeBandIds.isNotEmpty;
-    final needsEtc = _intakeNoiseTypeIds.contains('noise-other');
-    return hasNoiseTypes &&
+    return _intakeNoiseTypeId != null &&
         _intakeFrequencyId != null &&
-        hasTimeBands &&
-        (!needsEtc || _intakeNoiseTypeEtcController.text.trim().isNotEmpty) &&
+        _intakeTimeBandId != null &&
         _incidentDate != null &&
         _incidentTime != null;
   }
@@ -1101,20 +764,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     return null;
   }
 
-  Set<String> _optionIdsByLabels(
-    List<MiniOption> options,
-    List<String> labels,
-  ) {
-    final ids = <String>{};
-    for (final label in labels) {
-      final id = _optionIdByLabel(options, label);
-      if (id != null && id.isNotEmpty) {
-        ids.add(id);
-      }
-    }
-    return ids;
-  }
-
   bool get _isMeasureCheckReady {
     return _measureVisitDone != null &&
         _measureWithin30Days != null &&
@@ -1125,75 +774,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     return _measureVisitDone == true &&
         _measureWithin30Days == true &&
         _measureReceivingUnit == true;
-  }
-
-  bool _isConsentWidgetType(String widgetType) {
-    final normalized = widgetType.trim().toUpperCase();
-    return normalized == 'NEIGHBOR_CENTER_CONSENT' ||
-        normalized == 'NEIGHBOR_CENTER_VISIT_CONSENT';
-  }
-
-  Set<String> _requiredConsentIdsFromUiMeta() {
-    final metaRequiredRaw = _backendUiMeta['requiredConsentIds'];
-    if (metaRequiredRaw is List) {
-      final metaRequired = metaRequiredRaw
-          .map((e) => e.toString().trim())
-          .where((id) => id.isNotEmpty)
-          .where((id) => _options.any((option) => option.id == id))
-          .toSet();
-      if (metaRequired.isNotEmpty) return metaRequired;
-    }
-    final required = _requiredFieldsFromUiMeta(_backendUiMeta)
-        .where((id) => _options.any((option) => option.id == id))
-        .toSet();
-    if (required.isNotEmpty) return required;
-    return _options.map((option) => option.id).toSet();
-  }
-
-  String _consentBodyForOption(MiniOption option) {
-    switch (option.id) {
-      case 'consent-privacy':
-        return '개인정보 수집·이용 동의\n\n'
-            '1. 수집 항목: 성명, 연락처, 이메일, 주택명, 주소, 소음 관련 입력 정보\n'
-            '2. 이용 목적: 층간소음 상담/접수 진행, 신청서 작성, 결과 안내\n'
-            '3. 보유 기간: 민원 처리 완료 후 관련 법령 및 내부 정책에 따른 기간 동안 보관\n'
-            '4. 동의 거부 권리: 동의를 거부할 수 있으나, 서비스 이용이 제한될 수 있습니다.\n\n'
-            '위 내용을 확인했으며 개인정보 수집·이용에 동의합니다.';
-      case 'consent-third-party':
-        return '제3자 제공 동의\n\n'
-            '1. 제공 대상: 층간소음 이웃사이센터 등 민원 처리 관련 기관\n'
-            '2. 제공 항목: 성명, 연락처, 이메일, 주소, 소음 관련 신청 정보\n'
-            '3. 제공 목적: 상담 접수, 사실 확인, 후속 처리 및 결과 안내\n'
-            '4. 보유 기간: 제공 목적 달성 시까지 또는 법령상 보관 기간 내\n'
-            '5. 동의 거부 권리: 동의를 거부할 수 있으나, 접수 진행이 제한될 수 있습니다.\n\n'
-            '위 내용을 확인했으며 제3자 제공에 동의합니다.';
-      case 'consent-email':
-        return '이메일 제출 동의\n\n'
-            '1. 제출 채널: 시스템이 생성한 서식 파일을 이메일 채널로 전송\n'
-            '2. 수신 정보: 사용자가 입력한 수신 이메일 주소\n'
-            '3. 회신 정보: 신청자가 입력한 이메일을 Reply-To로 설정\n'
-            '4. 유의 사항: 잘못된 수신 주소 입력 시 전송 실패 또는 오발송이 발생할 수 있습니다.\n\n'
-            '위 내용을 확인했으며 이메일 제출 방식에 동의합니다.';
-      default:
-        return '${option.label}\n\n위 내용을 확인했으며 동의합니다.';
-    }
-  }
-
-  Future<void> _openConsentBottomSheet(MiniOption option) async {
-    final accepted = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ConsentDocumentBottomSheet(
-        title: option.label,
-        content: _consentBodyForOption(option),
-        initiallyAccepted: _selectedOptionIds.contains(option.id),
-      ),
-    );
-    if (!mounted || accepted != true) return;
-    setState(() {
-      _selectedOptionIds.add(option.id);
-    });
   }
 
   bool get _isServerMode => AuthSession.useBackend;
@@ -1296,16 +876,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   MiniInterfaceType _miniTypeFromBackendUiHint({
     required String uiType,
     required List<MiniOption> options,
-    required Map<String, dynamic> meta,
   }) {
     final normalized = uiType.trim().toUpperCase();
-    final widgetType =
-        (meta['widgetType']?.toString() ?? '').trim().toUpperCase();
-    if (normalized == 'OPTION_LIST' &&
-        (widgetType == 'NEIGHBOR_CENTER_FORM' ||
-            widgetType == 'NEIGHBOR_CENTER_VISIT_FORM')) {
-      return MiniInterfaceType.neighborCenterForm;
-    }
     switch (normalized) {
       case 'LIST_PICKER':
         return options.isEmpty
@@ -1335,20 +907,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         .toList(growable: false);
   }
 
-  List<_SummaryRow> _summaryRowsFromUiMeta(Map<String, dynamic> meta) {
-    final raw = meta['summaryRows'];
-    if (raw is! List) return const <_SummaryRow>[];
-    final rows = <_SummaryRow>[];
-    for (final item in raw) {
-      if (item is! Map) continue;
-      final label = (item['label']?.toString() ?? '').trim();
-      final value = (item['value']?.toString() ?? '').trim();
-      if (label.isEmpty || value.isEmpty) continue;
-      rows.add(_SummaryRow(label: label, value: value));
-    }
-    return rows;
-  }
-
   DemoStep _intakeStepFromRequiredFields(List<String> requiredFields) {
     bool hasAny(Set<String> targets) =>
         requiredFields.any((field) => targets.contains(field));
@@ -1356,12 +914,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     if (hasAny(<String>{'noiseNow', 'safety', 'safetyContinue'})) {
       return DemoStep.noiseNow;
     }
-    if (hasAny(<String>{
-      'residence',
-      'management',
-      'sourceCertainty',
-      'visitConsultWithin30Days',
-    })) {
+    if (hasAny(<String>{'residence', 'management', 'sourceCertainty'})) {
       return DemoStep.multiForm;
     }
     if (hasAny(<String>{'noiseType', 'frequency', 'timeBand'})) {
@@ -1374,43 +927,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     ChatTurnResponseDto response,
     MiniInterfaceType miniType,
     List<MiniOption> options,
-    String flowStep,
-    String currentActionRequired,
   ) {
     final nextAction = response.nextAction.trim().toUpperCase();
     final uiType = response.uiHint.type.trim().toUpperCase();
-    final normalizedFlowStep = flowStep.trim().toLowerCase();
-    final normalizedAction = currentActionRequired.trim().toUpperCase();
-
-    if (normalizedAction == 'NEIGHBOR_CENTER_FORM_REQUIRED') {
-      return DemoStep.evidenceV1;
-    }
-    if (normalizedAction == 'NEIGHBOR_CENTER_VISIT_FORM_REQUIRED') {
-      return DemoStep.evidenceV1;
-    }
-    if (normalizedAction == 'NEIGHBOR_CENTER_DOCS_OPTIONAL') {
-      return DemoStep.evidenceV1;
-    }
-    if (normalizedAction == 'NEIGHBOR_CENTER_DRAFT_REVIEW_REQUIRED') {
-      return DemoStep.draftViewer;
-    }
-    if (normalizedAction == 'NEIGHBOR_CENTER_CONSENT_REQUIRED') {
-      return DemoStep.draftConfirm;
-    }
-    if (normalizedAction == 'NEIGHBOR_CENTER_RECIPIENT_REQUIRED') {
-      return DemoStep.draftConfirm;
-    }
-    if (normalizedAction == 'NEIGHBOR_CENTER_VISIT_CONSENT_REQUIRED') {
-      return DemoStep.draftConfirm;
-    }
-    if (miniType == MiniInterfaceType.neighborCenterForm ||
-        normalizedFlowStep == 'neighborcenterform' ||
-        normalizedFlowStep == 'neighbor_center_form' ||
-        normalizedFlowStep == 'neighborcentervisitform' ||
-        normalizedFlowStep == 'neighbor_center_visit_form' ||
-        normalizedAction == 'NEIGHBOR_CENTER_FORM_REQUIRED') {
-      return DemoStep.evidenceV1;
-    }
 
     if (miniType == MiniInterfaceType.pathChooser || uiType == 'PATH_CHOOSER') {
       return DemoStep.pathChooser;
@@ -1464,14 +983,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           labels.contains('모름')) {
         return DemoStep.management;
       }
-      if (labels.contains('뛰거나 걷는 소리') ||
-          labels.contains('문 개폐 소리') ||
-          labels.contains('물건 떨어지는 소리') ||
-          labels.contains('가구 끄는 소리') ||
-          labels.contains('망치질 소리') ||
-          labels.contains('TV 소리') ||
-          labels.contains('오디오 소리') ||
-          labels.contains('기타')) {
+      if (labels.contains('충격 소음(쿵쿵)')) {
         return DemoStep.noiseType;
       }
       if (labels.contains('거의 매일')) {
@@ -1489,12 +1001,10 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   }
 
   Future<List<MiniOption>> _resolveBackendUiOptions(ChatUiHintDto hint) async {
-    final optionReasons = _stringMapFromDynamic(hint.meta['optionReasons']);
     final options = hint.options
         .map((option) => MiniOption(
               id: option.id.trim(),
               label: option.label.trim(),
-              description: optionReasons[option.id.trim()],
             ))
         .where((option) => option.id.isNotEmpty && option.label.isNotEmpty)
         .toList(growable: false);
@@ -1530,64 +1040,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     }
   }
 
-  Map<String, String> _stringMapFromDynamic(Object? raw) {
-    if (raw is! Map) return const <String, String>{};
-    final map = <String, String>{};
-    raw.forEach((key, value) {
-      final normalizedKey = key?.toString().trim() ?? '';
-      final normalizedValue = value?.toString().trim() ?? '';
-      if (normalizedKey.isEmpty || normalizedValue.isEmpty) return;
-      map[normalizedKey] = normalizedValue;
-    });
-    return map;
-  }
-
-  void _syncNeighborGeneratedDocFromStatePatch(
-      Map<String, dynamic> statePatch) {
-    final directPath =
-        statePatch['neighborMeasurementDocumentPath']?.toString();
-    final directFileName =
-        statePatch['neighborMeasurementDocumentFileName']?.toString();
-    final directGeneratedAt =
-        statePatch['neighborMeasurementDocumentGeneratedAt']?.toString();
-
-    final filledSlots = _stringMapFromDynamic(statePatch['filledSlots']);
-    final filledPath = filledSlots['neighborMeasurementDocumentPath'];
-    final filledFileName = filledSlots['neighborMeasurementDocumentFileName'];
-    final filledGeneratedAt =
-        filledSlots['neighborMeasurementDocumentGeneratedAt'];
-
-    final resolvedPath = (directPath != null && directPath.trim().isNotEmpty)
-        ? directPath.trim()
-        : (filledPath == null || filledPath.trim().isEmpty
-            ? null
-            : filledPath.trim());
-    final resolvedFileName =
-        (directFileName != null && directFileName.trim().isNotEmpty)
-            ? directFileName.trim()
-            : (filledFileName == null || filledFileName.trim().isEmpty
-                ? null
-                : filledFileName.trim());
-    final resolvedGeneratedAt =
-        (directGeneratedAt != null && directGeneratedAt.trim().isNotEmpty)
-            ? directGeneratedAt.trim()
-            : (filledGeneratedAt == null || filledGeneratedAt.trim().isEmpty
-                ? null
-                : filledGeneratedAt.trim());
-
-    if (resolvedPath != null) {
-      _neighborGeneratedDocPath = resolvedPath;
-    }
-    if (resolvedFileName != null) {
-      _neighborGeneratedDocFileName = resolvedFileName;
-    }
-    if (resolvedGeneratedAt != null) {
-      _neighborGeneratedDocGeneratedAt = resolvedGeneratedAt;
-    }
-  }
-
   Future<void> _applyBackendTurn(ChatTurnResponseDto response) async {
-    _syncNeighborGeneratedDocFromStatePatch(response.statePatch);
     final hint = response.uiHint;
     final options = await _resolveBackendUiOptions(hint);
     final flowStep =
@@ -1597,12 +1050,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         (response.statePatch['currentActionRequired']?.toString() ?? '')
             .trim()
             .toUpperCase();
-    final backendMissingSlots = (response.statePatch['missingSlots'] is List)
-        ? (response.statePatch['missingSlots'] as List)
-            .map((value) => value?.toString() ?? '')
-            .where((value) => value.isNotEmpty)
-            .toList(growable: false)
-        : const <String>[];
     final forceNoMiniInterface = currentActionRequired == 'GENERAL_CHAT';
     final forceIntakeMultiForm = !forceNoMiniInterface &&
         currentActionRequired == 'INTAKE_REQUIRED' &&
@@ -1615,81 +1062,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     final mappedMiniType = _miniTypeFromBackendUiHint(
       uiType: effectiveUiType,
       options: effectiveOptions,
-      meta: hint.meta,
     );
-    if (mappedMiniType == MiniInterfaceType.neighborCenterForm) {
-      final prefillRaw = hint.meta['prefill'];
-      if (prefillRaw is Map) {
-        final prefill = <String, dynamic>{};
-        prefillRaw.forEach((key, value) {
-          final normalizedKey = key?.toString().trim() ?? '';
-          if (normalizedKey.isEmpty) return;
-          prefill[normalizedKey] = value;
-        });
-        if (prefill.isNotEmpty) {
-          _applyNeighborFormValues(
-            prefill,
-            overwriteExisting: true,
-            targetProfileDraft: true,
-          );
-        }
-      }
-      final formMode = (hint.meta['formMode']?.toString() ?? '').trim();
-      if (formMode.toUpperCase() == 'MANUAL') {
-        _switchNeighborFormMode('MANUAL');
-      } else if (formMode.isNotEmpty) {
-        _switchNeighborFormMode('PROFILE');
-      } else if (_neighborFormMode.toUpperCase() != 'MANUAL') {
-        _switchNeighborFormMode('PROFILE');
-      }
-    }
-    final widgetType =
-        (hint.meta['widgetType']?.toString() ?? '').trim().toUpperCase();
-    if (widgetType == 'NEIGHBOR_CENTER_RECIPIENT') {
-      if (_recipientDomainId == null ||
-          !effectiveOptions.any((option) => option.id == _recipientDomainId)) {
-        final firstDomainId = effectiveOptions.isNotEmpty
-            ? effectiveOptions.first.id
-            : 'recipient-domain-gmail';
-        _recipientDomainId = firstDomainId;
-      }
-      final prefillLocalPart =
-          (hint.meta['recipientLocalPart']?.toString() ?? '').trim();
-      final prefillDomain =
-          (hint.meta['recipientDomain']?.toString() ?? '').trim();
-      final prefillCustomDomain =
-          (hint.meta['recipientDomainCustom']?.toString() ?? '').trim();
-      if (prefillLocalPart.isNotEmpty &&
-          _recipientLocalPartController.text.trim().isEmpty) {
-        _recipientLocalPartController.text = prefillLocalPart;
-      }
-      if (prefillDomain.isNotEmpty &&
-          effectiveOptions.any((option) => option.id == prefillDomain)) {
-        _recipientDomainId = prefillDomain;
-      }
-      if (prefillCustomDomain.isNotEmpty &&
-          _recipientCustomDomainController.text.trim().isEmpty) {
-        _recipientCustomDomainController.text = prefillCustomDomain;
-      }
-    }
     final miniType =
         forceIntakeMultiForm ? MiniInterfaceType.multiForm : mappedMiniType;
-    debugPrint(
-      '[chat-turn-state] caseId=${response.sessionId} '
-      'action=$currentActionRequired '
-      'uiType=$effectiveUiType '
-      'requiredFields=${requiredFields.join(',')} '
-      'missingSlots=${backendMissingSlots.join(',')}',
-    );
     final nextStep = forceIntakeMultiForm
         ? _intakeStepFromRequiredFields(requiredFields)
-        : _stepFromBackendTurn(
-            response,
-            miniType,
-            effectiveOptions,
-            flowStep,
-            currentActionRequired,
-          );
+        : _stepFromBackendTurn(response, miniType, effectiveOptions);
     final assistantMessage = response.assistantMessage.trim().isEmpty
         ? '다음 단계를 진행해 주세요.'
         : response.assistantMessage.trim();
@@ -1721,7 +1099,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       backendUiHintType: effectiveUiType,
       backendUiSelectionMode:
           _normalizeBackendSelectionMode(hint.selectionMode),
-      backendUiMeta: hint.meta,
     );
   }
 
@@ -1862,51 +1239,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         .where((label) => label.trim().isNotEmpty)
         .toList(growable: false);
 
-    final widgetType =
-        (_backendUiMeta['widgetType']?.toString() ?? '').trim().toUpperCase();
     final isSubmitConfirm = selectedIds.any(
-      (id) =>
-          id == 'submit-confirm' ||
-          id == 'submit-now' ||
-          id == 'submit-measurement',
+      (id) => id == 'submit-confirm' || id == 'submit-now',
     );
-
-    final interactionMeta = <String, dynamic>{
-      if (isSubmitConfirm) 'confirmed': true,
-    };
-    if (widgetType == 'NEIGHBOR_CENTER_DOCS_OPTIONAL') {
-      interactionMeta['formAction'] = 'UPLOAD_OPTIONAL_DOCS';
-      final attachments = <Map<String, dynamic>>[];
-      for (final option in selected) {
-        if (option.id == 'docs-skip') continue;
-        final fileName = _neighborOptionalDocAttachmentNames[option.id]?.trim();
-        if (fileName == null || fileName.isEmpty) continue;
-        attachments.add(<String, dynamic>{
-          'fileName': fileName,
-          'summaryText': option.label,
-        });
-      }
-      if (attachments.isNotEmpty) {
-        interactionMeta['attachments'] = attachments;
-      }
-    } else if (widgetType == 'NEIGHBOR_CENTER_DRAFT') {
-      if (selectedIds.contains('draft-edit')) {
-        interactionMeta['formAction'] = 'REQUEST_DRAFT_EDIT';
-      } else if (selectedIds.contains('draft-next')) {
-        interactionMeta['formAction'] = 'NEXT_DRAFT_PAGE';
-      } else if (selectedIds.contains('draft-preview')) {
-        interactionMeta['formAction'] = 'PREVIEW_DOCUMENT';
-      } else {
-        interactionMeta['formAction'] = 'CONFIRM_DRAFT';
-      }
-    } else if (widgetType == 'NEIGHBOR_CENTER_CONSENT') {
-      interactionMeta['formAction'] = 'CONFIRM_CONSENT';
-      interactionMeta['consentIds'] = selectedIds;
-    } else if (widgetType == 'NEIGHBOR_CENTER_VISIT_CONSENT') {
-      interactionMeta['formAction'] = 'CONFIRM_CONSENT';
-      interactionMeta['consentIds'] = selectedIds;
-    }
-
     final interaction = ChatTurnInteractionPayload(
       interactionType: isSubmitConfirm ? 'SYSTEM_CONFIRM' : 'MINI_SELECTION',
       selectedOptionIds: selectedIds,
@@ -1914,7 +1249,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       sourceUiType: _backendUiHintType == 'NONE'
           ? _sourceUiTypeFromMiniType(_miniType)
           : _backendUiHintType,
-      meta: interactionMeta,
+      meta: <String, dynamic>{
+        if (isSubmitConfirm) 'confirmed': true,
+      },
     );
 
     final message = selectedLabels.isEmpty
@@ -1931,133 +1268,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       interaction: interaction,
       onFailureContinueLocal: onFailureContinueLocal,
       allowLocalFallback: allowLocalFallback,
-    );
-  }
-
-  Future<void> _requestNeighborProfileLoad() async {
-    _captureCurrentNeighborDraft();
-    _loadNeighborProfileFromSession(overwriteExisting: true);
-    final prefill = _extractNeighborPrefillFromMeta();
-    if (prefill.isNotEmpty) {
-      _applyNeighborFormValues(
-        prefill,
-        overwriteExisting: true,
-        targetProfileDraft: true,
-      );
-    }
-    setState(() {
-      _switchNeighborFormMode('PROFILE');
-    });
-    // "프로필 불러오기"는 UI 탭 전환/값 채움 동작이므로
-    // chat turn을 다시 요청하지 않고 로컬에서만 처리한다.
-    // (기존 구현은 버튼 클릭마다 AI 답변을 재생성하는 부작용이 있었다.)
-  }
-
-  Future<void> _submitNeighborCenterForm() async {
-    if (!_isNeighborCenterFormReady) return;
-    final values = _neighborFormValues();
-    final profileSummary =
-        '이웃사이센터 신청 정보 제출: ${values['name'] ?? ''}, ${values['phone'] ?? ''}';
-
-    _recordMiniResponse('이웃사이센터 신청 정보 입력 완료');
-
-    if (!_isBackendEnabled) return;
-    final interaction = ChatTurnInteractionPayload(
-      interactionType: 'SYSTEM_CONFIRM',
-      selectedOptionIds: const <String>['neighbor-form-submit'],
-      selectedOptionLabels: const <String>['입력 완료 후 제출'],
-      sourceUiType: 'OPTION_LIST',
-      meta: <String, dynamic>{
-        'formAction': 'SUBMIT_FORM',
-        'formValues': values,
-        'confirmed': true,
-      },
-    );
-    await _requestBackendTurnForText(
-      profileSummary,
-      interaction: interaction,
-      thinkingDuration: const Duration(milliseconds: 420),
-      onFailureContinueLocal: () {
-        _setAi(
-          text: '신청 정보 입력이 잘 완료됐어요.\n추가로 준비하신 자료가 있을까요?',
-          step: DemoStep.evidenceV1,
-          miniType: MiniInterfaceType.optionList,
-        );
-      },
-      allowLocalFallback: false,
-    );
-  }
-
-  String _normalizeRecipientLocalPart(String value) {
-    return value.trim().replaceAll(RegExp(r'\s+'), '');
-  }
-
-  String _normalizeRecipientDomain(String value) {
-    return value.trim().replaceAll(RegExp(r'\s+'), '').toLowerCase();
-  }
-
-  String _resolveRecipientDomainValue() {
-    final selectedId =
-        (_recipientDomainId ?? 'recipient-domain-gmail').trim().toLowerCase();
-    if (selectedId == 'recipient-domain-custom') {
-      return _normalizeRecipientDomain(_recipientCustomDomainController.text);
-    }
-    final selected = _options.firstWhere(
-      (option) => option.id.trim().toLowerCase() == selectedId,
-      orElse: () => const MiniOption(
-        id: 'recipient-domain-gmail',
-        label: 'gmail.com',
-      ),
-    );
-    return _normalizeRecipientDomain(selected.label);
-  }
-
-  bool get _isNeighborRecipientReady {
-    final localPart = _normalizeRecipientLocalPart(
-      _recipientLocalPartController.text,
-    );
-    final domain = _resolveRecipientDomainValue();
-    final email = '$localPart@$domain';
-    final pattern =
-        RegExp(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$');
-    return pattern.hasMatch(email);
-  }
-
-  Future<void> _submitNeighborRecipient() async {
-    if (!_isNeighborRecipientReady) return;
-    final localPart = _normalizeRecipientLocalPart(
-      _recipientLocalPartController.text,
-    );
-    final domain = _resolveRecipientDomainValue();
-    final recipientEmail = '$localPart@$domain';
-
-    _recordMiniResponse('수신 이메일 입력: $recipientEmail');
-    if (!_isBackendEnabled) return;
-
-    final interaction = ChatTurnInteractionPayload(
-      interactionType: 'SYSTEM_CONFIRM',
-      selectedOptionIds: const <String>['neighbor-recipient-submit'],
-      selectedOptionLabels: const <String>['수신 이메일 제출'],
-      sourceUiType: 'OPTION_LIST',
-      meta: <String, dynamic>{
-        'formAction': 'SUBMIT_RECIPIENT',
-        'recipientLocalPart': localPart,
-        'recipientDomain': domain,
-        'recipientDomainId': (_recipientDomainId ?? '').trim().isEmpty
-            ? 'recipient-domain-gmail'
-            : _recipientDomainId!.trim(),
-        'recipientDomainCustom': _normalizeRecipientDomain(
-          _recipientCustomDomainController.text,
-        ),
-        'confirmed': true,
-      },
-    );
-    await _requestBackendTurnForText(
-      '수신 이메일 제출 완료',
-      interaction: interaction,
-      thinkingDuration: const Duration(milliseconds: 420),
-      onFailureContinueLocal: null,
-      allowLocalFallback: false,
     );
   }
 
@@ -2088,11 +1298,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       );
     }
 
-    final mappedMessage = toKoreanErrorMessage(error);
-    final isNetworkLike = code.trim().toUpperCase() == 'NETWORK_ERROR' ||
-        code.trim().toUpperCase() == 'NETWORK_TIMEOUT' ||
-        code.trim().toUpperCase() == 'SSL_ERROR';
-
     if (!mounted) return;
     setState(() {
       if (_allowLocalDemoFallback) {
@@ -2101,21 +1306,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _isBackendUiHintDriven = false;
       _backendUiHintType = 'NONE';
       _backendUiSelectionMode = 'NONE';
-      _backendUiMeta = <String, dynamic>{};
     });
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    final contentText = isNetworkLike
-        ? mappedMessage
-        : (traceId.isEmpty
-            ? mappedMessage
-            : '$mappedMessage\n(trace: $traceId, code: $code)');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          contentText,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-        ),
+        content: const Text('서버 연결이 원활하지 않아요. 인터넷 연결을 확인해주세요.'),
         action: SnackBarAction(
           label: '재시도',
           onPressed: onRetry,
@@ -2261,21 +1456,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       if (option.id == id) return option.label;
     }
     return null;
-  }
-
-  List<String> _optionLabelsByIds(
-    List<MiniOption> options,
-    Iterable<String> ids,
-  ) {
-    final idSet = ids.toSet();
-    if (idSet.isEmpty) return const <String>[];
-    final labels = <String>[];
-    for (final option in options) {
-      if (idSet.contains(option.id)) {
-        labels.add(option.label);
-      }
-    }
-    return labels;
   }
 
   ({bool eligible, String reason}) _evaluateEligibility() {
@@ -2464,37 +1644,22 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         _optionLabelById(_residenceOptions, _intakeResidenceId);
     final managementLabel =
         _optionLabelById(_managementOptions, _intakeManagementId);
-    final visitConsultLabel = _optionLabelById(
-      _visitConsultWithin30DaysOptions,
-      _intakeVisitConsultWithin30DaysId,
-    );
     final sourceCertaintyLabel =
         _optionLabelById(_sourceCertaintyOptions, _intakeSourceCertaintyId);
 
     _data = _data.copyWith(
       residence: residenceLabel,
       management: managementLabel,
-      visitConsultWithin30Days: visitConsultLabel,
       sourceCertainty: sourceCertaintyLabel,
     );
     _recordMiniResponse(
-      '기본 정보 입력: ${residenceLabel ?? '미입력'}, ${managementLabel ?? '미입력'}, '
-      '${visitConsultLabel ?? '미입력'}, ${sourceCertaintyLabel ?? '미입력'}',
+      '기본 정보 입력: ${residenceLabel ?? '미입력'}, ${managementLabel ?? '미입력'}, ${sourceCertaintyLabel ?? '미입력'}',
     );
 
     if (_isBackendEnabled) {
-      debugPrint(
-        '[intake-basic-submit] caseId=${_backendCaseId ?? ''} '
-        'residenceId=${_intakeResidenceId ?? ''} residence=${residenceLabel ?? ''} '
-        'managementId=${_intakeManagementId ?? ''} management=${managementLabel ?? ''} '
-        'visitConsultId=${_intakeVisitConsultWithin30DaysId ?? ''} visitConsult=${visitConsultLabel ?? ''} '
-        'sourceCertaintyId=${_intakeSourceCertaintyId ?? ''} sourceCertainty=${sourceCertaintyLabel ?? ''}',
-      );
-
       final messageParts = <String>[
         if (residenceLabel != null) '거주 형태 $residenceLabel',
         if (managementLabel != null) '관리사무소 $managementLabel',
-        if (visitConsultLabel != null) '30일 이내 방문상담 $visitConsultLabel',
         if (sourceCertaintyLabel != null) '발생원 특정 $sourceCertaintyLabel',
       ];
       final message = messageParts.join(', ');
@@ -2503,14 +1668,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         selectedOptionIds: <String>[
           if (_intakeResidenceId != null) _intakeResidenceId!,
           if (_intakeManagementId != null) _intakeManagementId!,
-          if (_intakeVisitConsultWithin30DaysId != null)
-            _intakeVisitConsultWithin30DaysId!,
           if (_intakeSourceCertaintyId != null) _intakeSourceCertaintyId!,
         ],
         selectedOptionLabels: <String>[
           if (residenceLabel != null) residenceLabel,
           if (managementLabel != null) managementLabel,
-          if (visitConsultLabel != null) visitConsultLabel,
           if (sourceCertaintyLabel != null) sourceCertaintyLabel,
         ],
         sourceUiType:
@@ -2519,8 +1681,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           'filledSlots': <String, dynamic>{
             if (residenceLabel != null) 'residence': residenceLabel,
             if (managementLabel != null) 'management': managementLabel,
-            if (visitConsultLabel != null)
-              'visitConsultWithin30Days': visitConsultLabel,
             if (sourceCertaintyLabel != null)
               'sourceCertainty': sourceCertaintyLabel,
           },
@@ -2557,25 +1717,16 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   void _submitIntakeDetailMultiForm() {
     if (!_isIntakeDetailReady) return;
 
-    final noiseTypeLabels =
-        _optionLabelsByIds(_noiseTypeOptions, _intakeNoiseTypeIds);
     final noiseTypeLabel =
-        noiseTypeLabels.isEmpty ? null : noiseTypeLabels.join(', ');
+        _optionLabelById(_noiseTypeOptions, _intakeNoiseTypeId);
     final frequencyLabel =
         _optionLabelById(_frequencyOptions, _intakeFrequencyId);
-    final timeBandLabels =
-        _optionLabelsByIds(_timeBandOptions, _intakeTimeBandIds);
-    final timeBandLabel =
-        timeBandLabels.isEmpty ? null : timeBandLabels.join(', ');
-    final noiseTypeEtc = _intakeNoiseTypeEtcController.text.trim();
+    final timeBandLabel = _optionLabelById(_timeBandOptions, _intakeTimeBandId);
 
     _data = _data.copyWith(
       noiseType: noiseTypeLabel,
-      noiseTypes: noiseTypeLabels,
-      noiseTypeEtc: noiseTypeEtc.isEmpty ? null : noiseTypeEtc,
       frequency: frequencyLabel,
       timeBand: timeBandLabel,
-      timeBands: timeBandLabels,
       startedAtDate: _incidentDate,
       startedAtTime: _incidentTime,
     );
@@ -2586,7 +1737,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     if (_isBackendEnabled) {
       final detailParts = <String>[
         if (noiseTypeLabel != null) '소음 유형 $noiseTypeLabel',
-        if (noiseTypeEtc.isNotEmpty) '기타 소음 유형 $noiseTypeEtc',
         if (frequencyLabel != null) '빈도 $frequencyLabel',
         if (timeBandLabel != null) '시간대 $timeBandLabel',
         if (_incidentDate != null) '발생 날짜 ${_formatDate(_incidentDate!)}',
@@ -2596,14 +1746,14 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       final interaction = ChatTurnInteractionPayload(
         interactionType: 'MINI_SELECTION',
         selectedOptionIds: <String>[
-          ..._intakeNoiseTypeIds,
+          if (_intakeNoiseTypeId != null) _intakeNoiseTypeId!,
           if (_intakeFrequencyId != null) _intakeFrequencyId!,
-          ..._intakeTimeBandIds,
+          if (_intakeTimeBandId != null) _intakeTimeBandId!,
         ],
         selectedOptionLabels: <String>[
-          ...noiseTypeLabels,
+          if (noiseTypeLabel != null) noiseTypeLabel,
           if (frequencyLabel != null) frequencyLabel,
-          ...timeBandLabels,
+          if (timeBandLabel != null) timeBandLabel,
           if (_incidentDate != null) _formatDate(_incidentDate!),
           if (_incidentTime != null) _formatTime(_incidentTime!),
         ],
@@ -2612,28 +1762,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         meta: <String, dynamic>{
           'filledSlots': <String, dynamic>{
             if (noiseTypeLabel != null) 'noiseType': noiseTypeLabel,
-            if (noiseTypeLabels.isNotEmpty) 'noiseTypes': noiseTypeLabels,
-            if (noiseTypeEtc.isNotEmpty) 'noiseTypeEtc': noiseTypeEtc,
             if (frequencyLabel != null) 'frequency': frequencyLabel,
             if (timeBandLabel != null) 'timeBand': timeBandLabel,
-            if (timeBandLabels.isNotEmpty) 'timeBands': timeBandLabels,
             if (_incidentDate != null && _incidentTime != null)
               'startedAt':
                   '${_formatDate(_incidentDate!)} ${_formatTime(_incidentTime!)}',
           },
         },
-      );
-      debugPrint(
-        '[intake-detail-submit] caseId=${_backendCaseId ?? ''} '
-        'noiseType=${noiseTypeLabel ?? ''} '
-        'noiseTypes=${noiseTypeLabels.join('|')} '
-        'noiseTypeEtc=${noiseTypeEtc.isEmpty ? '' : noiseTypeEtc} '
-        'frequency=${frequencyLabel ?? ''} '
-        'timeBand=${timeBandLabel ?? ''} '
-        'timeBands=${timeBandLabels.join('|')} '
-        'startedAtDate=${_incidentDate == null ? '' : _formatDate(_incidentDate!)} '
-        'startedAtTime=${_incidentTime == null ? '' : _formatTime(_incidentTime!)} '
-        'backendUiType=$_backendUiHintType',
       );
       unawaited(
         _requestBackendTurnForText(
@@ -2789,50 +1924,21 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     if (resetSelections) {
       _intakeResidenceId = null;
       _intakeManagementId = null;
-      _intakeVisitConsultWithin30DaysId = null;
       _intakeSourceCertaintyId = null;
       _intakeNoiseTypeId = null;
       _intakeFrequencyId = null;
       _intakeTimeBandId = null;
-      _intakeNoiseTypeIds.clear();
-      _intakeTimeBandIds.clear();
-      _intakeAddressController.clear();
-      _intakeNoiseTypeEtcController.clear();
       _incidentDate = null;
       _incidentTime = null;
     } else {
       _intakeResidenceId = _optionIdByLabel(_residenceOptions, _data.residence);
       _intakeManagementId =
           _optionIdByLabel(_managementOptions, _data.management);
-      _intakeVisitConsultWithin30DaysId = _optionIdByLabel(
-        _visitConsultWithin30DaysOptions,
-        _data.visitConsultWithin30Days,
-      );
       _intakeSourceCertaintyId =
           _optionIdByLabel(_sourceCertaintyOptions, _data.sourceCertainty);
       _intakeNoiseTypeId = _optionIdByLabel(_noiseTypeOptions, _data.noiseType);
       _intakeFrequencyId = _optionIdByLabel(_frequencyOptions, _data.frequency);
       _intakeTimeBandId = _optionIdByLabel(_timeBandOptions, _data.timeBand);
-      _intakeNoiseTypeIds
-        ..clear()
-        ..addAll(_optionIdsByLabels(
-          _noiseTypeOptions,
-          _data.noiseTypes ?? const <String>[],
-        ));
-      if (_intakeNoiseTypeIds.isEmpty && _intakeNoiseTypeId != null) {
-        _intakeNoiseTypeIds.add(_intakeNoiseTypeId!);
-      }
-      _intakeTimeBandIds
-        ..clear()
-        ..addAll(_optionIdsByLabels(
-          _timeBandOptions,
-          _data.timeBands ?? const <String>[],
-        ));
-      if (_intakeTimeBandIds.isEmpty && _intakeTimeBandId != null) {
-        _intakeTimeBandIds.add(_intakeTimeBandId!);
-      }
-      _intakeAddressController.text = _data.address ?? '';
-      _intakeNoiseTypeEtcController.text = _data.noiseTypeEtc ?? '';
       _incidentDate = _data.startedAtDate;
       _incidentTime = _data.startedAtTime;
     }
@@ -2860,9 +1966,13 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _goStatusFeed() {
     _setAi(
-      text: '접수가 완료됐어요.\n처리 결과를 계속 안내해 드릴게요.',
+      text: '접수를 완료했어요.\n이제 사용자 확인 기반 타임라인으로 진행을 추적해드릴게요.',
       step: DemoStep.statusFeed,
       miniType: MiniInterfaceType.statusFeed,
+      options: const [
+        MiniOption(id: 'status-upload', label: '추가 증거 업로드'),
+        MiniOption(id: 'status-summary', label: '케이스 요약 보기'),
+      ],
     );
   }
 
@@ -3007,66 +2117,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       setState(() {
         _evidenceV2AttachmentIds.add(id);
         _evidenceV2AttachmentNames[id] = selectedFileName;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('파일을 불러오지 못했어요. 다시 시도해 주세요.'),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isPickingEvidence = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _toggleNeighborCenterOptionalDocAttachment(String id) async {
-    if (_isPickingEvidence) return;
-
-    if (_selectedOptionIds.contains(id)) {
-      setState(() {
-        _selectedOptionIds.remove(id);
-        _neighborOptionalDocAttachmentNames.remove(id);
-      });
-      return;
-    }
-
-    setState(() {
-      _isPickingEvidence = true;
-    });
-
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const <String>[
-          'pdf',
-          'hwp',
-          'hwpx',
-          'doc',
-          'docx',
-          'txt',
-          'jpg',
-          'jpeg',
-          'png',
-          'zip',
-        ],
-        allowMultiple: false,
-        withData: false,
-      );
-      if (result == null || result.files.isEmpty) return;
-      final selectedFileName = result.files.first.name.trim();
-      if (selectedFileName.isEmpty) return;
-
-      if (!mounted) return;
-      setState(() {
-        _selectedOptionIds.remove('docs-skip');
-        _selectedOptionIds.add(id);
-        _neighborOptionalDocAttachmentNames[id] = selectedFileName;
       });
     } catch (_) {
       if (!mounted) return;
@@ -3246,39 +2296,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
 
   void _handleListSelectionSubmit() {
     if (_selectedOptionIds.isEmpty) return;
-    final widgetType =
-        (_backendUiMeta['widgetType']?.toString() ?? '').trim().toUpperCase();
-    final isConsentStep =
-        _isBackendUiHintDriven && _isConsentWidgetType(widgetType);
-    if (isConsentStep) {
-      final requiredConsentIds = _requiredConsentIdsFromUiMeta();
-      final allAccepted = requiredConsentIds.isNotEmpty &&
-          requiredConsentIds
-              .every((consentId) => _selectedOptionIds.contains(consentId));
-      if (!allAccepted) return;
-      _recordMiniResponse('${requiredConsentIds.length}개 동의 완료');
-      unawaited(
-        _requestBackendTurnForSelection(
-          onFailureContinueLocal: () {
-            _setAi(
-              text: '동의 상태를 다시 확인해 주세요.',
-              step: _step,
-              miniType: _miniType,
-              options: _options,
-            );
-          },
-        ),
-      );
-      return;
-    }
-
     final selectedId = _selectedOptionIds.first;
-    final selectedLabel = _options
-        .firstWhere(
-          (e) => e.id == selectedId,
-          orElse: () => const MiniOption(id: '', label: '선택'),
-        )
-        .label;
+    final selectedLabel = _options.firstWhere((e) => e.id == selectedId).label;
     _recordMiniResponse(selectedLabel);
 
     if (_isBackendEnabled && _isBackendUiHintDriven) {
@@ -3443,19 +2462,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _miniType != MiniInterfaceType.none && _isUiReadyAfterAi;
 
   String get _miniInterfaceCollapsedTitle {
-    if (_isBackendUiHintDriven) {
-      final widgetType =
-          (_backendUiMeta['widgetType']?.toString() ?? '').trim().toUpperCase();
-      if (widgetType == 'NEIGHBOR_CENTER_DOCS_OPTIONAL') return '증거 제출';
-      if (widgetType == 'NEIGHBOR_CENTER_DRAFT') return '신청서 초안';
-      if (widgetType == 'NEIGHBOR_CENTER_CONSENT') return '동의 확인';
-      if (widgetType == 'NEIGHBOR_CENTER_RECIPIENT') return '수신 이메일 입력';
-      if (widgetType == 'NEIGHBOR_CENTER_FORM') return '이웃사이센터 신청 정보';
-      if (widgetType == 'NEIGHBOR_CENTER_VISIT_FORM') {
-        return '이웃사이센터 방문상담 신청 정보';
-      }
-      if (widgetType == 'NEIGHBOR_CENTER_VISIT_CONSENT') return '동의 확인';
-    }
     switch (_miniType) {
       case MiniInterfaceType.listPicker:
         return '단일 선택';
@@ -3467,8 +2473,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           return '증거 제출';
         }
         return '날짜 및 시간 선택';
-      case MiniInterfaceType.neighborCenterForm:
-        return '이웃사이센터 신청 정보';
       case MiniInterfaceType.measureCheck:
         return '측정 전환 체크';
       case MiniInterfaceType.datePicker:
@@ -3675,11 +2679,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
                                 'mini-${_miniType.name}-$_aiAnimationNonce',
                               ),
                               title: _miniInterfaceCollapsedTitle,
-                              trailingHintText:
-                                  _miniType == MiniInterfaceType.statusFeed &&
-                                          !_isServerMode
-                                      ? '(데모용 예시입니다)'
-                                      : null,
                               collapsed: _isMiniInterfaceCollapsed,
                               onToggleCollapsed: () {
                                 setState(() {
@@ -3731,85 +2730,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   Widget _buildMiniInterface(BuildContext context) {
     switch (_miniType) {
       case MiniInterfaceType.listPicker:
-        final widgetType = (_backendUiMeta['widgetType']?.toString() ?? '')
-            .trim()
-            .toUpperCase();
-        if (_isBackendUiHintDriven && _isConsentWidgetType(widgetType)) {
-          final requiredConsentIds = _requiredConsentIdsFromUiMeta();
-          final canSubmit = requiredConsentIds.isNotEmpty &&
-              requiredConsentIds
-                  .every((consentId) => _selectedOptionIds.contains(consentId));
-          return _ConsentListPickerWidget(
-            options: _options,
-            acceptedIds: _selectedOptionIds,
-            requiredIds: requiredConsentIds,
-            onTapOption: (option) => unawaited(_openConsentBottomSheet(option)),
-            canSubmit: canSubmit,
-            onSubmit: _handleListSelectionSubmit,
-          );
-        }
-        if (_isBackendUiHintDriven && widgetType == 'NEIGHBOR_CENTER_DRAFT') {
-          final summaryRows = _summaryRowsFromUiMeta(_backendUiMeta);
-          final primaryOption = _options.firstWhere(
-            (option) => option.id != 'draft-edit',
-            orElse: () => const MiniOption(id: '', label: ''),
-          );
-          final hasEdit = _options.any((option) => option.id == 'draft-edit');
-          return _SummaryCardWidget(
-            rows: summaryRows,
-            continueLabel:
-                primaryOption.label.trim().isEmpty ? '다음' : primaryOption.label,
-            editLabel: hasEdit ? '수정 요청' : null,
-            onContinue: primaryOption.id.isEmpty
-                ? null
-                : () {
-                    setState(() {
-                      _selectedOptionIds
-                        ..clear()
-                        ..add(primaryOption.id);
-                    });
-                    _handleListSelectionSubmit();
-                  },
-            onEdit: hasEdit
-                ? () {
-                    setState(() {
-                      _selectedOptionIds
-                        ..clear()
-                        ..add('draft-edit');
-                    });
-                    _handleListSelectionSubmit();
-                  }
-                : null,
-          );
-        }
-        if (_step == DemoStep.evidenceV1 &&
-            _isBackendUiHintDriven &&
-            widgetType == 'NEIGHBOR_CENTER_DOCS_OPTIONAL') {
-          final attachOptions = _options
-              .where((option) => option.id != 'docs-skip')
-              .toList(growable: false);
-          final selectedWithoutSkip =
-              _selectedOptionIds.where((id) => id != 'docs-skip').toSet();
-          return _NeighborCenterDocsOptionListWidget(
-            options: attachOptions,
-            selectedIds: selectedWithoutSkip,
-            selectedFileNames: _neighborOptionalDocAttachmentNames,
-            onTapOption: (id) {
-              unawaited(_toggleNeighborCenterOptionalDocAttachment(id));
-            },
-            canSubmit: selectedWithoutSkip.isNotEmpty,
-            onSubmit: _handleListSelectionSubmit,
-            onSkip: () {
-              setState(() {
-                _selectedOptionIds
-                  ..clear()
-                  ..add('docs-skip');
-                _neighborOptionalDocAttachmentNames.clear();
-              });
-              _handleListSelectionSubmit();
-            },
-          );
-        }
         return _ListPickerWidget(
           options: _options,
           selectedIds: _selectedOptionIds,
@@ -3842,19 +2762,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             selectedSafetyId: _triageSafetyId,
             onSelectNoiseNow: (id) => setState(() => _triageNoiseNowId = id),
             onSelectSafety: (id) => setState(() => _triageSafetyId = id),
-            canSubmit: _optionLabelById(
-                        _triageNoiseNowOptions, _triageNoiseNowId) !=
-                    null &&
-                _optionLabelById(_triageSafetyOptions, _triageSafetyId) != null,
+            canSubmit: _triageNoiseNowId != null && _triageSafetyId != null,
             onSubmit: _submitTriageMultiForm,
           );
         }
         if (_step == DemoStep.multiForm) {
-          final managementSelectionValid = _intakeManagementId != null &&
-              _intakeManagementId != 'management-unknown';
-          final sourceCertaintySelectionValid =
-              _intakeSourceCertaintyId != null &&
-                  _intakeSourceCertaintyId != 'source-unknown';
           return _IntakeMultiFormBasicWidget(
             scrollController: _multiFormScrollController,
             residenceOptions: _residenceOptions,
@@ -3864,18 +2776,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             selectedManagementId: _intakeManagementId,
             onSelectManagement: (id) =>
                 setState(() => _intakeManagementId = id),
-            visitConsultWithin30DaysOptions: _visitConsultWithin30DaysOptions,
-            selectedVisitConsultWithin30DaysId:
-                _intakeVisitConsultWithin30DaysId,
-            onSelectVisitConsultWithin30Days: (id) =>
-                setState(() => _intakeVisitConsultWithin30DaysId = id),
             sourceCertaintyOptions: _sourceCertaintyOptions,
             selectedSourceCertaintyId: _intakeSourceCertaintyId,
             onSelectSourceCertainty: (id) =>
                 setState(() => _intakeSourceCertaintyId = id),
-            canSubmit: _isIntakeBasicReady &&
-                managementSelectionValid &&
-                sourceCertaintySelectionValid,
+            canSubmit: _isIntakeBasicReady,
             onSubmit: _submitIntakeBasicMultiForm,
           );
         }
@@ -3883,38 +2788,14 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           return _IntakeMultiFormDetailWidget(
             scrollController: _multiFormScrollController,
             noiseTypeOptions: _noiseTypeOptions,
-            selectedNoiseTypeIds: _intakeNoiseTypeIds,
-            onToggleNoiseType: (id) {
-              setState(() {
-                if (_intakeNoiseTypeIds.contains(id)) {
-                  _intakeNoiseTypeIds.remove(id);
-                } else {
-                  _intakeNoiseTypeIds.add(id);
-                }
-                _intakeNoiseTypeId = _intakeNoiseTypeIds.isEmpty
-                    ? null
-                    : _intakeNoiseTypeIds.first;
-              });
-            },
-            noiseTypeEtcController: _intakeNoiseTypeEtcController,
-            onNoiseTypeEtcChanged: (_) => setState(() {}),
+            selectedNoiseTypeId: _intakeNoiseTypeId,
+            onSelectNoiseType: (id) => setState(() => _intakeNoiseTypeId = id),
             frequencyOptions: _frequencyOptions,
             selectedFrequencyId: _intakeFrequencyId,
             onSelectFrequency: (id) => setState(() => _intakeFrequencyId = id),
             timeBandOptions: _timeBandOptions,
-            selectedTimeBandIds: _intakeTimeBandIds,
-            onToggleTimeBand: (id) {
-              setState(() {
-                if (_intakeTimeBandIds.contains(id)) {
-                  _intakeTimeBandIds.remove(id);
-                } else {
-                  _intakeTimeBandIds.add(id);
-                }
-                _intakeTimeBandId = _intakeTimeBandIds.isEmpty
-                    ? null
-                    : _intakeTimeBandIds.first;
-              });
-            },
+            selectedTimeBandId: _intakeTimeBandId,
+            onSelectTimeBand: (id) => setState(() => _intakeTimeBandId = id),
             dateLabel:
                 _incidentDate == null ? '선택해 주세요' : _formatDate(_incidentDate!),
             timeLabel:
@@ -3943,39 +2824,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           onSubmit: () {},
         );
       case MiniInterfaceType.optionList:
-        final widgetType = (_backendUiMeta['widgetType']?.toString() ?? '')
-            .trim()
-            .toUpperCase();
-        if (_isBackendUiHintDriven &&
-            widgetType == 'NEIGHBOR_CENTER_RECIPIENT') {
-          return _NeighborCenterRecipientWidget(
-            localPartController: _recipientLocalPartController,
-            customDomainController: _recipientCustomDomainController,
-            domainOptions: _options.isEmpty
-                ? const <MiniOption>[
-                    MiniOption(
-                        id: 'recipient-domain-gmail', label: 'gmail.com'),
-                    MiniOption(
-                        id: 'recipient-domain-naver', label: 'naver.com'),
-                    MiniOption(id: 'recipient-domain-daum', label: 'daum.net'),
-                    MiniOption(
-                        id: 'recipient-domain-kakao', label: 'kakao.com'),
-                    MiniOption(id: 'recipient-domain-custom', label: '직접 입력'),
-                  ]
-                : _options,
-            selectedDomainId: _recipientDomainId ?? 'recipient-domain-gmail',
-            onSelectDomain: (id) {
-              setState(() {
-                _recipientDomainId = id;
-                if (id.trim().toLowerCase() != 'recipient-domain-custom') {
-                  _recipientCustomDomainController.clear();
-                }
-              });
-            },
-            canSubmit: _isNeighborRecipientReady,
-            onSubmit: () => unawaited(_submitNeighborRecipient()),
-          );
-        }
         if (_step == DemoStep.evidenceV1) {
           return _EvidenceOptionListWidget(
             selectedAttachmentIds: _evidenceAttachmentIds,
@@ -4022,24 +2870,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           canSubmit: _isBackendUiHintDriven
               ? (_incidentDate != null && _incidentTime != null)
               : _isIntakeDetailReady,
-        );
-      case MiniInterfaceType.neighborCenterForm:
-        return _NeighborCenterFormWidget(
-          mode: _neighborFormMode,
-          onUseProfile: () => unawaited(_requestNeighborProfileLoad()),
-          onUseManual: () {
-            setState(() {
-              _switchNeighborFormMode('MANUAL');
-            });
-          },
-          nameController: _neighborNameController,
-          phoneController: _neighborPhoneController,
-          emailController: _neighborEmailController,
-          housingNameController: _neighborHousingNameController,
-          addressController: _neighborAddressController,
-          requiredFields: _neighborRequiredFields(),
-          canSubmit: _isNeighborCenterFormReady,
-          onSubmit: () => unawaited(_submitNeighborCenterForm()),
         );
       case MiniInterfaceType.measureCheck:
         return _MeasureTransitionCheckWidget(
@@ -4210,9 +3040,25 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         return _StatusFeedWidget(
           routeLabel: _data.route ?? '미선택',
           needsSupplementLikely: _evidenceAttachmentIds.isEmpty,
-          generatedDocumentFileName: _neighborGeneratedDocFileName,
-          generatedDocumentPath: _neighborGeneratedDocPath,
-          generatedDocumentAt: _neighborGeneratedDocGeneratedAt,
+          onUploadMore: () {
+            _recordMiniResponse('추가 증거 업로드');
+            _setAi(
+              text: '추가 증거를 선택해 주세요.',
+              step: DemoStep.evidenceV1,
+              miniType: MiniInterfaceType.optionList,
+            );
+          },
+          onOpenSummary: () {
+            _recordMiniResponse('케이스 요약 보기');
+            _setAi(
+              text: '종결 요약입니다.\n처음으로 돌아가 새 케이스를 시작할 수 있어요.',
+              step: DemoStep.complete,
+              miniType: MiniInterfaceType.listPicker,
+              options: const [
+                MiniOption(id: 'complete-restart', label: '처음으로 돌아가기')
+              ],
+            );
+          },
         );
       case MiniInterfaceType.none:
         return const SizedBox.shrink();
@@ -4374,21 +3220,17 @@ class _MiniInterfaceCard extends StatelessWidget {
     super.key,
     required this.child,
     required this.title,
-    this.trailingHintText,
     required this.collapsed,
     required this.onToggleCollapsed,
   });
 
   final Widget child;
   final String title;
-  final String? trailingHintText;
   final bool collapsed;
   final VoidCallback onToggleCollapsed;
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    final expandedMaxHeight = (screenHeight * 0.72).clamp(520.0, 680.0);
     final double cardRadius = collapsed
         ? KrdsTokens.radiusXl + KrdsTokens.space4
         : KrdsTokens.radiusXl;
@@ -4398,7 +3240,7 @@ class _MiniInterfaceCard extends StatelessWidget {
       width: double.infinity,
       constraints: BoxConstraints(
         minHeight: 58,
-        maxHeight: collapsed ? 58 : expandedMaxHeight,
+        maxHeight: collapsed ? 58 : 520,
       ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -4436,25 +3278,6 @@ class _MiniInterfaceCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (trailingHintText != null &&
-                    trailingHintText!.trim().isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 140),
-                    child: Text(
-                      trailingHintText!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _kMiniSubtitleColor,
-                        fontSize: 11,
-                        height: 14 / 11,
-                        fontWeight: FontWeight.w400,
-                        fontFamilyFallback: _kKrFontFallback,
-                      ),
-                    ),
-                  ),
-                ],
                 _MiniInterfaceToggleButton(
                   collapsed: collapsed,
                   onTap: onToggleCollapsed,
@@ -4763,7 +3586,6 @@ class _ListPickerWidget extends StatelessWidget {
             child: _ListPickerOptionButton(
               selected: selectedIds.contains(options[i].id),
               label: options[i].label,
-              leadingIcon: _docsOptionalIconForOption(options[i].id),
               onTap: () => onTapOption(options[i].id),
             ),
           ),
@@ -4793,448 +3615,16 @@ class _ListPickerWidget extends StatelessWidget {
   }
 }
 
-class _NeighborCenterDocsOptionListWidget extends StatelessWidget {
-  const _NeighborCenterDocsOptionListWidget({
-    required this.options,
-    required this.selectedIds,
-    required this.selectedFileNames,
-    required this.onTapOption,
-    required this.canSubmit,
-    required this.onSubmit,
-    required this.onSkip,
-  });
-
-  final List<MiniOption> options;
-  final Set<String> selectedIds;
-  final Map<String, String> selectedFileNames;
-  final ValueChanged<String> onTapOption;
-  final bool canSubmit;
-  final VoidCallback onSubmit;
-  final VoidCallback onSkip;
-
-  IconData _iconForOption(String optionId, int index) {
-    final key = optionId.trim().toLowerCase();
-    if (key.contains('visit')) return Icons.assignment_outlined;
-    if (key.contains('status')) return Icons.receipt_long_outlined;
-    if (key.contains('other')) return Icons.folder_open_outlined;
-    return switch (index) {
-      0 => Icons.assignment_outlined,
-      1 => Icons.receipt_long_outlined,
-      _ => Icons.folder_open_outlined,
-    };
-  }
-
-  String _valueForOption(String optionId, bool selected) {
-    if (!selected) return '선택하기';
-    final fileName = selectedFileNames[optionId]?.trim();
-    if (fileName == null || fileName.isEmpty) return '선택됨';
-    return fileName;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const maxVisibleOptions = 5;
-    final rows = <Widget>[];
-    for (var i = 0; i < options.length; i++) {
-      final option = options[i];
-      final selected = selectedIds.contains(option.id);
-      rows.add(
-        _OptionDateTimeRow(
-          icon: _iconForOption(option.id, i),
-          label: option.label,
-          value: _valueForOption(option.id, selected),
-          selected: selected,
-          onTap: () => onTapOption(option.id),
-        ),
-      );
-      if (i < options.length - 1) {
-        rows.add(
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 14),
-            child: Divider(height: 1, color: AppColors.border),
-          ),
-        );
-      }
-    }
-
-    final optionsBody = Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: Colors.white,
-      ),
-      child: Column(children: rows),
-    );
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '상담 단계에 참고할 자료가 있다면 선택해 주세요. (선택사항)',
-          style: TextStyle(
-            color: _kMiniSubtitleColor,
-            fontSize: 12,
-            height: 1.3,
-            fontWeight: FontWeight.w500,
-            fontFamilyFallback: _kKrFontFallback,
-          ),
-        ),
-        const SizedBox(height: 10),
-        if (options.length > maxVisibleOptions)
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 380),
-            child: SingleChildScrollView(child: optionsBody),
-          )
-        else
-          optionsBody,
-        const SizedBox(height: 12),
-        _PrimaryButton(
-          label: '선택 완료',
-          onPressed: canSubmit ? onSubmit : null,
-          compact: true,
-        ),
-        const SizedBox(height: 8),
-        _SecondaryButton(
-          label: '첨부 없이 건너뛰기',
-          onPressed: onSkip,
-          compact: true,
-        ),
-      ],
-    );
-  }
-}
-
-class _ConsentListPickerWidget extends StatelessWidget {
-  const _ConsentListPickerWidget({
-    required this.options,
-    required this.acceptedIds,
-    required this.requiredIds,
-    required this.onTapOption,
-    required this.canSubmit,
-    required this.onSubmit,
-  });
-
-  final List<MiniOption> options;
-  final Set<String> acceptedIds;
-  final Set<String> requiredIds;
-  final ValueChanged<MiniOption> onTapOption;
-  final bool canSubmit;
-  final VoidCallback onSubmit;
-
-  @override
-  Widget build(BuildContext context) {
-    const maxVisibleOptions = 5;
-    const optionHeight = 62.0;
-    const optionGap = 12.0;
-    const maxOptionsHeight = (optionHeight * maxVisibleOptions) +
-        (optionGap * (maxVisibleOptions - 1));
-
-    final optionsColumn = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < options.length; i++) ...[
-          Padding(
-            padding: EdgeInsets.only(
-                bottom: i == options.length - 1 ? 0 : optionGap),
-            child: _ConsentOptionButton(
-              label: options[i].label,
-              accepted: acceptedIds.contains(options[i].id),
-              required: requiredIds.contains(options[i].id),
-              onTap: () => onTapOption(options[i]),
-            ),
-          ),
-        ],
-      ],
-    );
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '각 항목을 눌러 전문을 확인한 뒤 수락해 주세요.',
-          style: TextStyle(
-            color: _kMiniSubtitleColor,
-            fontSize: 12,
-            height: 1.3,
-            fontWeight: FontWeight.w500,
-            fontFamilyFallback: _kKrFontFallback,
-          ),
-        ),
-        const SizedBox(height: 10),
-        if (options.length > maxVisibleOptions)
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: maxOptionsHeight),
-            child: SingleChildScrollView(child: optionsColumn),
-          )
-        else
-          optionsColumn,
-        const SizedBox(height: 12),
-        _PrimaryButton(
-          label: '선택 완료',
-          onPressed: canSubmit ? onSubmit : null,
-          compact: true,
-        ),
-      ],
-    );
-  }
-}
-
-class _ConsentOptionButton extends StatefulWidget {
-  const _ConsentOptionButton({
-    required this.label,
-    required this.accepted,
-    required this.required,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool accepted;
-  final bool required;
-  final VoidCallback onTap;
-
-  @override
-  State<_ConsentOptionButton> createState() => _ConsentOptionButtonState();
-}
-
-class _ConsentOptionButtonState extends State<_ConsentOptionButton> {
-  bool _pressed = false;
-
-  void _setPressed(bool value) {
-    if (_pressed == value) return;
-    setState(() => _pressed = value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accepted = widget.accepted;
-    final borderColor =
-        accepted ? const Color(0xFF4BB16F) : const Color(0xFFF3F4F6);
-    final backgroundColor = accepted ? const Color(0xFFECFDF3) : Colors.white;
-    final titleColor = accepted ? const Color(0xFF0F6B37) : AppColors.textMain;
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.onTap,
-      onTapDown: (_) => _setPressed(true),
-      onTapCancel: () => _setPressed(false),
-      onTapUp: (_) => _setPressed(false),
-      child: AnimatedScale(
-        duration: const Duration(milliseconds: 110),
-        curve: Curves.easeOutCubic,
-        scale: _pressed ? 0.99 : 1,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOutCubic,
-          height: 62,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor, width: accepted ? 1.4 : 1),
-            boxShadow: accepted
-                ? const [
-                    BoxShadow(
-                      color: Color(0x1F4BB16F),
-                      blurRadius: 6,
-                      offset: Offset(0, 3),
-                    ),
-                  ]
-                : const [
-                    BoxShadow(
-                      color: Color(0x0E000000),
-                      blurRadius: 2,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-          ),
-          child: Row(
-            children: [
-              Icon(
-                accepted
-                    ? Icons.check_circle_rounded
-                    : Icons.description_outlined,
-                size: 20,
-                color: accepted
-                    ? const Color(0xFF22A15A)
-                    : const Color(0xFF8EA1B6),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  widget.required ? '${widget.label} *' : widget.label,
-                  style: TextStyle(
-                    color: titleColor,
-                    fontSize: 16,
-                    height: 1.25,
-                    fontWeight: accepted ? FontWeight.w700 : FontWeight.w600,
-                    fontFamilyFallback: _kKrFontFallback,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                accepted ? '수락됨' : '보기',
-                style: TextStyle(
-                  color: accepted
-                      ? const Color(0xFF22A15A)
-                      : const Color(0xFF64748B),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  fontFamilyFallback: _kKrFontFallback,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ConsentDocumentBottomSheet extends StatefulWidget {
-  const _ConsentDocumentBottomSheet({
-    required this.title,
-    required this.content,
-    required this.initiallyAccepted,
-  });
-
-  final String title;
-  final String content;
-  final bool initiallyAccepted;
-
-  @override
-  State<_ConsentDocumentBottomSheet> createState() =>
-      _ConsentDocumentBottomSheetState();
-}
-
-class _ConsentDocumentBottomSheetState
-    extends State<_ConsentDocumentBottomSheet> {
-  final ScrollController _scrollController = ScrollController();
-  bool _canAccept = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_syncAcceptState);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncAcceptState());
-  }
-
-  @override
-  void dispose() {
-    _scrollController
-      ..removeListener(_syncAcceptState)
-      ..dispose();
-    super.dispose();
-  }
-
-  void _syncAcceptState() {
-    if (!_scrollController.hasClients) return;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final atEnd =
-        maxScroll <= 0 || _scrollController.offset >= (maxScroll - 14);
-    if (_canAccept == atEnd) return;
-    setState(() {
-      _canAccept = atEnd;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final maxHeight = MediaQuery.of(context).size.height * 0.82;
-    final canSubmit = widget.initiallyAccepted || _canAccept;
-    return SafeArea(
-      top: false,
-      child: Container(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 12, 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.title,
-                      style: const TextStyle(
-                        color: AppColors.textMain,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        fontFamilyFallback: _kKrFontFallback,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    icon: const Icon(Icons.close_rounded),
-                    color: AppColors.textMuted,
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1, color: AppColors.border),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(18, 10, 18, 8),
-              child: Text(
-                '끝까지 읽어야 동의 버튼이 활성화됩니다.',
-                style: TextStyle(
-                  color: _kMiniSubtitleColor,
-                  fontSize: 12,
-                  height: 1.25,
-                  fontWeight: FontWeight.w500,
-                  fontFamilyFallback: _kKrFontFallback,
-                ),
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
-                child: Text(
-                  widget.content,
-                  style: const TextStyle(
-                    color: AppColors.textMain,
-                    fontSize: 14,
-                    height: 1.55,
-                    fontWeight: FontWeight.w500,
-                    fontFamilyFallback: _kKrFontFallback,
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
-              child: _PrimaryButton(
-                label: widget.initiallyAccepted ? '동의 완료' : '끝까지 읽고 동의',
-                onPressed:
-                    canSubmit ? () => Navigator.of(context).pop(true) : null,
-                compact: true,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _ListPickerOptionButton extends StatefulWidget {
   const _ListPickerOptionButton({
     required this.label,
     required this.selected,
     required this.onTap,
-    this.leadingIcon,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  final IconData? leadingIcon;
 
   @override
   State<_ListPickerOptionButton> createState() =>
@@ -5300,32 +3690,17 @@ class _ListPickerOptionButtonState extends State<_ListPickerOptionButton> {
                         ),
                       ],
           ),
-          child: Row(
-            children: [
-              if (widget.leadingIcon != null) ...[
-                Icon(
-                  widget.leadingIcon,
-                  size: 19,
-                  color: selected ? AppColors.primary : const Color(0xFF8EA1B6),
-                ),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: Text(
-                  widget.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(
-                    color:
-                        selected ? AppColors.primary : const Color(0xFF1F2937),
-                    fontSize: selected ? 16.8 : 16,
-                    height: 24 / 16,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
+          child: Text(
+            widget.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.left,
+            style: TextStyle(
+              color: selected ? AppColors.primary : const Color(0xFF1F2937),
+              fontSize: selected ? 16.8 : 16,
+              height: 24 / 16,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -5427,9 +3802,6 @@ class _IntakeMultiFormBasicWidget extends StatelessWidget {
     required this.managementOptions,
     required this.selectedManagementId,
     required this.onSelectManagement,
-    required this.visitConsultWithin30DaysOptions,
-    required this.selectedVisitConsultWithin30DaysId,
-    required this.onSelectVisitConsultWithin30Days,
     required this.sourceCertaintyOptions,
     required this.selectedSourceCertaintyId,
     required this.onSelectSourceCertainty,
@@ -5444,9 +3816,6 @@ class _IntakeMultiFormBasicWidget extends StatelessWidget {
   final List<MiniOption> managementOptions;
   final String? selectedManagementId;
   final ValueChanged<String> onSelectManagement;
-  final List<MiniOption> visitConsultWithin30DaysOptions;
-  final String? selectedVisitConsultWithin30DaysId;
-  final ValueChanged<String> onSelectVisitConsultWithin30Days;
   final List<MiniOption> sourceCertaintyOptions;
   final String? selectedSourceCertaintyId;
   final ValueChanged<String> onSelectSourceCertainty;
@@ -5457,22 +3826,6 @@ class _IntakeMultiFormBasicWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final containerHeight = (screenHeight * 0.50).clamp(360.0, 500.0);
-    final filteredManagementOptions = managementOptions
-        .where(
-          (option) => option.id.trim().toLowerCase() != 'management-unknown',
-        )
-        .toList(growable: false);
-    final filteredSourceCertaintyOptions = sourceCertaintyOptions
-        .where((option) => option.id.trim().toLowerCase() != 'source-unknown')
-        .toList(growable: false);
-    final effectiveSelectedManagementId = filteredManagementOptions
-            .any((option) => option.id == selectedManagementId)
-        ? selectedManagementId
-        : null;
-    final effectiveSelectedSourceCertaintyId = filteredSourceCertaintyOptions
-            .any((option) => option.id == selectedSourceCertaintyId)
-        ? selectedSourceCertaintyId
-        : null;
 
     return SizedBox(
       height: containerHeight,
@@ -5514,27 +3867,10 @@ class _IntakeMultiFormBasicWidget extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   _MultiFormButtonGrid(
-                    options: filteredManagementOptions,
-                    selectedId: effectiveSelectedManagementId,
+                    options: managementOptions,
+                    selectedId: selectedManagementId,
                     onSelect: onSelectManagement,
                     iconBuilder: _managementIconForOption,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '30일 이내 방문상담 유무',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: visitConsultWithin30DaysOptions,
-                    selectedId: selectedVisitConsultWithin30DaysId,
-                    onSelect: onSelectVisitConsultWithin30Days,
-                    iconBuilder: _visitConsultIconForOption,
                   ),
                   const SizedBox(height: 14),
                   const Text(
@@ -5548,8 +3884,8 @@ class _IntakeMultiFormBasicWidget extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   _MultiFormButtonGrid(
-                    options: filteredSourceCertaintyOptions,
-                    selectedId: effectiveSelectedSourceCertaintyId,
+                    options: sourceCertaintyOptions,
+                    selectedId: selectedSourceCertaintyId,
                     onSelect: onSelectSourceCertainty,
                     iconBuilder: _sourceCertaintyIconForOption,
                   ),
@@ -5573,16 +3909,14 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
   const _IntakeMultiFormDetailWidget({
     required this.scrollController,
     required this.noiseTypeOptions,
-    required this.selectedNoiseTypeIds,
-    required this.onToggleNoiseType,
-    required this.noiseTypeEtcController,
-    required this.onNoiseTypeEtcChanged,
+    required this.selectedNoiseTypeId,
+    required this.onSelectNoiseType,
     required this.frequencyOptions,
     required this.selectedFrequencyId,
     required this.onSelectFrequency,
     required this.timeBandOptions,
-    required this.selectedTimeBandIds,
-    required this.onToggleTimeBand,
+    required this.selectedTimeBandId,
+    required this.onSelectTimeBand,
     required this.dateLabel,
     required this.timeLabel,
     required this.onPickDate,
@@ -5593,16 +3927,14 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
 
   final ScrollController scrollController;
   final List<MiniOption> noiseTypeOptions;
-  final Set<String> selectedNoiseTypeIds;
-  final ValueChanged<String> onToggleNoiseType;
-  final TextEditingController noiseTypeEtcController;
-  final ValueChanged<String> onNoiseTypeEtcChanged;
+  final String? selectedNoiseTypeId;
+  final ValueChanged<String> onSelectNoiseType;
   final List<MiniOption> frequencyOptions;
   final String? selectedFrequencyId;
   final ValueChanged<String> onSelectFrequency;
   final List<MiniOption> timeBandOptions;
-  final Set<String> selectedTimeBandIds;
-  final ValueChanged<String> onToggleTimeBand;
+  final String? selectedTimeBandId;
+  final ValueChanged<String> onSelectTimeBand;
   final String dateLabel;
   final String timeLabel;
   final VoidCallback onPickDate;
@@ -5612,11 +3944,8 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final availableHeight =
-        media.size.height - media.padding.vertical - media.viewInsets.bottom;
-    // Keep CTA fully visible across device heights.
-    final containerHeight = (availableHeight * 0.42).clamp(300.0, 430.0);
+    final screenHeight = MediaQuery.of(context).size.height;
+    final containerHeight = (screenHeight * 0.56).clamp(400.0, 560.0);
 
     return SizedBox(
       height: containerHeight,
@@ -5627,20 +3956,9 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
             child: SingleChildScrollView(
               controller: scrollController,
               key: const PageStorageKey<String>('intake-detail-scroll'),
-              padding: const EdgeInsets.only(bottom: 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '(다중 선택 가능)',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
                   const Text(
                     '소음 유형',
                     style: TextStyle(
@@ -5653,45 +3971,10 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
                   const SizedBox(height: 8),
                   _MultiFormButtonGrid(
                     options: noiseTypeOptions,
-                    allowMultiple: true,
-                    selectedIds: selectedNoiseTypeIds,
-                    onToggleOption: onToggleNoiseType,
+                    selectedId: selectedNoiseTypeId,
+                    onSelect: onSelectNoiseType,
                     iconBuilder: _noiseTypeIconForOption,
                   ),
-                  if (selectedNoiseTypeIds.contains('noise-other')) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.border),
-                        color: Colors.white,
-                      ),
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                      child: TextField(
-                        controller: noiseTypeEtcController,
-                        onChanged: onNoiseTypeEtcChanged,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                          hintText: '기타 소음 유형을 입력해 주세요.',
-                          hintStyle: TextStyle(
-                            color: Color(0xFF9CA3AF),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
-                            fontFamilyFallback: _kKrFontFallback,
-                          ),
-                        ),
-                        style: const TextStyle(
-                          color: AppColors.textMain,
-                          fontSize: 16,
-                          height: 1.35,
-                          fontWeight: FontWeight.w600,
-                          fontFamilyFallback: _kKrFontFallback,
-                        ),
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: 14),
                   const Text(
                     '반복 빈도',
@@ -5711,16 +3994,6 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   const Text(
-                    '(다중 선택 가능)',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
                     '주 발생 시간',
                     style: TextStyle(
                       color: AppColors.textMuted,
@@ -5732,9 +4005,8 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
                   const SizedBox(height: 8),
                   _MultiFormButtonGrid(
                     options: timeBandOptions,
-                    allowMultiple: true,
-                    selectedIds: selectedTimeBandIds,
-                    onToggleOption: onToggleTimeBand,
+                    selectedId: selectedTimeBandId,
+                    onSelect: onSelectTimeBand,
                     iconBuilder: _timeBandIconForOption,
                   ),
                   const SizedBox(height: 14),
@@ -5771,7 +4043,6 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
             onPressed: canSubmit ? onSubmit : null,
             compact: true,
           ),
-          const SizedBox(height: 6),
         ],
       ),
     );
@@ -5903,21 +4174,15 @@ class _MultiFormWidget extends StatelessWidget {
 class _MultiFormButtonGrid extends StatelessWidget {
   const _MultiFormButtonGrid({
     required this.options,
+    required this.selectedId,
+    required this.onSelect,
     required this.iconBuilder,
-    this.selectedId,
-    this.onSelect,
-    this.selectedIds,
-    this.onToggleOption,
-    this.allowMultiple = false,
   });
 
   final List<MiniOption> options;
   final String? selectedId;
-  final ValueChanged<String>? onSelect;
+  final ValueChanged<String> onSelect;
   final IconData Function(String id) iconBuilder;
-  final Set<String>? selectedIds;
-  final ValueChanged<String>? onToggleOption;
-  final bool allowMultiple;
 
   @override
   Widget build(BuildContext context) {
@@ -5937,16 +4202,8 @@ class _MultiFormButtonGrid extends StatelessWidget {
                 child: _MultiFormGridButton(
                   label: option.label,
                   icon: iconBuilder(option.id),
-                  selected: allowMultiple
-                      ? (selectedIds?.contains(option.id) ?? false)
-                      : selectedId == option.id,
-                  onTap: () {
-                    if (allowMultiple) {
-                      onToggleOption?.call(option.id);
-                      return;
-                    }
-                    onSelect?.call(option.id);
-                  },
+                  selected: selectedId == option.id,
+                  onTap: () => onSelect(option.id),
                 ),
               ),
           ],
@@ -6168,17 +4425,6 @@ IconData _managementIconForOption(String id) {
   }
 }
 
-IconData _visitConsultIconForOption(String id) {
-  switch (id) {
-    case 'visit-consult-yes':
-      return Icons.task_alt_rounded;
-    case 'visit-consult-no':
-      return Icons.do_not_disturb_alt_rounded;
-    default:
-      return Icons.fact_check_rounded;
-  }
-}
-
 IconData _sourceCertaintyIconForOption(String id) {
   switch (id) {
     case 'source-exact':
@@ -6194,21 +4440,13 @@ IconData _sourceCertaintyIconForOption(String id) {
 
 IconData _noiseTypeIconForOption(String id) {
   switch (id) {
-    case 'noise-walk':
-      return Icons.directions_run_rounded;
-    case 'noise-door':
-      return Icons.sensor_door_rounded;
-    case 'noise-drop':
-      return Icons.downhill_skiing_rounded;
-    case 'noise-furniture':
-      return Icons.chair_alt_rounded;
-    case 'noise-hammer':
-      return Icons.handyman_rounded;
-    case 'noise-tv':
-      return Icons.tv_rounded;
-    case 'noise-audio':
+    case 'noise-impact':
+      return Icons.fitness_center_rounded;
+    case 'noise-air':
       return Icons.speaker_rounded;
-    case 'noise-other':
+    case 'noise-both':
+      return Icons.graphic_eq_rounded;
+    case 'noise-unknown':
       return Icons.help_outline_rounded;
     default:
       return Icons.graphic_eq_rounded;
@@ -6245,23 +4483,12 @@ IconData _triageSafetyIconForOption(String id) {
   switch (id) {
     case 'safety-normal':
       return Icons.shield_outlined;
+    case 'safety-unknown':
+      return Icons.help_outline_rounded;
     case 'safety-danger':
       return Icons.warning_amber_rounded;
     default:
       return Icons.shield_outlined;
-  }
-}
-
-IconData _docsOptionalIconForOption(String id) {
-  switch (id) {
-    case 'docs-visit-record':
-      return Icons.assignment_rounded;
-    case 'docs-civil-status':
-      return Icons.folder_shared_rounded;
-    case 'docs-reference':
-      return Icons.attach_file_rounded;
-    default:
-      return Icons.insert_drive_file_outlined;
   }
 }
 
@@ -6321,490 +4548,6 @@ class _OptionListWidget extends StatelessWidget {
           compact: true,
         ),
       ],
-    );
-  }
-}
-
-class _NeighborCenterFormWidget extends StatelessWidget {
-  const _NeighborCenterFormWidget({
-    required this.mode,
-    required this.onUseProfile,
-    required this.onUseManual,
-    required this.nameController,
-    required this.phoneController,
-    required this.emailController,
-    required this.housingNameController,
-    required this.addressController,
-    required this.requiredFields,
-    required this.canSubmit,
-    required this.onSubmit,
-  });
-
-  final String mode;
-  final VoidCallback onUseProfile;
-  final VoidCallback onUseManual;
-  final TextEditingController nameController;
-  final TextEditingController phoneController;
-  final TextEditingController emailController;
-  final TextEditingController housingNameController;
-  final TextEditingController addressController;
-  final List<String> requiredFields;
-  final bool canSubmit;
-  final VoidCallback onSubmit;
-
-  bool _isRequired(String key) => requiredFields.contains(key);
-
-  @override
-  Widget build(BuildContext context) {
-    final isProfileMode = mode.toUpperCase() == 'PROFILE';
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 430),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _SelectChipButton(
-                  label: '프로필 불러오기',
-                  selected: isProfileMode,
-                  onTap: onUseProfile,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _SelectChipButton(
-                  label: '직접 입력',
-                  selected: !isProfileMode,
-                  onTap: onUseManual,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _NeighborFormField(
-                    label: '성명',
-                    controller: nameController,
-                    required: _isRequired('name'),
-                    keyboardType: TextInputType.name,
-                  ),
-                  const SizedBox(height: 8),
-                  _NeighborFormField(
-                    label: '연락처',
-                    controller: phoneController,
-                    required: _isRequired('phone'),
-                    keyboardType: TextInputType.phone,
-                  ),
-                  const SizedBox(height: 8),
-                  _NeighborFormField(
-                    label: '이메일',
-                    controller: emailController,
-                    required: _isRequired('email'),
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 8),
-                  _NeighborFormField(
-                    label: '주택명',
-                    controller: housingNameController,
-                    required: _isRequired('housingName'),
-                    keyboardType: TextInputType.text,
-                  ),
-                  const SizedBox(height: 8),
-                  _NeighborFormField(
-                    label: '주소',
-                    controller: addressController,
-                    required: _isRequired('address'),
-                    keyboardType: TextInputType.streetAddress,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _PrimaryButton(
-            label: '입력 완료 후 제출',
-            onPressed: canSubmit ? onSubmit : null,
-            compact: true,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NeighborCenterRecipientWidget extends StatefulWidget {
-  const _NeighborCenterRecipientWidget({
-    required this.localPartController,
-    required this.customDomainController,
-    required this.domainOptions,
-    required this.selectedDomainId,
-    required this.onSelectDomain,
-    required this.canSubmit,
-    required this.onSubmit,
-  });
-
-  final TextEditingController localPartController;
-  final TextEditingController customDomainController;
-  final List<MiniOption> domainOptions;
-  final String selectedDomainId;
-  final ValueChanged<String> onSelectDomain;
-  final bool canSubmit;
-  final VoidCallback onSubmit;
-
-  @override
-  State<_NeighborCenterRecipientWidget> createState() =>
-      _NeighborCenterRecipientWidgetState();
-}
-
-class _NeighborCenterRecipientWidgetState
-    extends State<_NeighborCenterRecipientWidget> {
-  static final RegExp _emailPattern =
-      RegExp(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$');
-
-  @override
-  void initState() {
-    super.initState();
-    widget.localPartController.addListener(_onInputChanged);
-    widget.customDomainController.addListener(_onInputChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant _NeighborCenterRecipientWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.localPartController != widget.localPartController) {
-      oldWidget.localPartController.removeListener(_onInputChanged);
-      widget.localPartController.addListener(_onInputChanged);
-    }
-    if (oldWidget.customDomainController != widget.customDomainController) {
-      oldWidget.customDomainController.removeListener(_onInputChanged);
-      widget.customDomainController.addListener(_onInputChanged);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.localPartController.removeListener(_onInputChanged);
-    widget.customDomainController.removeListener(_onInputChanged);
-    super.dispose();
-  }
-
-  void _onInputChanged() {
-    if (!mounted) return;
-    setState(() {});
-  }
-
-  bool get _isCustomDomain =>
-      widget.selectedDomainId.trim().toLowerCase() == 'recipient-domain-custom';
-
-  String _normalized(String text) => text.trim().replaceAll(RegExp(r'\s+'), '');
-
-  String _resolvedDomain() {
-    if (_isCustomDomain) {
-      return _normalized(widget.customDomainController.text).toLowerCase();
-    }
-    final normalizedId = widget.selectedDomainId.trim().toLowerCase();
-    final selected = widget.domainOptions.firstWhere(
-      (option) => option.id.trim().toLowerCase() == normalizedId,
-      orElse: () => const MiniOption(
-        id: 'recipient-domain-gmail',
-        label: 'gmail.com',
-      ),
-    );
-    return _normalized(selected.label).toLowerCase();
-  }
-
-  String _recipientPreview() {
-    final local = _normalized(widget.localPartController.text);
-    final domain = _resolvedDomain();
-    if (local.isEmpty || domain.isEmpty) return '';
-    return '$local@$domain';
-  }
-
-  bool get _localReady {
-    final candidate = _recipientPreview();
-    return candidate.isNotEmpty && _emailPattern.hasMatch(candidate);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final canSubmit = _localReady || widget.canSubmit;
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 360),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '전송받을 이메일을 입력해 주세요.',
-            style: TextStyle(
-              color: _kMiniSubtitleColor,
-              fontSize: 12,
-              height: 1.3,
-              fontWeight: FontWeight.w500,
-              fontFamilyFallback: _kKrFontFallback,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.border),
-              color: Colors.white,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '이메일 앞부분',
-                  style: TextStyle(
-                    color: _kMiniSubtitleColor,
-                    fontSize: 12,
-                    height: 1.3,
-                    fontWeight: FontWeight.w600,
-                    fontFamilyFallback: _kKrFontFallback,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: widget.localPartController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    hintText: 'example',
-                    isDense: true,
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  style: const TextStyle(
-                    color: AppColors.textMain,
-                    fontSize: 17,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                    fontFamilyFallback: _kKrFontFallback,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '도메인 선택',
-            style: TextStyle(
-              color: _kMiniSubtitleColor,
-              fontSize: 12,
-              height: 1.3,
-              fontWeight: FontWeight.w600,
-              fontFamilyFallback: _kKrFontFallback,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final option in widget.domainOptions)
-                SizedBox(
-                  width: 104,
-                  child: _SelectChipButton(
-                    label: option.label,
-                    selected: option.id == widget.selectedDomainId,
-                    onTap: () => widget.onSelectDomain(option.id),
-                  ),
-                ),
-            ],
-          ),
-          if (_isCustomDomain) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.border),
-                color: Colors.white,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '직접 입력 도메인',
-                    style: TextStyle(
-                      color: _kMiniSubtitleColor,
-                      fontSize: 12,
-                      height: 1.3,
-                      fontWeight: FontWeight.w600,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: widget.customDomainController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      hintText: 'example.com',
-                      isDense: true,
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 17,
-                      height: 1.35,
-                      fontWeight: FontWeight.w600,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          if (_recipientPreview().isNotEmpty)
-            Text(
-              '전송 주소: ${_recipientPreview()}',
-              style: const TextStyle(
-                color: _kMiniSubtitleColor,
-                fontSize: 12,
-                height: 1.3,
-                fontWeight: FontWeight.w500,
-                fontFamilyFallback: _kKrFontFallback,
-              ),
-            ),
-          const SizedBox(height: 10),
-          _PrimaryButton(
-            label: '수신 이메일 제출',
-            onPressed: canSubmit ? widget.onSubmit : null,
-            compact: true,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NeighborFormField extends StatelessWidget {
-  const _NeighborFormField({
-    required this.label,
-    required this.controller,
-    required this.required,
-    required this.keyboardType,
-  });
-
-  final String label;
-  final TextEditingController controller;
-  final bool required;
-  final TextInputType keyboardType;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-        color: Colors.white,
-      ),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            required ? '$label *' : label,
-            style: const TextStyle(
-              color: _kMiniSubtitleColor,
-              fontSize: 12,
-              height: 1.3,
-              fontWeight: FontWeight.w600,
-              fontFamilyFallback: _kKrFontFallback,
-            ),
-          ),
-          const SizedBox(height: 4),
-          TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            decoration: const InputDecoration(
-              isDense: true,
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.zero,
-            ),
-            style: const TextStyle(
-              color: AppColors.textMain,
-              fontSize: 17,
-              height: 1.35,
-              fontWeight: FontWeight.w600,
-              fontFamilyFallback: _kKrFontFallback,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SelectChipButton extends StatefulWidget {
-  const _SelectChipButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  State<_SelectChipButton> createState() => _SelectChipButtonState();
-}
-
-class _SelectChipButtonState extends State<_SelectChipButton> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = widget.selected;
-    final pressed = _pressed;
-    final bg = selected
-        ? AppColors.primary.withValues(alpha: 0.14)
-        : (pressed ? AppColors.primary.withValues(alpha: 0.06) : Colors.white);
-    final border = selected ? AppColors.primary : AppColors.border;
-    final textColor = selected ? AppColors.primary : AppColors.textMuted;
-
-    return AnimatedScale(
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOutCubic,
-      scale: pressed ? 0.985 : 1,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) => setState(() => _pressed = false),
-        onTapCancel: () => setState(() => _pressed = false),
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          height: 42,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: border, width: selected ? 1.4 : 1),
-          ),
-          child: Text(
-            widget.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: textColor,
-              fontSize: 13,
-              height: 1.2,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-              fontFamilyFallback: _kKrFontFallback,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -8023,17 +5766,13 @@ class _SummaryRow {
 class _SummaryCardWidget extends StatelessWidget {
   const _SummaryCardWidget({
     required this.rows,
-    this.continueLabel = '계속하기',
-    this.editLabel = '수정',
-    this.onContinue,
-    this.onEdit,
+    required this.onContinue,
+    required this.onEdit,
   });
 
   final List<_SummaryRow> rows;
-  final String continueLabel;
-  final String? editLabel;
-  final VoidCallback? onContinue;
-  final VoidCallback? onEdit;
+  final VoidCallback onContinue;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -8077,18 +5816,13 @@ class _SummaryCardWidget extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               _PrimaryButton(
-                label: continueLabel,
-                onPressed: onContinue,
+                  label: '계속하기', onPressed: onContinue, compact: true),
+              const SizedBox(height: 8),
+              _SecondaryButton(
+                label: '수정',
+                onPressed: onEdit,
                 compact: true,
               ),
-              if (editLabel != null && onEdit != null) ...[
-                const SizedBox(height: 8),
-                _SecondaryButton(
-                  label: editLabel!,
-                  onPressed: onEdit,
-                  compact: true,
-                ),
-              ],
             ],
           ),
         );
@@ -8672,16 +6406,14 @@ class _StatusFeedWidget extends StatefulWidget {
   const _StatusFeedWidget({
     required this.routeLabel,
     required this.needsSupplementLikely,
-    this.generatedDocumentFileName,
-    this.generatedDocumentPath,
-    this.generatedDocumentAt,
+    required this.onUploadMore,
+    required this.onOpenSummary,
   });
 
   final String routeLabel;
   final bool needsSupplementLikely;
-  final String? generatedDocumentFileName;
-  final String? generatedDocumentPath;
-  final String? generatedDocumentAt;
+  final VoidCallback onUploadMore;
+  final VoidCallback onOpenSummary;
 
   @override
   State<_StatusFeedWidget> createState() => _StatusFeedWidgetState();
@@ -8823,20 +6555,6 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if ((widget.generatedDocumentFileName?.trim().isNotEmpty ??
-                          false) ||
-                      (widget.generatedDocumentPath?.trim().isNotEmpty ??
-                          false))
-                    Column(
-                      children: [
-                        _StatusGeneratedDocumentCard(
-                          fileName: widget.generatedDocumentFileName,
-                          filePath: widget.generatedDocumentPath,
-                          generatedAt: widget.generatedDocumentAt,
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    ),
                   _StatusNextActionCard(
                     needsSupplementLikely: widget.needsSupplementLikely,
                   ),
@@ -8863,6 +6581,18 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          _PrimaryButton(
+            label: '케이스 요약 보기',
+            onPressed: widget.onOpenSummary,
+            compact: true,
+          ),
+          const SizedBox(height: 8),
+          _SecondaryButton(
+            label: '추가 증거 업로드',
+            onPressed: widget.onUploadMore,
+            compact: true,
           ),
         ],
       ),
@@ -8976,10 +6706,10 @@ class _StatusNextActionCard extends StatelessWidget {
         border: Border.all(color: AppColors.border),
         color: const Color(0xFFF8FCFF),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             '다음에 할 일',
             style: TextStyle(
               color: AppColors.textMain,
@@ -8987,93 +6717,18 @@ class _StatusNextActionCard extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
-            '이웃사이센터 연락 알림 켜기/끄기 설정을 확인해 주세요.',
-            style: TextStyle(
+            needsSupplementLikely
+                ? '보완요청 가능성이 있어요. 필요한 경우 바로 추가자료를 업로드해 주세요.'
+                : '기관 확인 단계입니다. 주요 업데이트가 생기면 바로 알려드릴게요.',
+            style: const TextStyle(
               color: Color(0xFF64748B),
               fontSize: 13,
               height: 1.4,
               fontWeight: FontWeight.w500,
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusGeneratedDocumentCard extends StatelessWidget {
-  const _StatusGeneratedDocumentCard({
-    required this.fileName,
-    required this.filePath,
-    required this.generatedAt,
-  });
-
-  final String? fileName;
-  final String? filePath;
-  final String? generatedAt;
-
-  @override
-  Widget build(BuildContext context) {
-    final resolvedName =
-        (fileName == null || fileName!.trim().isEmpty) ? '-' : fileName!.trim();
-    final resolvedPath =
-        (filePath == null || filePath!.trim().isEmpty) ? '-' : filePath!.trim();
-    final resolvedGeneratedAt =
-        (generatedAt == null || generatedAt!.trim().isEmpty)
-            ? null
-            : generatedAt!.trim();
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-        color: Colors.white,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '생성된 서식 파일',
-            style: TextStyle(
-              color: AppColors.textMain,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '파일명: $resolvedName',
-            style: const TextStyle(
-              color: Color(0xFF334155),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '경로: $resolvedPath',
-            style: const TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 12,
-              height: 1.35,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          if (resolvedGeneratedAt != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              '생성 시각: $resolvedGeneratedAt',
-              style: const TextStyle(
-                color: Color(0xFF94A3B8),
-                fontSize: 11.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
         ],
       ),
     );
