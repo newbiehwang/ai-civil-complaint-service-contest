@@ -10,6 +10,8 @@ const Map<String, String> _errorCodeToMessage = {
   'CASE_STATE_CONFLICT': '현재 단계와 맞지 않는 요청입니다. 다시 확인해 주세요.',
   'ROUTE_OPTION_NOT_FOUND': '선택한 경로 정보를 찾을 수 없습니다.',
   'INSTITUTION_GATEWAY_ERROR': '기관 연동이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.',
+  'LLM_UNAVAILABLE': 'AI 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.',
+  'SERVICE_UNAVAILABLE': '서비스 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.',
   'INTERNAL_ERROR': '서버 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
   'NETWORK_ERROR':
       '네트워크 연결이 원활하지 않습니다. 실기기에서는 localhost 대신 PC LAN IP를 사용해 주세요.',
@@ -29,7 +31,7 @@ const Map<int, String> _statusFallbackMessage = {
   404: '요청한 리소스를 찾을 수 없습니다.',
   409: '현재 단계와 맞지 않는 요청입니다. 다시 확인해 주세요.',
   500: '서버 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
-  503: '기관 연동이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.',
+  503: '서비스 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.',
 };
 
 String toKoreanErrorMessage(Object error) {

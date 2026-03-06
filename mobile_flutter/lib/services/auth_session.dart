@@ -2,6 +2,42 @@ import 'dart:async';
 
 import 'local/auth_persistence.dart';
 
+class AuthUserProfile {
+  const AuthUserProfile({
+    required this.name,
+    required this.phone,
+    required this.email,
+    required this.housingName,
+    required this.address,
+  });
+
+  final String name;
+  final String phone;
+  final String email;
+  final String housingName;
+  final String address;
+
+  Map<String, String> toJson() {
+    return <String, String>{
+      'name': name,
+      'phone': phone,
+      'email': email,
+      'housingName': housingName,
+      'address': address,
+    };
+  }
+
+  factory AuthUserProfile.fromJson(Map<String, Object?> json) {
+    return AuthUserProfile(
+      name: json['name']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      housingName: json['housingName']?.toString() ?? '',
+      address: json['address']?.toString() ?? '',
+    );
+  }
+}
+
 class AuthSession {
   AuthSession._();
 
@@ -9,6 +45,7 @@ class AuthSession {
   static String? _accessToken;
   static DateTime? _expiresAt;
   static String? _accountId;
+  static AuthUserProfile? _profile;
   static bool _useBackend = true;
   static String? _apiBaseUrlOverride;
   static Future<void>? _restoreFuture;
@@ -36,6 +73,8 @@ class AuthSession {
     return raw;
   }
 
+  static AuthUserProfile? get profile => _profile;
+
   static Future<void> restore() {
     _restoreFuture ??= _restoreInternal();
     return _restoreFuture!;
@@ -49,6 +88,9 @@ class AuthSession {
     _accountId = state.accountId?.trim();
     _apiBaseUrlOverride = state.apiBaseUrlOverride?.trim();
     _useBackend = state.useBackend;
+    _profile = state.profile == null
+        ? null
+        : AuthUserProfile.fromJson(state.profile!);
 
     final expiresAtRaw = state.expiresAtIso?.trim();
     _expiresAt = (expiresAtRaw == null || expiresAtRaw.isEmpty)
@@ -60,10 +102,12 @@ class AuthSession {
     String token, {
     DateTime? expiresAt,
     String? accountId,
+    AuthUserProfile? profile,
   }) {
     _accessToken = token.trim();
     _expiresAt = expiresAt;
     _accountId = accountId?.trim();
+    _profile = profile;
     unawaited(_persistCurrentState());
   }
 
@@ -82,6 +126,7 @@ class AuthSession {
     _accessToken = null;
     _expiresAt = null;
     _accountId = null;
+    _profile = null;
     _useBackend = true;
     _apiBaseUrlOverride = null;
     unawaited(_persistence.clear());
@@ -92,6 +137,7 @@ class AuthSession {
       accessToken: _accessToken,
       expiresAtIso: _expiresAt?.toIso8601String(),
       accountId: _accountId,
+      profile: _profile?.toJson(),
       useBackend: _useBackend,
       apiBaseUrlOverride: _apiBaseUrlOverride,
     );

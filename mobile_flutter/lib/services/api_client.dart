@@ -199,20 +199,52 @@ class DemoLoginResponseDto {
     required this.accessToken,
     required this.tokenType,
     this.expiresAt,
+    this.profile,
   });
 
   final String accessToken;
   final String tokenType;
   final DateTime? expiresAt;
+  final DemoUserProfileDto? profile;
 
   factory DemoLoginResponseDto.fromJson(Map<String, dynamic> json) {
     final expiresAtRaw = json['expiresAt']?.toString();
+    final profileRaw = json['profile'];
     return DemoLoginResponseDto(
       accessToken: json['accessToken']?.toString() ?? '',
       tokenType: json['tokenType']?.toString() ?? 'Bearer',
       expiresAt: expiresAtRaw == null || expiresAtRaw.isEmpty
           ? null
           : DateTime.tryParse(expiresAtRaw),
+      profile: profileRaw is Map<String, dynamic>
+          ? DemoUserProfileDto.fromJson(profileRaw)
+          : null,
+    );
+  }
+}
+
+class DemoUserProfileDto {
+  const DemoUserProfileDto({
+    required this.name,
+    required this.phone,
+    required this.email,
+    required this.housingName,
+    required this.address,
+  });
+
+  final String name;
+  final String phone;
+  final String email;
+  final String housingName;
+  final String address;
+
+  factory DemoUserProfileDto.fromJson(Map<String, dynamic> json) {
+    return DemoUserProfileDto(
+      name: json['name']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      housingName: json['housingName']?.toString() ?? '',
+      address: json['address']?.toString() ?? '',
     );
   }
 }

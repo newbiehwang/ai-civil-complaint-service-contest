@@ -21,7 +21,34 @@ public class DemoUserBootstrapConfig {
     ) {
         return args -> {
             String demoUsername = "demo";
-            if (userRepository.findByUsernameIgnoreCase(demoUsername).isPresent()) {
+            var existing = userRepository.findByUsernameIgnoreCase(demoUsername);
+            if (existing.isPresent()) {
+                AppUserEntity user = existing.get();
+                boolean updated = false;
+                if (user.getDisplayName() == null || user.getDisplayName().isBlank()) {
+                    user.setDisplayName("데모 사용자");
+                    updated = true;
+                }
+                if (user.getPhone() == null || user.getPhone().isBlank()) {
+                    user.setPhone("010-1234-5678");
+                    updated = true;
+                }
+                if (user.getEmail() == null || user.getEmail().isBlank()) {
+                    user.setEmail("demo@gov24.local");
+                    updated = true;
+                }
+                if (user.getHousingName() == null || user.getHousingName().isBlank()) {
+                    user.setHousingName("행복빌라");
+                    updated = true;
+                }
+                if (user.getAddress() == null || user.getAddress().isBlank()) {
+                    user.setAddress("서울특별시 마포구 월드컵북로 123");
+                    updated = true;
+                }
+                if (updated) {
+                    userRepository.save(user);
+                    log.info("Updated demo user profile fields: {}", demoUsername);
+                }
                 return;
             }
 
@@ -29,6 +56,10 @@ public class DemoUserBootstrapConfig {
             demoUser.setUsername(demoUsername);
             demoUser.setPasswordHash(passwordEncoder.encode("1234"));
             demoUser.setDisplayName("데모 사용자");
+            demoUser.setPhone("010-1234-5678");
+            demoUser.setEmail("demo@gov24.local");
+            demoUser.setHousingName("행복빌라");
+            demoUser.setAddress("서울특별시 마포구 월드컵북로 123");
             demoUser.setActive(true);
             userRepository.save(demoUser);
             log.info("Bootstrapped demo user account: {}", demoUsername);

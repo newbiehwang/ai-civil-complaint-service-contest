@@ -136,10 +136,20 @@ public final class ApiModels {
     ) {
     }
 
+    public record UserProfile(
+            String name,
+            String phone,
+            String email,
+            String housingName,
+            String address
+    ) {
+    }
+
     public record DemoLoginResponse(
             String accessToken,
             String tokenType,
-            Instant expiresAt
+            Instant expiresAt,
+            UserProfile profile
     ) {
     }
 

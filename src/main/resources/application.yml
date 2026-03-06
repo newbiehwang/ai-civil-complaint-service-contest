@@ -18,6 +18,13 @@ server:
   port: 8080
 
 complaint:
+  neighbor-center:
+    measurement-template-path: ${NEIGHBOR_CENTER_MEASUREMENT_TEMPLATE_PATH:/Users/hwangshincheol/Library/Mobile Documents/com~apple~CloudDocs/AI 기반 민원 서비스 혁신 시나리오/소음측정 신청서_관리주체가 없는 경우.hwpx}
+    measurement-recipient-email: ${NEIGHBOR_CENTER_MEASUREMENT_RECIPIENT_EMAIL:schwang2001@gmail.com}
+    measurement-mail-subject: ${NEIGHBOR_CENTER_MEASUREMENT_MAIL_SUBJECT:[정부24 데모] 층간소음 측정 신청서 제출}
+    measurement-mail-from: ${NEIGHBOR_CENTER_MEASUREMENT_MAIL_FROM:}
+    measurement-mail-enabled: ${NEIGHBOR_CENTER_MEASUREMENT_MAIL_ENABLED:false}
+    measurement-output-dir: ${NEIGHBOR_CENTER_MEASUREMENT_OUTPUT_DIR:${java.io.tmpdir}/neighbor-center-submissions}
   mock-submission:
     auto-process-enabled: ${MOCK_SUBMISSION_AUTO_PROCESS_ENABLED:true}
     processing-delay-ms: ${MOCK_SUBMISSION_DELAY_MS:1500}

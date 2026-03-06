@@ -48,7 +48,9 @@ If backend env is missing, the app automatically falls back to demo-local flow.
 cd mobile_flutter
 flutter run \
   --dart-define=API_BASE_URL=http://<LAN_IP>:8080 \
-  --dart-define=DEV_JWT=<YOUR_DEV_JWT>
+  --dart-define=DEV_JWT=<YOUR_DEV_JWT> \
+  --dart-define=DEMO_LOGIN_USERNAME=demo \
+  --dart-define=DEMO_LOGIN_PASSWORD=1234
 ```
 
 or use an env file:
@@ -72,5 +74,5 @@ flutter run -d macos --dart-define-from-file=.env.macos
 Notes:
 - On real iPhone, do not use `localhost`; use your PC LAN IP.
 - On macOS app, `API_BASE_URL_MACOS`, `DEV_JWT_MACOS`를 우선 사용합니다.
+- Demo login screen uses `DEMO_LOGIN_USERNAME` and `DEMO_LOGIN_PASSWORD` from env.
 - Legacy keys `EXPO_PUBLIC_API_BASE_URL` and `EXPO_PUBLIC_DEV_JWT` are also accepted.
-- Demo login credential: `demo / 1234`
