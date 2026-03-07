@@ -26,7 +26,6 @@
 - 모바일 실사용 데모:
   - Flutter 기반 iOS/macOS/Android 실행.
   - 로그인 세션/민원 목록/상담 화면을 포함.
-
 ## 현재 데모 구현 범위
 - 공통
   - 정부24 스타일 시작 화면 + 데모 로그인.
@@ -139,7 +138,6 @@ flutter build ipa --release --dart-define-from-file=.env
 - `GET /api/v1/cases/{caseId}`
 - `POST /api/v1/cases/{caseId}/submission`
 - `GET /api/v1/cases/{caseId}/timeline`
-
 ## 참고
 - 이 레포는 공모전 프로토타입입니다.
 - 기관 실연계(MCP/기관 API)는 데모/설정 기반 동작을 포함하며, 운영 전환 시 인증·보안·법적 검토가 필요합니다.
