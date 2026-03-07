@@ -1,6 +1,14 @@
 # AI 기반 층간소음 민원 케이스 오케스트레이션 서비스
 
+최신 Release: [GitHub Releases](https://github.com/newbiehwang/ai-civil-complaint-service-contest/releases) · [Android APK 바로 다운로드](https://github.com/newbiehwang/ai-civil-complaint-service-contest/releases/latest/download/civil-complaint-android.apk)
+
 층간소음 민원을 대화형으로 접수하고, 상태머신 기반으로 경로 추천/서류 생성/제출/진행 추적까지 연결하는 프로토타입입니다.
+
+## 앱 다운로드
+- Android APK: [최신 데모 다운로드](https://github.com/newbiehwang/ai-civil-complaint-service-contest/releases/latest/download/civil-complaint-android.apk)
+- iOS(TestFlight): [테스트플라이트 링크](https://testflight.apple.com/join/REPLACE_ME)
+
+> iOS 링크는 TestFlight 공개 링크로 교체해서 사용하세요.
 
 ## 서비스 특징
 - 대화형 민원 접수:
@@ -18,7 +26,6 @@
 - 모바일 실사용 데모:
   - Flutter 기반 iOS/macOS/Android 실행.
   - 로그인 세션/민원 목록/상담 화면을 포함.
-
 ## 현재 데모 구현 범위
 - 공통
   - 정부24 스타일 시작 화면 + 데모 로그인.
@@ -82,6 +89,33 @@ flutter run --dart-define-from-file=.env
 flutter run -d macos --dart-define-from-file=.env.macos
 ```
 
+## 모바일 배포(Android/iOS)
+### Android 배포
+1. 릴리즈 빌드
+```bash
+cd mobile_flutter
+flutter pub get
+flutter build apk --release --dart-define-from-file=.env
+flutter build appbundle --release --dart-define-from-file=.env
+```
+2. 산출물
+- APK: `mobile_flutter/build/app/outputs/flutter-apk/app-release.apk`
+- AAB: `mobile_flutter/build/app/outputs/bundle/release/app-release.aab`
+3. 배포
+- Play Console에는 AAB 업로드
+- GitHub Releases에는 APK 업로드 후 상단 다운로드 링크 유지
+
+### iOS 배포(TestFlight)
+1. 릴리즈 IPA 빌드
+```bash
+cd mobile_flutter
+flutter pub get
+flutter build ipa --release --dart-define-from-file=.env
+```
+2. App Store Connect 업로드(Transporter 또는 Xcode Organizer)
+3. TestFlight 공개 링크 생성 후 README 상단 링크 교체
+- `https://testflight.apple.com/join/REPLACE_ME` → 실제 링크
+
 ## 주요 환경변수
 - DB/JWT
   - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`
@@ -104,7 +138,6 @@ flutter run -d macos --dart-define-from-file=.env.macos
 - `GET /api/v1/cases/{caseId}`
 - `POST /api/v1/cases/{caseId}/submission`
 - `GET /api/v1/cases/{caseId}/timeline`
-
 ## 참고
 - 이 레포는 공모전 프로토타입입니다.
 - 기관 실연계(MCP/기관 API)는 데모/설정 기반 동작을 포함하며, 운영 전환 시 인증·보안·법적 검토가 필요합니다.
