@@ -449,7 +449,7 @@ class _GuideInputDemoState extends State<_GuideInputDemo> {
       ),
       inputBar: _GuidePreviewInputBar(
         previewText: visibleInput,
-        placeholder: _aiCompleted ? '답변 입력 또는 음성으로 말하기' : 'AI 답변을 출력하고 있어요.',
+        placeholder: _aiCompleted ? '답변 입력하기' : 'AI 답변을 출력하고 있어요.',
         enabled: true,
       ),
     );

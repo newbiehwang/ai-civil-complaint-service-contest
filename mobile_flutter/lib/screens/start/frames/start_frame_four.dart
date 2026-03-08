@@ -50,7 +50,7 @@ class _StartFrameFourState extends State<StartFrameFour>
           double sy(double y) => y * (h / designHeight);
 
           final iconSize = sx(56);
-          final titleWidth = sx(162.39);
+          final titleWidth = sx(210);
           final buttonWidth = sx(310);
           final buttonHeight = sx(60);
 
@@ -78,15 +78,35 @@ class _StartFrameFourState extends State<StartFrameFour>
                 left: (w - titleWidth) / 2,
                 top: sy(381),
                 width: titleWidth,
-                child: const Text(
-                  '본인 확인이\n완료되었습니다.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFF1F2937),
-                    fontSize: 24,
-                    height: 39 / 24,
-                    fontWeight: FontWeight.w700,
-                  ),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      '본인 확인이',
+                      maxLines: 1,
+                      softWrap: false,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFF1F2937),
+                        fontSize: 24,
+                        height: 39 / 24,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      '완료되었습니다.',
+                      maxLines: 1,
+                      softWrap: false,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFF1F2937),
+                        fontSize: 24,
+                        height: 39 / 24,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Positioned(
