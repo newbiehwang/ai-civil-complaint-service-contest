@@ -3,7 +3,8 @@
 층간소음 민원을 대화형으로 접수하고, 상태머신 기반으로 경로 추천/서류 생성/제출/진행 추적까지 연결하는 프로토타입입니다.
 
 ## 앱 다운로드
-- Android APK: [최신 데모 다운로드](https://github.com/newbiehwang/ai-civil-complaint-service-contest/releases/download/v0.1.0/civil-complaint-android.apk)
+- Android: [최신 데모 다운로드](https://github.com/newbiehwang/ai-civil-complaint-service-contest/releases/download/v0.1.0/civil-complaint-android.apk)
+- IOS: Coming soon (TestFlight 준비 중)
 
 ## 서비스 특징
 - 대화형 민원 접수:
