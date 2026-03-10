@@ -8,8 +8,6 @@
 - Android APK: [최신 데모 다운로드](https://github.com/newbiehwang/ai-civil-complaint-service-contest/releases/latest/download/civil-complaint-android.apk)
 - iOS(TestFlight): Coming Soon
 
-> iOS 링크는 TestFlight 공개 링크로 교체해서 사용하세요.
-
 ## 서비스 특징
 - 대화형 민원 접수:
   - 자유 입력 + 미니 인터페이스(`ListPicker`, `MultiForm`, `OptionList`, `SummaryCard`, `PathChooser`, `StatusFeed`)를 혼합해 정보 수집.
