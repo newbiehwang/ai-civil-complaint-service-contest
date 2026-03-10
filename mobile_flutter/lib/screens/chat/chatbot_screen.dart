@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -333,6 +334,9 @@ class ChatbotDemoScreen extends StatefulWidget {
 }
 
 class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
+  static const double _edgeBackGestureActivationWidth = 24;
+  static const double _edgeBackGestureTriggerDistance = 80;
+  static const double _edgeBackGestureFlingVelocity = 700;
   static const _durations = ['10분 미만', '10~30분', '30분 이상', '모름'];
   static const _noiseTypes = ['뛰거나 걷는 소리', 'TV 소리', '가구 끄는 소리', '기타'];
   static const _impacts = ['수면 방해', '업무 방해', '불안', '기타'];
@@ -415,6 +419,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   bool _isThinking = false;
   bool _isAiAnswerReady = false;
   bool _isMiniInterfaceCollapsed = false;
+  bool _isMiniInterfaceInnerScrolling = false;
   bool _hasIntroBridgeShown = false;
   int _aiAnimationNonce = 0;
   String _aiText = '안녕하세요, 정부24 민원 서비스 도우미입니다.\n무엇을 도와드릴까요?';
@@ -464,9 +469,6 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   String? _backendCaseId;
   String? _backendCaseStatus;
   String? _backendTraceId;
-  String? _neighborGeneratedDocPath;
-  String? _neighborGeneratedDocFileName;
-  String? _neighborGeneratedDocGeneratedAt;
   bool _isBackendUiHintDriven = false;
   String _backendUiHintType = 'NONE';
   String _backendUiSelectionMode = 'NONE';
@@ -478,6 +480,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   bool _forceLocalDemoMode = false;
   bool _isBackendRequestInFlight = false;
   bool _wasConversationScrollLocked = false;
+  bool _isCurrentAiMeasureScheduled = false;
+  bool _isEdgeBackGestureActive = false;
+  double _edgeBackGestureDragDistance = 0;
+  double _currentAiMeasuredHeight = 0;
+  bool _pendingBackToList = false;
   Future<void> _backendSyncQueue = Future<void>.value();
   final List<ChatHistoryEntry> _historyEntries = <ChatHistoryEntry>[];
 
@@ -750,9 +757,59 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     );
   }
 
-  void _handleBackToList() {
+  void _navigateBackToListNow() {
     widget.onSnapshotChanged?.call(_buildSnapshot());
     widget.onBackToList();
+  }
+
+  void _flushPendingBackToListIfReady() {
+    if (!_pendingBackToList) return;
+    if (_isThinking || _isBackendRequestInFlight) return;
+    _pendingBackToList = false;
+    _navigateBackToListNow();
+  }
+
+  void _handleBackToList() {
+    if (_pendingBackToList && mounted) {
+      setState(() {
+        _pendingBackToList = false;
+      });
+    }
+    _navigateBackToListNow();
+  }
+
+  void _resetEdgeBackGesture() {
+    _isEdgeBackGestureActive = false;
+    _edgeBackGestureDragDistance = 0;
+  }
+
+  void _handleEdgeBackDragStart(DragStartDetails details) {
+    _isEdgeBackGestureActive = true;
+    _edgeBackGestureDragDistance = 0;
+  }
+
+  void _handleEdgeBackDragUpdate(DragUpdateDetails details) {
+    if (!_isEdgeBackGestureActive) return;
+    final delta = details.primaryDelta ?? 0;
+    _edgeBackGestureDragDistance =
+        (_edgeBackGestureDragDistance + delta).clamp(0.0, double.infinity);
+  }
+
+  void _handleEdgeBackDragEnd(DragEndDetails details) {
+    if (!_isEdgeBackGestureActive) {
+      _resetEdgeBackGesture();
+      return;
+    }
+    final velocity = details.primaryVelocity ?? 0;
+    final shouldNavigateBack =
+        _edgeBackGestureDragDistance >= _edgeBackGestureTriggerDistance ||
+            (_edgeBackGestureDragDistance >=
+                    _edgeBackGestureTriggerDistance * 0.45 &&
+                velocity >= _edgeBackGestureFlingVelocity);
+    _resetEdgeBackGesture();
+    if (shouldNavigateBack) {
+      _handleBackToList();
+    }
   }
 
   void _appendHistory({
@@ -810,6 +867,36 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     );
   }
 
+  void _scheduleCurrentAiHeightMeasure() {
+    if (_isCurrentAiMeasureScheduled) return;
+    _isCurrentAiMeasureScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _isCurrentAiMeasureScheduled = false;
+      if (!mounted) return;
+      final context = _currentAiAnchorKey.currentContext;
+      if (context == null) return;
+      final renderObject = context.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.hasSize) return;
+      final measured = renderObject.size.height;
+      if ((measured - _currentAiMeasuredHeight).abs() < 0.5) return;
+      setState(() {
+        _currentAiMeasuredHeight = measured;
+      });
+      if (_isThinking) {
+        WidgetsBinding.instance.addPostFrameCallback((__) {
+          if (!mounted || !_isThinking) return;
+          _pinCurrentAiToTop();
+        });
+      }
+    });
+  }
+
+  double _conversationTailSpacer(double viewportHeight) {
+    final value = viewportHeight - _currentAiMeasuredHeight;
+    if (value <= 0) return 0;
+    return value.clamp(0.0, viewportHeight).toDouble();
+  }
+
   Future<void> _showThinkingThen(
     VoidCallback done, {
     Duration duration = const Duration(milliseconds: 560),
@@ -818,6 +905,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     _collapseHistoryToCurrent(immediate: true);
     setState(() {
       _isThinking = true;
+      _currentAiMeasuredHeight = 0;
     });
     await Future<void>.delayed(duration);
     if (!mounted) return;
@@ -825,6 +913,8 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _isThinking = false;
     });
     done();
+    if (!mounted) return;
+    _flushPendingBackToListIfReady();
   }
 
   void _setAi({
@@ -1197,6 +1287,12 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
   }
 
   bool get _isServerMode => AuthSession.useBackend;
+  bool get _isDemoServerAccount {
+    final accountId = AuthSession.accountId?.trim().toLowerCase();
+    if (accountId == null || accountId.isEmpty) return false;
+    return accountId.startsWith('demo_');
+  }
+
   bool get _allowLocalDemoFallback => !_isServerMode;
 
   bool get _isBackendEnabled => _apiClient.isConfigured && !_forceLocalDemoMode;
@@ -1542,54 +1638,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     return map;
   }
 
-  void _syncNeighborGeneratedDocFromStatePatch(
-      Map<String, dynamic> statePatch) {
-    final directPath =
-        statePatch['neighborMeasurementDocumentPath']?.toString();
-    final directFileName =
-        statePatch['neighborMeasurementDocumentFileName']?.toString();
-    final directGeneratedAt =
-        statePatch['neighborMeasurementDocumentGeneratedAt']?.toString();
-
-    final filledSlots = _stringMapFromDynamic(statePatch['filledSlots']);
-    final filledPath = filledSlots['neighborMeasurementDocumentPath'];
-    final filledFileName = filledSlots['neighborMeasurementDocumentFileName'];
-    final filledGeneratedAt =
-        filledSlots['neighborMeasurementDocumentGeneratedAt'];
-
-    final resolvedPath = (directPath != null && directPath.trim().isNotEmpty)
-        ? directPath.trim()
-        : (filledPath == null || filledPath.trim().isEmpty
-            ? null
-            : filledPath.trim());
-    final resolvedFileName =
-        (directFileName != null && directFileName.trim().isNotEmpty)
-            ? directFileName.trim()
-            : (filledFileName == null || filledFileName.trim().isEmpty
-                ? null
-                : filledFileName.trim());
-    final resolvedGeneratedAt =
-        (directGeneratedAt != null && directGeneratedAt.trim().isNotEmpty)
-            ? directGeneratedAt.trim()
-            : (filledGeneratedAt == null || filledGeneratedAt.trim().isEmpty
-                ? null
-                : filledGeneratedAt.trim());
-
-    if (resolvedPath != null) {
-      _neighborGeneratedDocPath = resolvedPath;
-    }
-    if (resolvedFileName != null) {
-      _neighborGeneratedDocFileName = resolvedFileName;
-    }
-    if (resolvedGeneratedAt != null) {
-      _neighborGeneratedDocGeneratedAt = resolvedGeneratedAt;
-    }
-  }
-
   Future<void> _applyBackendTurn(ChatTurnResponseDto response) async {
-    _syncNeighborGeneratedDocFromStatePatch(response.statePatch);
     final hint = response.uiHint;
     final options = await _resolveBackendUiOptions(hint);
+    final backendStatus =
+        (response.statePatch['status']?.toString() ?? '').trim().toUpperCase();
     final flowStep =
         (hint.meta['flowStep']?.toString() ?? '').trim().toLowerCase();
     final requiredFields = _requiredFieldsFromUiMeta(hint.meta);
@@ -1603,13 +1656,21 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             .where((value) => value.isNotEmpty)
             .toList(growable: false)
         : const <String>[];
-    final forceNoMiniInterface = currentActionRequired == 'GENERAL_CHAT';
+    final forceStatusFeed = <String>{
+      'INSTITUTION_PROCESSING',
+      'SUPPLEMENT_REQUIRED',
+      'COMPLETED',
+      'CLOSED',
+    }.contains(backendStatus);
+    final forceNoMiniInterface =
+        currentActionRequired == 'GENERAL_CHAT' && !forceStatusFeed;
     final forceIntakeMultiForm = !forceNoMiniInterface &&
         currentActionRequired == 'INTAKE_REQUIRED' &&
         flowStep == 'intake' &&
         requiredFields.isNotEmpty;
-    final effectiveUiType =
-        forceNoMiniInterface ? 'NONE' : hint.type.trim().toUpperCase();
+    final effectiveUiType = forceStatusFeed
+        ? 'STATUS_FEED'
+        : (forceNoMiniInterface ? 'NONE' : hint.type.trim().toUpperCase());
     final effectiveOptions =
         forceNoMiniInterface ? const <MiniOption>[] : options;
     final mappedMiniType = _miniTypeFromBackendUiHint(
@@ -1690,9 +1751,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             flowStep,
             currentActionRequired,
           );
-    final assistantMessage = response.assistantMessage.trim().isEmpty
-        ? '다음 단계를 진행해 주세요.'
-        : response.assistantMessage.trim();
+    final assistantMessage = nextStep == DemoStep.statusFeed
+        ? '접수가 완료됐어요.\n처리 결과를 계속 안내해 드릴게요.'
+        : (response.assistantMessage.trim().isEmpty
+            ? '다음 단계를 진행해 주세요.'
+            : response.assistantMessage.trim());
     final selectedRouteLabel =
         (response.statePatch['selectedRouteLabel']?.toString() ?? '').trim();
     final selectedRouteOptionId =
@@ -1739,6 +1802,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
       _isThinking = true;
       _isAiAnswerReady = true;
       _isBackendRequestInFlight = true;
+      _currentAiMeasuredHeight = 0;
     });
 
     VoidCallback? localFallback;
@@ -1778,6 +1842,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
           _isThinking = false;
           _isBackendRequestInFlight = false;
         });
+        _flushPendingBackToListIfReady();
       }
     }
     if (mounted && localFallback != null) {
@@ -2205,6 +2270,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     setState(() {
       _isBackendRequestInFlight = true;
       _isThinking = true;
+      _currentAiMeasuredHeight = 0;
     });
 
     try {
@@ -3560,7 +3626,9 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
     TextStyle aiTextStyle,
     double viewportHeight,
   ) {
-    final isScrollLocked = _isThinking || !_isAiAnswerReady;
+    _scheduleCurrentAiHeightMeasure();
+    final isScrollLocked =
+        _isThinking || !_isAiAnswerReady || _isMiniInterfaceInnerScrolling;
     if (isScrollLocked != _wasConversationScrollLocked) {
       _wasConversationScrollLocked = isScrollLocked;
       if (isScrollLocked) {
@@ -3592,7 +3660,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         for (final item in _historyEntries) _HistoryMessageLine(entry: item),
         if (_historyEntries.isNotEmpty) const SizedBox(height: 20),
         currentMessage,
-        SizedBox(height: viewportHeight),
+        SizedBox(height: _conversationTailSpacer(viewportHeight)),
       ],
     );
   }
@@ -3615,99 +3683,136 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
             : _miniType == MiniInterfaceType.none
                 ? (_step == DemoStep.waitingRevision
                     ? '수정 내용을 입력해 주세요.'
-                    : '답변 입력 또는 음성으로 말하기')
+                    : '답변 입력하기')
                 : '항목을 선택해 주세요.';
 
     return GestureDetector(
+      behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
-      child: Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 104, 24, 110),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return _buildConversationArea(
-                            aiTextStyle,
-                            constraints.maxHeight,
-                          );
-                        },
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) {
+            _handleBackToList();
+          }
+        },
+        child: Scaffold(
+          body: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: _edgeBackGestureActivationWidth + 12,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onHorizontalDragStart: _handleEdgeBackDragStart,
+                        onHorizontalDragUpdate: _handleEdgeBackDragUpdate,
+                        onHorizontalDragEnd: _handleEdgeBackDragEnd,
+                        onHorizontalDragCancel: _resetEdgeBackGesture,
                       ),
                     ),
-                  ),
-                  Positioned(
-                    left: 18,
-                    right: 18,
-                    top: 16,
-                    child: _ChatTopBar(onBackToList: _handleBackToList),
-                  ),
-                  Positioned(
-                    left: 22,
-                    right: 22,
-                    bottom: 92,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 280),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      layoutBuilder: (currentChild, previousChildren) {
-                        return Stack(
-                          alignment: Alignment.bottomCenter,
-                          children: [
-                            ...previousChildren,
-                            if (currentChild != null) currentChild,
-                          ],
-                        );
-                      },
-                      transitionBuilder: (child, animation) {
-                        return FadeTransition(
-                          opacity: animation,
-                          child: child,
-                        );
-                      },
-                      child: _shouldShowMiniInterface
-                          ? _MiniInterfaceCard(
-                              key: ValueKey(
-                                'mini-${_miniType.name}-$_aiAnimationNonce',
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 104, 24, 110),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return _buildConversationArea(
+                              aiTextStyle,
+                              constraints.maxHeight,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 18,
+                      right: 18,
+                      top: 16,
+                      child: _ChatTopBar(onBackToList: _handleBackToList),
+                    ),
+                    Positioned(
+                      left: 22,
+                      right: 22,
+                      bottom: 92,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 280),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        layoutBuilder: (currentChild, previousChildren) {
+                          return Stack(
+                            alignment: Alignment.bottomCenter,
+                            children: [
+                              ...previousChildren,
+                              if (currentChild != null) currentChild,
+                            ],
+                          );
+                        },
+                        transitionBuilder: (child, animation) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: child,
+                          );
+                        },
+                        child: _shouldShowMiniInterface
+                            ? _MiniInterfaceCard(
+                                key: ValueKey(
+                                  'mini-${_miniType.name}-$_aiAnimationNonce',
+                                ),
+                                title: _miniInterfaceCollapsedTitle,
+                                trailingHintText:
+                                    _miniType == MiniInterfaceType.statusFeed &&
+                                            !_isServerMode
+                                        ? '(데모용 예시입니다)'
+                                        : null,
+                                collapsed: _isMiniInterfaceCollapsed,
+                                onToggleCollapsed: () {
+                                  setState(() {
+                                    _isMiniInterfaceCollapsed =
+                                        !_isMiniInterfaceCollapsed;
+                                    if (_isMiniInterfaceCollapsed) {
+                                      _isMiniInterfaceInnerScrolling = false;
+                                    }
+                                  });
+                                },
+                                onInnerScrollActivityChanged: (active) {
+                                  if (!mounted || _isMiniInterfaceCollapsed) {
+                                    return;
+                                  }
+                                  if (_isMiniInterfaceInnerScrolling ==
+                                      active) {
+                                    return;
+                                  }
+                                  setState(() {
+                                    _isMiniInterfaceInnerScrolling = active;
+                                  });
+                                },
+                                child: _buildMiniInterface(context),
+                              )
+                            : const SizedBox.shrink(
+                                key: ValueKey('mini-hidden'),
                               ),
-                              title: _miniInterfaceCollapsedTitle,
-                              trailingHintText:
-                                  _miniType == MiniInterfaceType.statusFeed &&
-                                          !_isServerMode
-                                      ? '(데모용 예시입니다)'
-                                      : null,
-                              collapsed: _isMiniInterfaceCollapsed,
-                              onToggleCollapsed: () {
-                                setState(() {
-                                  _isMiniInterfaceCollapsed =
-                                      !_isMiniInterfaceCollapsed;
-                                });
-                              },
-                              child: _buildMiniInterface(context),
-                            )
-                          : const SizedBox.shrink(
-                              key: ValueKey('mini-hidden'),
-                            ),
+                      ),
                     ),
-                  ),
-                  Positioned(
-                    left: 22,
-                    right: 22,
-                    bottom: 18,
-                    child: _InputBar(
-                      controller: _inputController,
-                      focusNode: _focusNode,
-                      placeholder: inputPlaceholder,
-                      enabled: _isInputEnabled && _isUiReadyAfterAi,
-                      sendEnabled: _isSendEnabled,
-                      onSend: _handleSendPressed,
+                    Positioned(
+                      left: 22,
+                      right: 22,
+                      bottom: 18,
+                      child: _InputBar(
+                        controller: _inputController,
+                        focusNode: _focusNode,
+                        placeholder: inputPlaceholder,
+                        enabled: _isInputEnabled && _isUiReadyAfterAi,
+                        sendEnabled: _isSendEnabled,
+                        onSend: _handleSendPressed,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -3973,6 +4078,7 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
               });
             },
             canSubmit: _isNeighborRecipientReady,
+            isDemoMode: _isDemoServerAccount,
             onSubmit: () => unawaited(_submitNeighborRecipient()),
           );
         }
@@ -4210,9 +4316,11 @@ class _ChatbotDemoScreenState extends State<ChatbotDemoScreen> {
         return _StatusFeedWidget(
           routeLabel: _data.route ?? '미선택',
           needsSupplementLikely: _evidenceAttachmentIds.isEmpty,
-          generatedDocumentFileName: _neighborGeneratedDocFileName,
-          generatedDocumentPath: _neighborGeneratedDocPath,
-          generatedDocumentAt: _neighborGeneratedDocGeneratedAt,
+          // StatusFeed에서는 생성 파일 카드를 노출하지 않는다.
+          generatedDocumentFileName: null,
+          generatedDocumentPath: null,
+          generatedDocumentAt: null,
+          onBackToList: _handleBackToList,
         );
       case MiniInterfaceType.none:
         return const SizedBox.shrink();
@@ -4377,6 +4485,7 @@ class _MiniInterfaceCard extends StatelessWidget {
     this.trailingHintText,
     required this.collapsed,
     required this.onToggleCollapsed,
+    this.onInnerScrollActivityChanged,
   });
 
   final Widget child;
@@ -4384,6 +4493,30 @@ class _MiniInterfaceCard extends StatelessWidget {
   final String? trailingHintText;
   final bool collapsed;
   final VoidCallback onToggleCollapsed;
+  final ValueChanged<bool>? onInnerScrollActivityChanged;
+
+  bool _handleInnerScrollNotification(ScrollNotification notification) {
+    if (collapsed) return false;
+    if (notification.metrics.axis != Axis.vertical) return false;
+
+    if (notification is ScrollStartNotification) {
+      onInnerScrollActivityChanged?.call(true);
+      return false;
+    }
+
+    if (notification is ScrollEndNotification) {
+      onInnerScrollActivityChanged?.call(false);
+      return false;
+    }
+
+    if (notification is UserScrollNotification) {
+      final active = notification.direction != ScrollDirection.idle;
+      onInnerScrollActivityChanged?.call(active);
+      return false;
+    }
+
+    return false;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4479,7 +4612,10 @@ class _MiniInterfaceCard extends StatelessWidget {
                   scale: collapsed ? 0.9 : 1,
                   child: Padding(
                     padding: const EdgeInsets.only(top: 10),
-                    child: child,
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _handleInnerScrollNotification,
+                      child: child,
+                    ),
                   ),
                 ),
               ),
@@ -4778,7 +4914,12 @@ class _ListPickerWidget extends StatelessWidget {
         if (options.length > maxVisibleOptions)
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: maxOptionsHeight),
-            child: SingleChildScrollView(child: optionsColumn),
+            child: _AdaptiveScrollbar(
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                child: optionsColumn,
+              ),
+            ),
           )
         else
           optionsColumn,
@@ -4883,7 +5024,12 @@ class _NeighborCenterDocsOptionListWidget extends StatelessWidget {
         if (options.length > maxVisibleOptions)
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 380),
-            child: SingleChildScrollView(child: optionsBody),
+            child: _AdaptiveScrollbar(
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                child: optionsBody,
+              ),
+            ),
           )
         else
           optionsBody,
@@ -4965,7 +5111,12 @@ class _ConsentListPickerWidget extends StatelessWidget {
         if (options.length > maxVisibleOptions)
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: maxOptionsHeight),
-            child: SingleChildScrollView(child: optionsColumn),
+            child: _AdaptiveScrollbar(
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                child: optionsColumn,
+              ),
+            ),
           )
         else
           optionsColumn,
@@ -5192,17 +5343,20 @@ class _ConsentDocumentBottomSheetState
               ),
             ),
             Expanded(
-              child: SingleChildScrollView(
+              child: _AdaptiveScrollbar(
                 controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
-                child: Text(
-                  widget.content,
-                  style: const TextStyle(
-                    color: AppColors.textMain,
-                    fontSize: 14,
-                    height: 1.55,
-                    fontWeight: FontWeight.w500,
-                    fontFamilyFallback: _kKrFontFallback,
+                builder: (controller) => SingleChildScrollView(
+                  controller: controller,
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+                  child: Text(
+                    widget.content,
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 14,
+                      height: 1.55,
+                      fontWeight: FontWeight.w500,
+                      fontFamilyFallback: _kKrFontFallback,
+                    ),
                   ),
                 ),
               ),
@@ -5365,44 +5519,47 @@ class _TriageMultiFormWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '현재 소음 상태',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
+            child: _AdaptiveScrollbar(
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '현재 소음 상태',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: noiseNowOptions,
-                    selectedId: selectedNoiseNowId,
-                    onSelect: onSelectNoiseNow,
-                    iconBuilder: _triageNoiseNowIconForOption,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '안전 긴급도',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: noiseNowOptions,
+                      selectedId: selectedNoiseNowId,
+                      onSelect: onSelectNoiseNow,
+                      iconBuilder: _triageNoiseNowIconForOption,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: safetyOptions,
-                    selectedId: selectedSafetyId,
-                    onSelect: onSelectSafety,
-                    iconBuilder: _triageSafetyIconForOption,
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    const Text(
+                      '안전 긴급도',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: safetyOptions,
+                      selectedId: selectedSafetyId,
+                      onSelect: onSelectSafety,
+                      iconBuilder: _triageSafetyIconForOption,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -5480,80 +5637,83 @@ class _IntakeMultiFormBasicWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: SingleChildScrollView(
+            child: _AdaptiveScrollbar(
               controller: scrollController,
-              key: const PageStorageKey<String>('intake-basic-scroll'),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '거주 형태',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                key: const PageStorageKey<String>('intake-basic-scroll'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '거주 형태',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: residenceOptions,
-                    selectedId: selectedResidenceId,
-                    onSelect: onSelectResidence,
-                    iconBuilder: _residenceIconForOption,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '관리사무소(관리주체) 유무',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: residenceOptions,
+                      selectedId: selectedResidenceId,
+                      onSelect: onSelectResidence,
+                      iconBuilder: _residenceIconForOption,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: filteredManagementOptions,
-                    selectedId: effectiveSelectedManagementId,
-                    onSelect: onSelectManagement,
-                    iconBuilder: _managementIconForOption,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '30일 이내 방문상담 유무',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
+                    const SizedBox(height: 14),
+                    const Text(
+                      '관리사무소(관리주체) 유무',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: visitConsultWithin30DaysOptions,
-                    selectedId: selectedVisitConsultWithin30DaysId,
-                    onSelect: onSelectVisitConsultWithin30Days,
-                    iconBuilder: _visitConsultIconForOption,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '발생원 특정 정도',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: filteredManagementOptions,
+                      selectedId: effectiveSelectedManagementId,
+                      onSelect: onSelectManagement,
+                      iconBuilder: _managementIconForOption,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: filteredSourceCertaintyOptions,
-                    selectedId: effectiveSelectedSourceCertaintyId,
-                    onSelect: onSelectSourceCertainty,
-                    iconBuilder: _sourceCertaintyIconForOption,
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    const Text(
+                      '30일 이내 방문상담 유무',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: visitConsultWithin30DaysOptions,
+                      selectedId: selectedVisitConsultWithin30DaysId,
+                      onSelect: onSelectVisitConsultWithin30Days,
+                      iconBuilder: _visitConsultIconForOption,
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      '발생원 특정 정도',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: filteredSourceCertaintyOptions,
+                      selectedId: effectiveSelectedSourceCertaintyId,
+                      onSelect: onSelectSourceCertainty,
+                      iconBuilder: _sourceCertaintyIconForOption,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -5624,144 +5784,147 @@ class _IntakeMultiFormDetailWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: SingleChildScrollView(
+            child: _AdaptiveScrollbar(
               controller: scrollController,
-              key: const PageStorageKey<String>('intake-detail-scroll'),
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '(다중 선택 가능)',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '소음 유형',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: noiseTypeOptions,
-                    allowMultiple: true,
-                    selectedIds: selectedNoiseTypeIds,
-                    onToggleOption: onToggleNoiseType,
-                    iconBuilder: _noiseTypeIconForOption,
-                  ),
-                  if (selectedNoiseTypeIds.contains('noise-other')) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.border),
-                        color: Colors.white,
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                key: const PageStorageKey<String>('intake-detail-scroll'),
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '(다중 선택 가능)',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        fontFamilyFallback: _kKrFontFallback,
                       ),
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                      child: TextField(
-                        controller: noiseTypeEtcController,
-                        onChanged: onNoiseTypeEtcChanged,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                          hintText: '기타 소음 유형을 입력해 주세요.',
-                          hintStyle: TextStyle(
-                            color: Color(0xFF9CA3AF),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '소음 유형',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: noiseTypeOptions,
+                      allowMultiple: true,
+                      selectedIds: selectedNoiseTypeIds,
+                      onToggleOption: onToggleNoiseType,
+                      iconBuilder: _noiseTypeIconForOption,
+                    ),
+                    if (selectedNoiseTypeIds.contains('noise-other')) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppColors.border),
+                          color: Colors.white,
+                        ),
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                        child: TextField(
+                          controller: noiseTypeEtcController,
+                          onChanged: onNoiseTypeEtcChanged,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                            hintText: '기타 소음 유형을 입력해 주세요.',
+                            hintStyle: TextStyle(
+                              color: Color(0xFF9CA3AF),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              fontFamilyFallback: _kKrFontFallback,
+                            ),
+                          ),
+                          style: const TextStyle(
+                            color: AppColors.textMain,
+                            fontSize: 16,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
                             fontFamilyFallback: _kKrFontFallback,
                           ),
                         ),
-                        style: const TextStyle(
-                          color: AppColors.textMain,
-                          fontSize: 16,
-                          height: 1.35,
-                          fontWeight: FontWeight.w600,
-                          fontFamilyFallback: _kKrFontFallback,
-                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    const Text(
+                      '반복 빈도',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: frequencyOptions,
+                      selectedId: selectedFrequencyId,
+                      onSelect: onSelectFrequency,
+                      iconBuilder: _frequencyIconForOption,
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      '(다중 선택 가능)',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '주 발생 시간',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: timeBandOptions,
+                      allowMultiple: true,
+                      selectedIds: selectedTimeBandIds,
+                      onToggleOption: onToggleTimeBand,
+                      iconBuilder: _timeBandIconForOption,
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      '소음 시작 시점',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _MultiFormDateTimeRow(
+                      icon: Icons.calendar_month_rounded,
+                      label: '발생 날짜',
+                      value: dateLabel,
+                      onTap: onPickDate,
+                    ),
+                    const SizedBox(height: 8),
+                    _MultiFormDateTimeRow(
+                      icon: Icons.schedule_rounded,
+                      label: '발생 시간',
+                      value: timeLabel,
+                      onTap: onPickTime,
+                    ),
                   ],
-                  const SizedBox(height: 14),
-                  const Text(
-                    '반복 빈도',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: frequencyOptions,
-                    selectedId: selectedFrequencyId,
-                    onSelect: onSelectFrequency,
-                    iconBuilder: _frequencyIconForOption,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '(다중 선택 가능)',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '주 발생 시간',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: timeBandOptions,
-                    allowMultiple: true,
-                    selectedIds: selectedTimeBandIds,
-                    onToggleOption: onToggleTimeBand,
-                    iconBuilder: _timeBandIconForOption,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '소음 시작 시점',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormDateTimeRow(
-                    icon: Icons.calendar_month_rounded,
-                    label: '발생 날짜',
-                    value: dateLabel,
-                    onTap: onPickDate,
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormDateTimeRow(
-                    icon: Icons.schedule_rounded,
-                    label: '발생 시간',
-                    value: timeLabel,
-                    onTap: onPickTime,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -5820,71 +5983,74 @@ class _MultiFormWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: SingleChildScrollView(
+            child: _AdaptiveScrollbar(
               controller: scrollController,
-              key: const PageStorageKey<String>('multi-form-scroll'),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '거주 형태',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                key: const PageStorageKey<String>('multi-form-scroll'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '거주 형태',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: residenceOptions,
-                    selectedId: selectedResidenceId,
-                    onSelect: onSelectResidence,
-                    iconBuilder: _residenceIconForOption,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '주 발생 시간',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: residenceOptions,
+                      selectedId: selectedResidenceId,
+                      onSelect: onSelectResidence,
+                      iconBuilder: _residenceIconForOption,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormButtonGrid(
-                    options: timeBandOptions,
-                    selectedId: selectedTimeBandId,
-                    onSelect: onSelectTimeBand,
-                    iconBuilder: _timeBandIconForOption,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '시작 시점',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamilyFallback: _kKrFontFallback,
+                    const SizedBox(height: 14),
+                    const Text(
+                      '주 발생 시간',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormDateTimeRow(
-                    icon: Icons.calendar_month_rounded,
-                    label: '발생 날짜',
-                    value: dateLabel,
-                    onTap: onPickDate,
-                  ),
-                  const SizedBox(height: 8),
-                  _MultiFormDateTimeRow(
-                    icon: Icons.schedule_rounded,
-                    label: '발생 시간',
-                    value: timeLabel,
-                    onTap: onPickTime,
-                  ),
-                  const SizedBox(height: 8),
-                ],
+                    const SizedBox(height: 8),
+                    _MultiFormButtonGrid(
+                      options: timeBandOptions,
+                      selectedId: selectedTimeBandId,
+                      onSelect: onSelectTimeBand,
+                      iconBuilder: _timeBandIconForOption,
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      '시작 시점',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: _kKrFontFallback,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _MultiFormDateTimeRow(
+                      icon: Icons.calendar_month_rounded,
+                      label: '발생 날짜',
+                      value: dateLabel,
+                      onTap: onPickDate,
+                    ),
+                    const SizedBox(height: 8),
+                    _MultiFormDateTimeRow(
+                      icon: Icons.schedule_rounded,
+                      label: '발생 시간',
+                      value: timeLabel,
+                      onTap: onPickTime,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
             ),
           ),
@@ -6199,7 +6365,7 @@ IconData _noiseTypeIconForOption(String id) {
     case 'noise-door':
       return Icons.sensor_door_rounded;
     case 'noise-drop':
-      return Icons.downhill_skiing_rounded;
+      return Icons.inventory_2_rounded;
     case 'noise-furniture':
       return Icons.chair_alt_rounded;
     case 'noise-hammer':
@@ -6383,44 +6549,47 @@ class _NeighborCenterFormWidget extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _NeighborFormField(
-                    label: '성명',
-                    controller: nameController,
-                    required: _isRequired('name'),
-                    keyboardType: TextInputType.name,
-                  ),
-                  const SizedBox(height: 8),
-                  _NeighborFormField(
-                    label: '연락처',
-                    controller: phoneController,
-                    required: _isRequired('phone'),
-                    keyboardType: TextInputType.phone,
-                  ),
-                  const SizedBox(height: 8),
-                  _NeighborFormField(
-                    label: '이메일',
-                    controller: emailController,
-                    required: _isRequired('email'),
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 8),
-                  _NeighborFormField(
-                    label: '주택명',
-                    controller: housingNameController,
-                    required: _isRequired('housingName'),
-                    keyboardType: TextInputType.text,
-                  ),
-                  const SizedBox(height: 8),
-                  _NeighborFormField(
-                    label: '주소',
-                    controller: addressController,
-                    required: _isRequired('address'),
-                    keyboardType: TextInputType.streetAddress,
-                  ),
-                ],
+            child: _AdaptiveScrollbar(
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                child: Column(
+                  children: [
+                    _NeighborFormField(
+                      label: '성명',
+                      controller: nameController,
+                      required: _isRequired('name'),
+                      keyboardType: TextInputType.name,
+                    ),
+                    const SizedBox(height: 8),
+                    _NeighborFormField(
+                      label: '연락처',
+                      controller: phoneController,
+                      required: _isRequired('phone'),
+                      keyboardType: TextInputType.phone,
+                    ),
+                    const SizedBox(height: 8),
+                    _NeighborFormField(
+                      label: '이메일',
+                      controller: emailController,
+                      required: _isRequired('email'),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 8),
+                    _NeighborFormField(
+                      label: '주택명',
+                      controller: housingNameController,
+                      required: _isRequired('housingName'),
+                      keyboardType: TextInputType.text,
+                    ),
+                    const SizedBox(height: 8),
+                    _NeighborFormField(
+                      label: '주소',
+                      controller: addressController,
+                      required: _isRequired('address'),
+                      keyboardType: TextInputType.streetAddress,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -6444,6 +6613,7 @@ class _NeighborCenterRecipientWidget extends StatefulWidget {
     required this.selectedDomainId,
     required this.onSelectDomain,
     required this.canSubmit,
+    required this.isDemoMode,
     required this.onSubmit,
   });
 
@@ -6453,6 +6623,7 @@ class _NeighborCenterRecipientWidget extends StatefulWidget {
   final String selectedDomainId;
   final ValueChanged<String> onSelectDomain;
   final bool canSubmit;
+  final bool isDemoMode;
   final VoidCallback onSubmit;
 
   @override
@@ -6548,6 +6719,19 @@ class _NeighborCenterRecipientWidgetState
               fontFamilyFallback: _kKrFontFallback,
             ),
           ),
+          if (widget.isDemoMode) ...[
+            const SizedBox(height: 6),
+            const Text(
+              '데모입니다. 실제로 전송되지 않습니다.',
+              style: TextStyle(
+                color: _kMiniSubtitleColor,
+                fontSize: 12,
+                height: 1.3,
+                fontWeight: FontWeight.w500,
+                fontFamilyFallback: _kKrFontFallback,
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -7026,27 +7210,30 @@ class _MeasureTransitionCheckWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _MeasureCheckRow(
-                    title: '방문상담 이후에도 갈등이 지속되나요?',
-                    value: visitDone,
-                    onSelect: onSelectVisitDone,
-                  ),
-                  const SizedBox(height: 8),
-                  _MeasureCheckRow(
-                    title: '방문상담 후 30일 이내 신청인가요?',
-                    value: within30Days,
-                    onSelect: onSelectWithin30Days,
-                  ),
-                  const SizedBox(height: 8),
-                  _MeasureCheckRow(
-                    title: '수음세대(피해 세대) 신청인가요?',
-                    value: receivingUnit,
-                    onSelect: onSelectReceivingUnit,
-                  ),
-                ],
+            child: _AdaptiveScrollbar(
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                child: Column(
+                  children: [
+                    _MeasureCheckRow(
+                      title: '방문상담 이후에도 갈등이 지속되나요?',
+                      value: visitDone,
+                      onSelect: onSelectVisitDone,
+                    ),
+                    const SizedBox(height: 8),
+                    _MeasureCheckRow(
+                      title: '방문상담 후 30일 이내 신청인가요?',
+                      value: within30Days,
+                      onSelect: onSelectWithin30Days,
+                    ),
+                    const SizedBox(height: 8),
+                    _MeasureCheckRow(
+                      title: '수음세대(피해 세대) 신청인가요?',
+                      value: receivingUnit,
+                      onSelect: onSelectReceivingUnit,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -8049,10 +8236,10 @@ class _SummaryCardWidget extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Scrollbar(
-                  thumbVisibility: true,
+                child: _AdaptiveScrollbar(
                   radius: const Radius.circular(999),
-                  child: SingleChildScrollView(
+                  builder: (controller) => SingleChildScrollView(
+                    controller: controller,
                     padding: const EdgeInsets.only(right: 6),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -8199,72 +8386,75 @@ class _PathChooserWidgetState extends State<_PathChooserWidget> {
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: 356),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: double.infinity,
-              child: _SelectableCardButton(
-                compact: true,
-                selected: widget.selectedId == recommended.id,
-                title: _compactPathTitle(recommended.label),
-                subtitle: (recommended.description ?? '').trim().isEmpty
-                    ? '층간소음 상담/조정 절차에 가장 빠르게 연결돼요.'
-                    : recommended.description!.trim(),
-                leadingBadge: '추천',
-                onTap: () => widget.onSelect(recommended.id),
-                emphasizeTitle: false,
-                trailing: Align(
-                  alignment: Alignment.centerLeft,
-                  child: SizedBox(
-                    width: 118,
-                    child: TextButton(
-                      onPressed: () =>
-                          setState(() => _openReason = !_openReason),
-                      child: Text(_openReason ? '추천 이유 접기' : '추천 이유 보기'),
-                    ),
-                  ),
-                ),
-                extra: _openReason
-                    ? const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _ReasonText(text: '층간소음 조정 절차와 가장 잘 맞아요.'),
-                            _ReasonText(text: '초기 접수부터 중재 요청까지 빠르게 이어집니다.'),
-                            _ReasonText(text: '필요 시 이후 민원 제출 단계로 전환 가능합니다.'),
-                          ],
-                        ),
-                      )
-                    : null,
-              ),
-            ),
-            for (final option in alternatives) ...[
-              const SizedBox(height: 10),
+      child: _AdaptiveScrollbar(
+        builder: (controller) => SingleChildScrollView(
+          controller: controller,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               SizedBox(
                 width: double.infinity,
                 child: _SelectableCardButton(
                   compact: true,
-                  centerContent: true,
-                  selected: widget.selectedId == option.id,
-                  title: _compactPathTitle(option.label),
-                  subtitle: (option.description ?? '').trim().isEmpty
-                      ? null
-                      : option.description!.trim(),
-                  onTap: () => widget.onSelect(option.id),
+                  selected: widget.selectedId == recommended.id,
+                  title: _compactPathTitle(recommended.label),
+                  subtitle: (recommended.description ?? '').trim().isEmpty
+                      ? '층간소음 상담/조정 절차에 가장 빠르게 연결돼요.'
+                      : recommended.description!.trim(),
+                  leadingBadge: '추천',
+                  onTap: () => widget.onSelect(recommended.id),
                   emphasizeTitle: false,
+                  trailing: Align(
+                    alignment: Alignment.centerLeft,
+                    child: SizedBox(
+                      width: 118,
+                      child: TextButton(
+                        onPressed: () =>
+                            setState(() => _openReason = !_openReason),
+                        child: Text(_openReason ? '추천 이유 접기' : '추천 이유 보기'),
+                      ),
+                    ),
+                  ),
+                  extra: _openReason
+                      ? const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _ReasonText(text: '층간소음 조정 절차와 가장 잘 맞아요.'),
+                              _ReasonText(text: '초기 접수부터 중재 요청까지 빠르게 이어집니다.'),
+                              _ReasonText(text: '필요 시 이후 민원 제출 단계로 전환 가능합니다.'),
+                            ],
+                          ),
+                        )
+                      : null,
                 ),
               ),
+              for (final option in alternatives) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: _SelectableCardButton(
+                    compact: true,
+                    centerContent: true,
+                    selected: widget.selectedId == option.id,
+                    title: _compactPathTitle(option.label),
+                    subtitle: (option.description ?? '').trim().isEmpty
+                        ? null
+                        : option.description!.trim(),
+                    onTap: () => widget.onSelect(option.id),
+                    emphasizeTitle: false,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              _PrimaryButton(
+                label: '선택 완료',
+                onPressed: widget.canSubmit ? widget.onSubmit : null,
+                compact: true,
+              ),
             ],
-            const SizedBox(height: 12),
-            _PrimaryButton(
-              label: '선택 완료',
-              onPressed: widget.canSubmit ? widget.onSubmit : null,
-              compact: true,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -8350,49 +8540,52 @@ class _NoiseDiaryBuilderWidget extends StatelessWidget {
         const SizedBox(height: 10),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 360),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _OptionDateTimeRow(
-                  icon: Icons.calendar_month_rounded,
-                  label: '발생 날짜',
-                  value: dateLabel,
-                  onTap: onPickDate,
-                ),
-                const SizedBox(height: 8),
-                _OptionDateTimeRow(
-                  icon: Icons.schedule_rounded,
-                  label: '발생 시간',
-                  value: timeLabel,
-                  onTap: onPickTime,
-                ),
-                const SizedBox(height: 12),
-                _ChoiceSection(
-                  title: '지속시간',
-                  values: durations,
-                  selectedValue: selectedDuration,
-                  onSelect: onSelectDuration,
-                ),
-                _ChoiceSection(
-                  title: '유형',
-                  values: noiseTypes,
-                  selectedValue: selectedType,
-                  onSelect: onSelectType,
-                ),
-                _ChoiceSection(
-                  title: '영향',
-                  values: impacts,
-                  selectedValue: selectedImpact,
-                  onSelect: onSelectImpact,
-                ),
-                const SizedBox(height: 8),
-                _PrimaryButton(
-                  label: '일지 생성',
-                  onPressed: canSubmit ? onSubmit : null,
-                  compact: true,
-                ),
-              ],
+          child: _AdaptiveScrollbar(
+            builder: (controller) => SingleChildScrollView(
+              controller: controller,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _OptionDateTimeRow(
+                    icon: Icons.calendar_month_rounded,
+                    label: '발생 날짜',
+                    value: dateLabel,
+                    onTap: onPickDate,
+                  ),
+                  const SizedBox(height: 8),
+                  _OptionDateTimeRow(
+                    icon: Icons.schedule_rounded,
+                    label: '발생 시간',
+                    value: timeLabel,
+                    onTap: onPickTime,
+                  ),
+                  const SizedBox(height: 12),
+                  _ChoiceSection(
+                    title: '지속시간',
+                    values: durations,
+                    selectedValue: selectedDuration,
+                    onSelect: onSelectDuration,
+                  ),
+                  _ChoiceSection(
+                    title: '유형',
+                    values: noiseTypes,
+                    selectedValue: selectedType,
+                    onSelect: onSelectType,
+                  ),
+                  _ChoiceSection(
+                    title: '영향',
+                    values: impacts,
+                    selectedValue: selectedImpact,
+                    onSelect: onSelectImpact,
+                  ),
+                  const SizedBox(height: 8),
+                  _PrimaryButton(
+                    label: '일지 생성',
+                    onPressed: canSubmit ? onSubmit : null,
+                    compact: true,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -8490,41 +8683,44 @@ class _DraftViewerWidget extends StatelessWidget {
           child: Column(
             children: [
               Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _TextCard(lines: previewLines),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          color: const Color(0xFFF8FBFF),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('수정 포인트',
-                                style: TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w700)),
-                            const SizedBox(height: 6),
-                            ...guidePoints.map(
-                              (point) => Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
-                                child: Text('• $point',
-                                    style: const TextStyle(
-                                        color: Color(0xFF475569),
-                                        fontSize: 12.5,
-                                        height: 1.35)),
+                child: _AdaptiveScrollbar(
+                  builder: (controller) => SingleChildScrollView(
+                    controller: controller,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _TextCard(lines: previewLines),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            color: const Color(0xFFF8FBFF),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('수정 포인트',
+                                  style: TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 6),
+                              ...guidePoints.map(
+                                (point) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text('• $point',
+                                      style: const TextStyle(
+                                          color: Color(0xFF475569),
+                                          fontSize: 12.5,
+                                          height: 1.35)),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -8572,59 +8768,64 @@ class _DraftConfirmWidget extends StatelessWidget {
         const SizedBox(height: 8),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 360),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (var i = 0; i < previewLines.length; i++)
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 4),
-                          padding: highlightIndexes.contains(i)
-                              ? const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2)
-                              : EdgeInsets.zero,
-                          decoration: highlightIndexes.contains(i)
-                              ? BoxDecoration(
-                                  color: AppColors.blueTint,
-                                  borderRadius: BorderRadius.circular(8),
-                                )
-                              : null,
-                          child: Text(
-                            previewLines[i],
-                            style: TextStyle(
-                              color: highlightIndexes.contains(i)
-                                  ? const Color(0xFF1D4ED8)
-                                  : const Color(0xFF334155),
-                              fontSize: 13,
-                              height: 1.42,
-                              fontWeight: highlightIndexes.contains(i)
-                                  ? FontWeight.w700
-                                  : FontWeight.w600,
+          child: _AdaptiveScrollbar(
+            builder: (controller) => SingleChildScrollView(
+              controller: controller,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var i = 0; i < previewLines.length; i++)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 4),
+                            padding: highlightIndexes.contains(i)
+                                ? const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2)
+                                : EdgeInsets.zero,
+                            decoration: highlightIndexes.contains(i)
+                                ? BoxDecoration(
+                                    color: AppColors.blueTint,
+                                    borderRadius: BorderRadius.circular(8),
+                                  )
+                                : null,
+                            child: Text(
+                              previewLines[i],
+                              style: TextStyle(
+                                color: highlightIndexes.contains(i)
+                                    ? const Color(0xFF1D4ED8)
+                                    : const Color(0xFF334155),
+                                fontSize: 13,
+                                height: 1.42,
+                                fontWeight: highlightIndexes.contains(i)
+                                    ? FontWeight.w700
+                                    : FontWeight.w600,
+                              ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                _PrimaryButton(
-                    label: '좋아요, 접수해주세요', onPressed: onApprove, compact: true),
-                const SizedBox(height: 8),
-                _SecondaryButton(
-                  label: '다시 수정',
-                  onPressed: onEditAgain,
-                  compact: true,
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  _PrimaryButton(
+                      label: '좋아요, 접수해주세요',
+                      onPressed: onApprove,
+                      compact: true),
+                  const SizedBox(height: 8),
+                  _SecondaryButton(
+                    label: '다시 수정',
+                    onPressed: onEditAgain,
+                    compact: true,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -8672,6 +8873,7 @@ class _StatusFeedWidget extends StatefulWidget {
   const _StatusFeedWidget({
     required this.routeLabel,
     required this.needsSupplementLikely,
+    required this.onBackToList,
     this.generatedDocumentFileName,
     this.generatedDocumentPath,
     this.generatedDocumentAt,
@@ -8679,6 +8881,7 @@ class _StatusFeedWidget extends StatefulWidget {
 
   final String routeLabel;
   final bool needsSupplementLikely;
+  final VoidCallback onBackToList;
   final String? generatedDocumentFileName;
   final String? generatedDocumentPath;
   final String? generatedDocumentAt;
@@ -8780,67 +8983,83 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Column(
-                children: [
-                  _StatusSummaryCard(
-                    statusText: widget.needsSupplementLikely
-                        ? '보완요청 가능성 확인 중'
-                        : '접수 확인 단계',
-                    updatedAtText: '마지막 갱신 5분 전',
-                    etaText: widget.needsSupplementLikely
-                        ? '추가자료 요청 가능'
-                        : '예상 소요 1~2일',
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.border),
-                      color: Colors.white,
-                    ),
-                    child: Column(
-                      children: [
-                        for (var i = 0; i < visibleEvents.length; i++)
-                          Padding(
-                            padding: EdgeInsets.only(
-                              bottom: i == visibleEvents.length - 1 ? 0 : 12,
-                            ),
-                            child: _StatusTimelineItem(
-                              code: visibleEvents[i].code,
-                              title: visibleEvents[i].title,
-                              subtitle: visibleEvents[i].subtitle,
-                              stepState: visibleEvents[i].stepState,
-                              highlight: visibleEvents[i].code ==
-                                  'SUPPLEMENT_REQUIRED',
-                              isLast: i == visibleEvents.length - 1,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if ((widget.generatedDocumentFileName?.trim().isNotEmpty ??
-                          false) ||
-                      (widget.generatedDocumentPath?.trim().isNotEmpty ??
-                          false))
-                    Column(
-                      children: [
-                        _StatusGeneratedDocumentCard(
-                          fileName: widget.generatedDocumentFileName,
-                          filePath: widget.generatedDocumentPath,
-                          generatedAt: widget.generatedDocumentAt,
+            child: _AdaptiveScrollbar(
+              builder: (controller) => SingleChildScrollView(
+                controller: controller,
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Column(
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '예시 화면입니다.',
+                        style: TextStyle(
+                          color: Color(0xFF686868),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          fontFamilyFallback: _kKrFontFallback,
                         ),
-                        const SizedBox(height: 12),
-                      ],
+                      ),
                     ),
-                  _StatusNextActionCard(
-                    needsSupplementLikely: widget.needsSupplementLikely,
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    _StatusSummaryCard(
+                      statusText: widget.needsSupplementLikely
+                          ? '보완요청 가능성 확인 중'
+                          : '접수 확인 단계',
+                      updatedAtText: '마지막 갱신 5분 전',
+                      etaText: widget.needsSupplementLikely
+                          ? '추가자료 요청 가능'
+                          : '예상 소요 1~2일',
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.border),
+                        color: Colors.white,
+                      ),
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < visibleEvents.length; i++)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                bottom: i == visibleEvents.length - 1 ? 0 : 12,
+                              ),
+                              child: _StatusTimelineItem(
+                                code: visibleEvents[i].code,
+                                title: visibleEvents[i].title,
+                                subtitle: visibleEvents[i].subtitle,
+                                stepState: visibleEvents[i].stepState,
+                                highlight: visibleEvents[i].code ==
+                                    'SUPPLEMENT_REQUIRED',
+                                isLast: i == visibleEvents.length - 1,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if ((widget.generatedDocumentFileName?.trim().isNotEmpty ??
+                            false) ||
+                        (widget.generatedDocumentPath?.trim().isNotEmpty ??
+                            false))
+                      Column(
+                        children: [
+                          _StatusGeneratedDocumentCard(
+                            fileName: widget.generatedDocumentFileName,
+                            filePath: widget.generatedDocumentPath,
+                            generatedAt: widget.generatedDocumentAt,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    _StatusNextActionCard(
+                      needsSupplementLikely: widget.needsSupplementLikely,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -8863,6 +9082,12 @@ class _StatusFeedWidgetState extends State<_StatusFeedWidget> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          _SecondaryButton(
+            label: '민원 목록으로 돌아가기',
+            onPressed: widget.onBackToList,
+            compact: true,
           ),
         ],
       ),
@@ -9793,6 +10018,107 @@ List<_MarkdownSegment> _parseMarkdownSegments(String raw) {
 
   flush();
   return segments;
+}
+
+class _AdaptiveScrollbar extends StatefulWidget {
+  const _AdaptiveScrollbar({
+    required this.builder,
+    this.controller,
+    this.radius = const Radius.circular(10),
+  });
+
+  final Widget Function(ScrollController controller) builder;
+  final ScrollController? controller;
+  final Radius radius;
+
+  @override
+  State<_AdaptiveScrollbar> createState() => _AdaptiveScrollbarState();
+}
+
+class _AdaptiveScrollbarState extends State<_AdaptiveScrollbar> {
+  late final ScrollController _fallbackController;
+  bool _hasOverflow = false;
+
+  ScrollController get _controller => widget.controller ?? _fallbackController;
+
+  @override
+  void initState() {
+    super.initState();
+    _fallbackController = ScrollController();
+    _attachController(_controller);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AdaptiveScrollbar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      _detachController(oldWidget.controller ?? _fallbackController);
+      _attachController(_controller);
+      return;
+    }
+    _scheduleOverflowCheck();
+  }
+
+  @override
+  void dispose() {
+    _detachController(_controller);
+    _fallbackController.dispose();
+    super.dispose();
+  }
+
+  void _attachController(ScrollController controller) {
+    controller.addListener(_checkOverflowFromController);
+    _scheduleOverflowCheck();
+  }
+
+  void _detachController(ScrollController controller) {
+    controller.removeListener(_checkOverflowFromController);
+  }
+
+  void _scheduleOverflowCheck() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _checkOverflowFromController();
+    });
+  }
+
+  void _checkOverflowFromController() {
+    if (!_controller.hasClients) {
+      _setHasOverflow(false);
+      return;
+    }
+    _setHasOverflow(_controller.position.maxScrollExtent > 0.5);
+  }
+
+  void _setHasOverflow(bool value) {
+    if (_hasOverflow == value || !mounted) return;
+    setState(() => _hasOverflow = value);
+  }
+
+  bool _handleMetricsNotification(ScrollMetricsNotification notification) {
+    _setHasOverflow(notification.metrics.maxScrollExtent > 0.5);
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final noAutoScrollbarBehavior =
+        ScrollConfiguration.of(context).copyWith(scrollbars: false);
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: _handleMetricsNotification,
+      child: ScrollConfiguration(
+        behavior: noAutoScrollbarBehavior,
+        child: Scrollbar(
+          controller: _controller,
+          thumbVisibility: _hasOverflow,
+          interactive: _hasOverflow,
+          radius: widget.radius,
+          thickness: 4,
+          child: widget.builder(_controller),
+        ),
+      ),
+    );
+  }
 }
 
 class _PrimaryButton extends StatefulWidget {

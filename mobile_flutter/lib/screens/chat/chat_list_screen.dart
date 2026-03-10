@@ -914,7 +914,7 @@ class _MenuTab extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           const Text(
-            '계정 및 서비스 설정을 확인하세요.',
+            '추후 구현 예정 기능입니다.',
             style: TextStyle(
               color: Color(0xFF64748B),
               fontSize: 14,

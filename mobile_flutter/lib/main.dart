@@ -68,6 +68,8 @@ class CivilComplaintApp extends StatelessWidget {
 
 enum RootPhase { start, guide, chatList, chat }
 
+enum _PhaseTransitionDirection { none, forward, backward }
+
 class DemoRootScreen extends StatefulWidget {
   const DemoRootScreen({super.key});
 
@@ -77,6 +79,8 @@ class DemoRootScreen extends StatefulWidget {
 
 class _DemoRootScreenState extends State<DemoRootScreen> {
   RootPhase _phase = RootPhase.start;
+  _PhaseTransitionDirection _phaseTransitionDirection =
+      _PhaseTransitionDirection.none;
   int _startFlowVersion = 0;
   final Map<String, ChatSessionStore> _sessionStoresByAccount =
       <String, ChatSessionStore>{};
@@ -126,6 +130,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
 
     _activeAccountId = accountId;
     _activeSessionId = null;
+    _phaseTransitionDirection = _PhaseTransitionDirection.none;
     _phase = RootPhase.chatList;
     unawaited(_ensureAccountHydrated(accountId,
         forceRefresh: AuthSession.useBackend));
@@ -157,9 +162,35 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
     );
   }
 
+  int _phaseRank(RootPhase phase) {
+    switch (phase) {
+      case RootPhase.start:
+        return 0;
+      case RootPhase.guide:
+        return 1;
+      case RootPhase.chatList:
+        return 2;
+      case RootPhase.chat:
+        return 3;
+    }
+  }
+
+  void _setPhase(RootPhase nextPhase) {
+    final currentRank = _phaseRank(_phase);
+    final nextRank = _phaseRank(nextPhase);
+    if (nextRank > currentRank) {
+      _phaseTransitionDirection = _PhaseTransitionDirection.forward;
+    } else if (nextRank < currentRank) {
+      _phaseTransitionDirection = _PhaseTransitionDirection.backward;
+    } else {
+      _phaseTransitionDirection = _PhaseTransitionDirection.none;
+    }
+    _phase = nextPhase;
+  }
+
   void _restart() {
     setState(() {
-      _phase = RootPhase.start;
+      _setPhase(RootPhase.start);
       _startFlowVersion += 1;
       _activeAccountId = null;
       _activeSessionId = null;
@@ -174,7 +205,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
 
   void _handleStartCompleted() {
     setState(() {
-      _phase = RootPhase.guide;
+      _setPhase(RootPhase.guide);
     });
   }
 
@@ -190,7 +221,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
     setState(() {
       _activeAccountId = accountId;
       _activeSessionId = null;
-      _phase = RootPhase.chatList;
+      _setPhase(RootPhase.chatList);
     });
   }
 
@@ -203,7 +234,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
     if (accountId == null) {
       if (!mounted) return;
       setState(() {
-        _phase = RootPhase.start;
+        _setPhase(RootPhase.start);
       });
       return;
     }
@@ -212,10 +243,19 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
         forceRefresh: AuthSession.useBackend);
     if (!mounted) return;
 
+    final sessionAccountKey =
+        _sessionAccountKey(accountId, useBackend: AuthSession.useBackend);
+    final store = _storeForAccount(sessionAccountKey);
+    final currentSessionId = _activeSessionId;
+    final keepActiveSession =
+        currentSessionId != null && store.findById(currentSessionId) != null;
+
     setState(() {
       _activeAccountId = accountId;
-      _activeSessionId = null;
-      _phase = RootPhase.chatList;
+      if (!keepActiveSession) {
+        _activeSessionId = null;
+      }
+      _setPhase(RootPhase.chatList);
     });
   }
 
@@ -228,7 +268,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
     if (accountId == null) {
       if (!mounted) return;
       setState(() {
-        _phase = RootPhase.start;
+        _setPhase(RootPhase.start);
       });
       return;
     }
@@ -252,7 +292,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
       _storeForAccount(sessionAccountKey).upsertSummary(session);
       _activeAccountId = accountId;
       _activeSessionId = session.sessionId;
-      _phase = RootPhase.chat;
+      _setPhase(RootPhase.chat);
     });
   }
 
@@ -281,7 +321,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
     setState(() {
       _activeAccountId = accountId;
       _activeSessionId = sessionId;
-      _phase = RootPhase.chat;
+      _setPhase(RootPhase.chat);
     });
   }
 
@@ -648,7 +688,7 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
     setState(() {
       if (_activeSessionId == sessionId) {
         _activeSessionId = null;
-        _phase = RootPhase.chatList;
+        _setPhase(RootPhase.chatList);
       }
     });
   }
@@ -668,6 +708,58 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
         ? null
         : sessionStore?.findById(activeSessionId);
 
+    Widget buildChatListScreen() => ChatListScreen(
+          sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
+          onOpenSession: _openSession,
+          onCreateSession: _createAndOpenSession,
+          onDeleteSession: _deleteSession,
+          onLogout: _restart,
+          accountId: accountId ?? 'demo',
+        );
+
+    Widget? buildChatScreen() {
+      if (activeSession == null) return null;
+      return ChatbotDemoScreen(
+        key: ValueKey('chat-${activeSession.sessionId}'),
+        onRestart: _restart,
+        onBackToList: _openChatList,
+        initialSnapshot: sessionSnapshots?[activeSession.sessionId],
+        initialBackendCaseId: AuthSession.useBackend
+            ? (activeSession.caseId ?? activeSession.sessionId)
+            : null,
+        initialBackendCaseStatus: AuthSession.useBackend
+            ? _backendStatusFromSession(activeSession)
+            : null,
+        onSnapshotChanged: (snapshot) {
+          final current = _currentAccountId;
+          if (current == null) return;
+          _handleSessionSnapshot(current, activeSession.sessionId, snapshot);
+        },
+      );
+    }
+
+    final chatScreen = buildChatScreen();
+
+    Widget buildChatShell() {
+      if (chatScreen == null) {
+        return buildChatListScreen();
+      }
+      final showList = _phase == RootPhase.chatList;
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Offstage(
+            offstage: showList,
+            child: IgnorePointer(
+              ignoring: showList,
+              child: chatScreen,
+            ),
+          ),
+          if (showList) buildChatListScreen(),
+        ],
+      );
+    }
+
     final content = switch (_phase) {
       RootPhase.start => StartFlowScreen(
           key: ValueKey('start-flow-$_startFlowVersion'),
@@ -676,64 +768,69 @@ class _DemoRootScreenState extends State<DemoRootScreen> {
       RootPhase.guide => GuideScreen(
           onDone: _handleGuideCompleted,
         ),
-      RootPhase.chatList => ChatListScreen(
-          sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
-          onOpenSession: _openSession,
-          onCreateSession: _createAndOpenSession,
-          onDeleteSession: _deleteSession,
-          onLogout: _restart,
-          accountId: accountId ?? 'demo',
-        ),
-      RootPhase.chat => activeSession == null
-          ? ChatListScreen(
-              sessions: sessionStore?.sessions ?? const <ChatSessionSummary>[],
-              onOpenSession: _openSession,
-              onCreateSession: _createAndOpenSession,
-              onDeleteSession: _deleteSession,
-              onLogout: _restart,
-              accountId: accountId ?? 'demo',
-            )
-          : ChatbotDemoScreen(
-              key: ValueKey('chat-${activeSession.sessionId}'),
-              onRestart: _restart,
-              onBackToList: _openChatList,
-              initialSnapshot: sessionSnapshots?[activeSession.sessionId],
-              initialBackendCaseId: AuthSession.useBackend
-                  ? (activeSession.caseId ?? activeSession.sessionId)
-                  : null,
-              initialBackendCaseStatus: AuthSession.useBackend
-                  ? _backendStatusFromSession(activeSession)
-                  : null,
-              onSnapshotChanged: (snapshot) {
-                final current = _currentAccountId;
-                if (current == null) return;
-                _handleSessionSnapshot(
-                    current, activeSession.sessionId, snapshot);
-              },
-            ),
+      RootPhase.chatList => buildChatShell(),
+      RootPhase.chat => buildChatShell(),
     };
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 480),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) {
-          return FadeTransition(
-            opacity: animation,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.02, 0),
-                end: Offset.zero,
-              ).animate(animation),
-              child: child,
-            ),
-          );
-        },
-        child: KeyedSubtree(
-          key: ValueKey(_phase.name),
-          child: content,
+    final phaseKey = switch (_phase) {
+      RootPhase.start => 'start',
+      RootPhase.guide => 'guide',
+      RootPhase.chatList => 'chat-shell',
+      RootPhase.chat => 'chat-shell',
+    };
+
+    return PopScope(
+      canPop: _phase != RootPhase.chat,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _phase == RootPhase.chat) {
+          _openChatList();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 380),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInOutCubic,
+          transitionBuilder: (child, animation) {
+            final currentKey = ValueKey(phaseKey);
+            final isIncoming = child.key == currentKey;
+
+            Offset beginOffset = Offset.zero;
+            if (_phaseTransitionDirection ==
+                _PhaseTransitionDirection.forward) {
+              beginOffset =
+                  isIncoming ? const Offset(0.10, 0) : const Offset(-0.05, 0);
+            } else if (_phaseTransitionDirection ==
+                _PhaseTransitionDirection.backward) {
+              beginOffset =
+                  isIncoming ? const Offset(-0.10, 0) : const Offset(0.05, 0);
+            }
+
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInOutCubic,
+            );
+
+            return FadeTransition(
+              opacity: Tween<double>(
+                begin: 0.92,
+                end: 1.0,
+              ).animate(curved),
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: beginOffset,
+                  end: Offset.zero,
+                ).animate(curved),
+                child: child,
+              ),
+            );
+          },
+          child: KeyedSubtree(
+            key: ValueKey(phaseKey),
+            child: content,
+          ),
         ),
       ),
     );
