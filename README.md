@@ -6,7 +6,7 @@
 
 ## 앱 다운로드
 - Android APK: [최신 데모 다운로드](https://github.com/newbiehwang/ai-civil-complaint-service-contest/releases/latest/download/civil-complaint-android.apk)
-- iOS(TestFlight): [테스트플라이트 링크](https://testflight.apple.com/join/REPLACE_ME)
+- iOS(TestFlight): Coming Soon
 
 > iOS 링크는 TestFlight 공개 링크로 교체해서 사용하세요.
 
